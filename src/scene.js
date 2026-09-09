@@ -28,7 +28,7 @@ export class GlobeScene {
     this.pitch = 0;
     this.cameraGap = 7.5;
     this.drag = null;
-    this.needsDraw = true;
+    this.needsDraw = false;
     this.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);

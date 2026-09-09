@@ -3,31 +3,40 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#07110f" />
-  <title>Lazy Acres Ancestry</title>
-  <meta name="description" content="An interactive Poirier family tree prototype built from GEDCOM data." />
+  <meta name="theme-color" content="#b7925d" />
+  <title>Lazy Acres Ancestry · Globe Prototype</title>
+  <meta name="description" content="A geometry prototype for exploring family history on an antique spherical family atlas." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="ambient ambient-a"></div>
-  <div class="ambient ambient-b"></div>
   <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true"><span></span><i></i><b></b></div>
-      <div><div class="eyebrow">LAZY ACRES</div><h1>Ancestry</h1></div>
+    <div class="brand"><span class="tree-mark" aria-hidden="true">♜</span><div><strong>Lazy Acres Ancestry</strong><span>family atlas prototype</span></div></div>
+    <div class="search-shell">
+      <label><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Search the sample family…" autocomplete="off" /></label>
+      <div id="searchResults" class="search-results" hidden></div>
     </div>
-    <div class="toolbar" aria-label="Tree controls">
-      <label class="search-wrap"><span>⌕</span><input id="searchInput" type="search" placeholder="Find a person" autocomplete="off" /></label>
-      <div class="segmented" id="branchFilters"><button class="active" data-branch="all">All</button><button data-branch="paternal">Paternal</button><button data-branch="maternal">Maternal</button></div>
-      <button class="icon-btn" id="fitBtn" title="Fit tree to view" aria-label="Fit tree to view">⌂</button>
-      <button class="icon-btn" id="zoomOutBtn" title="Zoom out" aria-label="Zoom out">−</button>
-      <button class="icon-btn" id="zoomInBtn" title="Zoom in" aria-label="Zoom in">＋</button>
-    </div>
+    <div class="history-line">Past lives.<br><strong>Still connected.</strong></div>
   </header>
-  <main class="workspace"><section class="tree-shell" id="treeShell"><div class="source-pill" id="sourcePill">Connecting…</div><div class="hint-pill">Drag to pan · wheel to zoom · click a person</div><div class="tree-viewport" id="treeViewport"><div class="tree-stage" id="treeStage" aria-label="Interactive family tree"><svg class="connectors" id="connectors" width="1800" height="1080" viewBox="0 0 1800 1080" aria-hidden="true"></svg><div id="cardsLayer"></div><div class="generation-label ancestors">GRANDPARENTS</div><div class="generation-label parents">PARENTS</div><div class="generation-label present">PRESENT GENERATION</div></div></div></section></main>
-  <aside class="detail-panel" id="detailPanel" aria-hidden="true"><button class="panel-close" id="detailClose" aria-label="Close details">×</button><div id="detailContent"></div></aside>
-  <section class="sibling-drawer" id="siblingDrawer" aria-hidden="true"><div class="drawer-head"><div><div class="eyebrow">SIBLING GROUP</div><h2 id="siblingTitle">Family siblings</h2></div><button class="panel-close static" id="siblingClose" aria-label="Close sibling gallery">×</button></div><div class="sibling-track" id="siblingTrack"></div></section>
-  <div class="toast" id="toast" role="status"></div>
-  <script src="config.js"></script><script src="app.js"></script>
+
+  <main class="atlas-shell">
+    <canvas id="globeCanvas" aria-label="Interactive spherical family tree"></canvas>
+    <nav class="rail" aria-label="Prototype sections">
+      <button class="active" type="button"><span>⌂</span>Tree</button>
+      <button type="button"><span>⌕</span>Search</button>
+      <button type="button"><span>♙</span>People</button>
+      <button type="button"><span>⌖</span>Places</button>
+      <button type="button"><span>▧</span>Stories</button>
+      <button type="button"><span>▣</span>Media</button>
+    </nav>
+    <div class="source-pill" id="sourcePill">Loading…</div>
+    <div class="scale-pill" id="scaleReadout"></div>
+    <div class="interaction-hint"><strong>Drag</strong> to rotate · <strong>Wheel</strong> to move closer/farther · <strong>Click</strong> a person</div>
+    <div class="atlas-caption"><span>FAMILIES</span><span>ACROSS TIME</span></div>
+  </main>
+
+  <aside class="person-panel" id="personPanel" aria-live="polite"></aside>
+
+  <script src="config.js"></script>
+  <script type="module" src="src/app.js"></script>
 </body>
 </html>

@@ -20,7 +20,7 @@ boot().catch(error => {
 async function boot() {
   family = await loadFamily(config);
   byId = new Map(family.people.map(person => [person.id, person]));
-  scene.setPeople(family.people);
+  scene.setFamily(family.people, family.relationships);
   source.textContent = `${family.source} · v${APP_VERSION}`;
   scaleReadout.textContent = `${scene.diameter.toFixed(0)} plaque-width sphere · 9,099-person capacity model`;
   wireSearch();

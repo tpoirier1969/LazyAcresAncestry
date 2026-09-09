@@ -16,9 +16,9 @@ export function layoutSample(people, radius) {
     if (fixed) positions.set(person.id, tangentPoint(fixed[0], fixed[1], radius));
   });
 
-  parents.forEach((person, index) => {
+  parents.forEach(person => {
     const x = person.branch === 'paternal' ? -2.25 : 2.25;
-    positions.set(person.id, tangentPoint(x, 3.25 + index * 0.08, radius));
+    positions.set(person.id, tangentPoint(x, 3.25, radius));
   });
 
   grandparents.forEach(person => {

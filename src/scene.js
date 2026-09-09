@@ -6,6 +6,7 @@ import {
   projectedTangentFrame,
   requiredSphereRadius,
   rotatePoint,
+  slerpUnit,
   yawPitchToFront,
 } from './geometry.js';
 import { plaqueTexture } from './plaque.js';
@@ -22,6 +23,7 @@ export class GlobeScene {
     this.onSelect = onSelect;
     this.population = fibonacciSphere(POPULATION);
     this.people = [];
+    this.relationships = [];
     this.positions = new Map();
     this.hitAreas = [];
     this.yaw = 0;
@@ -36,8 +38,9 @@ export class GlobeScene {
     this.resize();
   }
 
-  setPeople(people) {
+  setFamily(people, relationships = []) {
     this.people = people;
+    this.relationships = relationships;
     this.positions = layoutSample(people, RADIUS);
     this.requestDraw();
   }
@@ -136,6 +139,7 @@ export class GlobeScene {
     drawSphere(ctx, camera, RADIUS, w, h);
     this.drawAtlasGrid(camera);
     this.drawPopulation(camera);
+    this.drawRelationships(camera);
     this.drawPeople(camera);
   }
 
@@ -196,6 +200,34 @@ export class GlobeScene {
       ctx.ellipse(q.x, q.y, rw, rw * 0.72, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
+  }
+
+  drawRelationships(camera) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineWidth = 1.45;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    this.relationships.forEach(relationship => {
+      const from = this.positions.get(relationship.from);
+      const to = this.positions.get(relationship.to);
+      if (!from || !to) return;
+      const fromPerson = this.people.find(person => person.id === relationship.from);
+      const toPerson = this.people.find(person => person.id === relationship.to);
+      const maternal = fromPerson?.branch === 'maternal' || toPerson?.branch === 'maternal';
+      ctx.strokeStyle = relationship.type === 'spouse'
+        ? 'rgba(113,73,35,.58)'
+        : maternal ? 'rgba(112,77,50,.56)' : 'rgba(93,62,34,.62)';
+      const points = [];
+      for (let i = 0; i <= 24; i += 1) {
+        const local = slerpUnit(from, to, i / 24);
+        const unit = rotatePoint(local, this.yaw, this.pitch);
+        const projected = projectSpherePoint(unit, camera, RADIUS);
+        points.push(isVisible(unit, projected) ? projected : null);
+      }
+      strokeSegments(ctx, points);
+    });
     ctx.restore();
   }
 

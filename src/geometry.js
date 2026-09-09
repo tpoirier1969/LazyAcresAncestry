@@ -121,7 +121,7 @@ export function normalize(p) {
 
 export function yawPitchToFront(unit) {
   const yaw = Math.atan2(unit.x, -unit.z);
-  const afterYaw = rotatePoint(unit, -yaw, 0);
-  const pitch = Math.atan2(afterYaw.y, -afterYaw.z);
-  return { yaw: -yaw, pitch };
+  const afterYaw = rotatePoint(unit, yaw, 0);
+  const pitch = -Math.atan2(afterYaw.y, -afterYaw.z);
+  return { yaw, pitch };
 }

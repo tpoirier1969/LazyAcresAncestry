@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#07110f" />
+  <title>Lazy Acres Ancestry</title>
+  <meta name="description" content="An interactive Poirier family tree prototype built from GEDCOM data." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"><span></span><i></i><b></b></div>
+      <div><div class="eyebrow">LAZY ACRES</div><h1>Ancestry</h1></div>
+    </div>
+    <div class="toolbar" aria-label="Tree controls">
+      <label class="search-wrap"><span>⌕</span><input id="searchInput" type="search" placeholder="Find a person" autocomplete="off" /></label>
+      <div class="segmented" id="branchFilters"><button class="active" data-branch="all">All</button><button data-branch="paternal">Paternal</button><button data-branch="maternal">Maternal</button></div>
+      <button class="icon-btn" id="fitBtn" title="Fit tree to view" aria-label="Fit tree to view">⌂</button>
+      <button class="icon-btn" id="zoomOutBtn" title="Zoom out" aria-label="Zoom out">−</button>
+      <button class="icon-btn" id="zoomInBtn" title="Zoom in" aria-label="Zoom in">＋</button>
+    </div>
+  </header>
+  <main class="workspace"><section class="tree-shell" id="treeShell"><div class="source-pill" id="sourcePill">Connecting…</div><div class="hint-pill">Drag to pan · wheel to zoom · click a person</div><div class="tree-viewport" id="treeViewport"><div class="tree-stage" id="treeStage" aria-label="Interactive family tree"><svg class="connectors" id="connectors" width="1800" height="1080" viewBox="0 0 1800 1080" aria-hidden="true"></svg><div id="cardsLayer"></div><div class="generation-label ancestors">GRANDPARENTS</div><div class="generation-label parents">PARENTS</div><div class="generation-label present">PRESENT GENERATION</div></div></div></section></main>
+  <aside class="detail-panel" id="detailPanel" aria-hidden="true"><button class="panel-close" id="detailClose" aria-label="Close details">×</button><div id="detailContent"></div></aside>
+  <section class="sibling-drawer" id="siblingDrawer" aria-hidden="true"><div class="drawer-head"><div><div class="eyebrow">SIBLING GROUP</div><h2 id="siblingTitle">Family siblings</h2></div><button class="panel-close static" id="siblingClose" aria-label="Close sibling gallery">×</button></div><div class="sibling-track" id="siblingTrack"></div></section>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="config.js"></script><script src="app.js"></script>
+</body>
+</html>

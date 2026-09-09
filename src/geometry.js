@@ -114,6 +114,16 @@ export function projectedTangentFrame(unit, camera, radius, width, height) {
   };
 }
 
+export function slerpUnit(a, b, t) {
+  const dot = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z));
+  const angle = Math.acos(dot);
+  if (angle < 1e-8) return normalize({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t });
+  const sinAngle = Math.sin(angle);
+  const wa = Math.sin((1 - t) * angle) / sinAngle;
+  const wb = Math.sin(t * angle) / sinAngle;
+  return normalize({ x: a.x * wa + b.x * wb, y: a.y * wa + b.y * wb, z: a.z * wa + b.z * wb });
+}
+
 export function normalize(p) {
   const len = Math.hypot(p.x, p.y, p.z) || 1;
   return { x: p.x / len, y: p.y / len, z: p.z / len };

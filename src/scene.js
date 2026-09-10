@@ -14,8 +14,10 @@ import { layoutSample } from './layout.js';
 const POPULATION = 9099;
 const PLAQUE = { width: 1, height: 0.86 };
 const RADIUS = Math.max(40, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
-const HOME_PITCH = 0.40;
-const DEFAULT_GAP = 30;
+const HOME_PITCH = 0.18;
+const DEFAULT_GAP = 6.5;
+const MIN_GAP = 4;
+const MAX_GAP = 24;
 
 export class GlobeScene {
   constructor(canvas, onSelect) {
@@ -62,12 +64,13 @@ export class GlobeScene {
     const dpr = Number(this.canvas.dataset.dpr || 1);
     const w = this.canvas.width / dpr;
     const h = this.canvas.height / dpr;
-    const focal = Math.min(w, h) * 1.02;
+    const focal = Math.min(w, h) * 1.04;
     const centerZ = RADIUS + this.cameraGap;
     const projectedRadius = focal * RADIUS / Math.sqrt(Math.max(1e-6, centerZ * centerZ - RADIUS * RADIUS));
+    const horizonY = Math.max(42, h * 0.06);
     return {
       cx: w / 2,
-      cy: projectedRadius + Math.max(42, h * 0.055),
+      cy: projectedRadius + horizonY,
       focal,
       centerZ,
       near: 0.1,
@@ -95,7 +98,7 @@ export class GlobeScene {
     });
     this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
-      this.cameraGap = clamp(this.cameraGap + Math.sign(event.deltaY) * 2, 16, 52);
+      this.cameraGap = clamp(this.cameraGap + Math.sign(event.deltaY) * 1.25, MIN_GAP, MAX_GAP);
       this.requestDraw();
     }, { passive: false });
   }
@@ -159,8 +162,8 @@ export class GlobeScene {
         const q = projectSpherePoint(unit, camera, RADIUS);
         return isVisible(unit, q) ? q : null;
       });
-      ctx.strokeStyle = index < 4 ? 'rgba(77,55,34,.25)' : 'rgba(77,55,34,.14)';
-      ctx.lineWidth = index < 4 ? 1.2 : 0.7;
+      ctx.strokeStyle = index < 4 ? 'rgba(73,49,28,.32)' : 'rgba(73,49,28,.19)';
+      ctx.lineWidth = index < 4 ? 1.35 : 0.8;
       strokeSegments(ctx, points);
     });
     ctx.restore();
@@ -169,7 +172,7 @@ export class GlobeScene {
   drawGrid(camera) {
     const ctx = this.ctx;
     ctx.save();
-    ctx.strokeStyle = 'rgba(96,68,40,.08)';
+    ctx.strokeStyle = 'rgba(91,61,36,.10)';
     ctx.lineWidth = 0.65;
     for (let x = -22; x <= 22; x += 4) this.drawSurfacePolyline([[x, -18], [x, 18]], camera);
     for (let y = -18; y <= 18; y += 4) this.drawSurfacePolyline([[-24, y], [24, y]], camera);
@@ -177,17 +180,14 @@ export class GlobeScene {
   }
 
   drawRelationships(camera) {
-    const parentLinks = this.relationships.filter(r => r.type === 'parent');
-    const spousePairs = uniquePairs(this.relationships.filter(r => r.type === 'spouse'));
-    const parentsByChild = new Map();
-    parentLinks.forEach(link => {
-      if (!parentsByChild.has(link.to)) parentsByChild.set(link.to, []);
-      parentsByChild.get(link.to).push(link.from);
-    });
+    const knownIds = new Set(this.positions.keys());
+    const { spousePairs, parentSets } = buildRelationshipGroups(this.relationships, knownIds);
 
     spousePairs.forEach(([a, b]) => this.drawCoupleBar(a, b, camera));
-    parentsByChild.forEach((parents, childId) => this.drawDescent(parents, childId, camera));
-    this.drawClusterRails(camera, parentLinks);
+    parentSets.forEach(group => {
+      if (group.children.length > 1) this.drawSiblingGroup(group.parents, group.children, camera);
+      else this.drawDescent(group.parents, group.children[0], camera);
+    });
   }
 
   drawCoupleBar(aId, bId, camera) {
@@ -195,37 +195,34 @@ export class GlobeScene {
     const b = this.surfaceXY(this.positions.get(bId));
     if (!a || !b) return;
     const y = (a.y + b.y) / 2;
-    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.6, 'rgba(78,52,30,.78)');
+    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.6, 'rgba(69,45,27,.82)');
   }
 
   drawDescent(parentIds, childId, camera) {
+    if (!childId) return;
     const child = this.surfaceXY(this.positions.get(childId));
-    const parents = [...new Set(parentIds)].map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
+    const parents = parentIds.map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
     if (!child || !parents.length) return;
-    const source = parents.length > 1
-      ? { x: (parents[0].x + parents[1].x) / 2, y: (parents[0].y + parents[1].y) / 2 }
-      : parents[0];
+    const source = averagePoint(parents);
     const bendY = source.y + (child.y - source.y) * 0.48;
-    this.drawSurfacePolyline([[source.x, source.y], [source.x, bendY], [child.x, bendY], [child.x, child.y]], camera, 1.7, 'rgba(78,52,30,.82)');
+    this.drawSurfacePolyline([[source.x, source.y], [source.x, bendY], [child.x, bendY], [child.x, child.y]], camera, 1.7, 'rgba(69,45,27,.86)');
   }
 
-  drawClusterRails(camera, parentLinks) {
-    const hasVisibleParent = new Set(parentLinks.map(link => link.to));
-    const groups = new Map();
-    this.people.filter(p => p.cluster).forEach(person => {
-      if (!groups.has(person.cluster)) groups.set(person.cluster, []);
-      groups.get(person.cluster).push(person);
-    });
-    groups.forEach(group => {
-      const orphans = group.filter(person => !hasVisibleParent.has(person.id));
-      if (orphans.length < 2) return;
-      const points = orphans.map(person => ({ xy: this.surfaceXY(this.positions.get(person.id)) })).filter(item => item.xy);
-      if (points.length < 2) return;
-      const railY = Math.min(...points.map(item => item.xy.y)) - 0.5;
-      const minX = Math.min(...points.map(item => item.xy.x));
-      const maxX = Math.max(...points.map(item => item.xy.x));
-      this.drawSurfacePolyline([[minX, railY], [maxX, railY]], camera, 1.25, 'rgba(91,64,38,.50)');
-      points.forEach(item => this.drawSurfacePolyline([[item.xy.x, railY], [item.xy.x, item.xy.y]], camera, 1.05, 'rgba(91,64,38,.44)'));
+  drawSiblingGroup(parentIds, childIds, camera) {
+    const parents = parentIds.map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
+    const children = childIds.map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
+    if (!parents.length || children.length < 2) return;
+
+    const source = averagePoint(parents);
+    const averageChildY = children.reduce((sum, point) => sum + point.y, 0) / children.length;
+    const railY = source.y + (averageChildY - source.y) * 0.48;
+    const minX = Math.min(...children.map(point => point.x));
+    const maxX = Math.max(...children.map(point => point.x));
+
+    this.drawSurfacePolyline([[source.x, source.y], [source.x, railY]], camera, 1.7, 'rgba(69,45,27,.86)');
+    this.drawSurfacePolyline([[minX, railY], [maxX, railY]], camera, 1.55, 'rgba(69,45,27,.82)');
+    children.forEach(child => {
+      this.drawSurfacePolyline([[child.x, railY], [child.x, child.y]], camera, 1.45, 'rgba(69,45,27,.78)');
     });
   }
 
@@ -291,7 +288,7 @@ export class GlobeScene {
     const c = frame.yAxis.x / (tex.height / 2);
     const d = frame.yAxis.y / (tex.height / 2);
     ctx.setTransform(camera.dpr * a, camera.dpr * b, camera.dpr * c, camera.dpr * d, camera.dpr * frame.center.x, camera.dpr * frame.center.y);
-    if (apparentWidth >= 62) ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
+    if (apparentWidth >= 48) ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
     else drawMiniMedallion(ctx, tex.width, tex.height);
     ctx.restore();
     this.hitAreas.push({ id: person.id, x: frame.center.x, y: frame.center.y, r: Math.max(12, Math.max(xLen, yLen) * 1.35), z: frame.center.z });
@@ -305,36 +302,72 @@ export class GlobeScene {
   }
 }
 
+export function buildRelationshipGroups(relationships, knownIds = null) {
+  const isKnown = id => Boolean(id) && (!knownIds || knownIds.has(id));
+  const parentLinks = relationships.filter(link => link.type === 'parent' && isKnown(link.from) && isKnown(link.to));
+  const spousePairs = uniquePairs(relationships.filter(link => link.type === 'spouse' && isKnown(link.from) && isKnown(link.to)));
+  const parentsByChild = new Map();
+
+  parentLinks.forEach(link => {
+    if (!parentsByChild.has(link.to)) parentsByChild.set(link.to, new Set());
+    parentsByChild.get(link.to).add(link.from);
+  });
+
+  const groupedChildren = new Map();
+  parentsByChild.forEach((parents, childId) => {
+    const parentIds = [...parents].sort();
+    const key = parentIds.join('|');
+    if (!groupedChildren.has(key)) groupedChildren.set(key, { parents: parentIds, children: [] });
+    groupedChildren.get(key).children.push(childId);
+  });
+
+  return {
+    spousePairs,
+    parentSets: [...groupedChildren.values()].map(group => ({
+      parents: group.parents,
+      children: [...new Set(group.children)].sort(),
+    })),
+  };
+}
+
 function drawBackdrop(ctx, w, h) {
   const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, '#c8ad78');
-  g.addColorStop(0.35, '#9a7850');
-  g.addColorStop(1, '#5d4732');
+  g.addColorStop(0, '#cdb586');
+  g.addColorStop(0.34, '#a8875d');
+  g.addColorStop(1, '#5c4631');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = 'rgba(248,232,189,.10)';
-  for (let i = 0; i < 45; i += 1) {
-    const x = hash(i * 19) * w;
-    const y = hash(i * 31 + 2) * h * 0.35;
-    const r = 30 + hash(i * 11 + 4) * 95;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+
+  ctx.save();
+  ctx.globalAlpha = 0.09;
+  ctx.strokeStyle = '#f1deb1';
+  ctx.lineWidth = 0.55;
+  for (let i = 0; i < 42; i += 1) {
+    const y = hash(i * 31 + 5) * Math.min(h * 0.34, 280);
+    const x = hash(i * 17 + 9) * w;
+    const len = 28 + hash(i * 23 + 4) * 110;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(Math.min(w, x + len), y + (hash(i * 13 + 7) - 0.5) * 8);
+    ctx.stroke();
   }
+  ctx.restore();
 }
 
 function drawSphere(ctx, camera, radius) {
   const pr = apparentSphereRadius(camera, radius);
   const g = ctx.createRadialGradient(camera.cx - pr * 0.18, camera.cy - pr * 0.40, pr * 0.08, camera.cx, camera.cy, pr);
-  g.addColorStop(0, '#ead49f');
-  g.addColorStop(0.52, '#c4a06b');
-  g.addColorStop(0.84, '#8e6842');
-  g.addColorStop(1, '#4e3827');
+  g.addColorStop(0, '#efd9a6');
+  g.addColorStop(0.50, '#d2ae73');
+  g.addColorStop(0.82, '#916b43');
+  g.addColorStop(1, '#4c3726');
   ctx.save();
   ctx.shadowColor = 'rgba(45,29,18,.48)';
   ctx.shadowBlur = 52;
   ctx.fillStyle = g;
   ctx.beginPath(); ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(248,224,166,.55)';
-  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = 'rgba(248,224,166,.62)';
+  ctx.lineWidth = 2.1;
   ctx.stroke();
   ctx.restore();
 }
@@ -361,6 +394,13 @@ function uniquePairs(links) {
     out.push([link.from, link.to]);
   });
   return out;
+}
+
+function averagePoint(points) {
+  return {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  };
 }
 
 function strokeSegments(ctx, points) {
@@ -393,4 +433,9 @@ const MAP_PATHS = [
   [[10,2],[9,0],[8,-2],[7,-3],[6,-5],[5,-7]],
   [[-6,-7],[-4,-9],[-2,-11],[1,-12],[4,-11],[6,-9]],
   [[14,9],[16,8],[18,6],[19,4],[18,2],[17,0]],
+  [[-20,7],[-17,6],[-15,5],[-12,5],[-10,4]],
+  [[-16,-5],[-13,-6],[-10,-7],[-7,-8],[-4,-9]],
+  [[1,13],[4,12],[7,11],[10,10],[13,9]],
+  [[2,-1],[4,-1],[6,-2],[8,-4],[10,-6]],
+  [[-4,8],[-1,8],[2,7],[5,6],[8,6]],
 ];

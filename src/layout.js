@@ -4,8 +4,8 @@ import { tangentPoint } from './geometry.js';
 // compact, with branch-specific expansion only where large sibling groups need it.
 const BASE = {
   root: [0, 0],
-  spouse: [1.82, 0.04],
-  sibling: [-1.82, 0.04],
+  spouse: [2.08, 0.05],
+  sibling: [-2.08, 0.05],
 };
 
 export function layoutSample(people, radius) {
@@ -25,16 +25,16 @@ export function layoutSample(people, radius) {
   });
 
   parents.forEach(person => {
-    const x = person.branch === 'paternal' ? -1.28 : 1.28;
-    place(person, x, 2.35);
+    const x = person.branch === 'paternal' ? -1.46 : 1.46;
+    place(person, x, 2.48);
   });
 
   grandparents.forEach(person => {
     const paternal = person.branch === 'paternal';
     const branchGrandparents = grandparents.filter(p => p.branch === person.branch);
     const sideIndex = branchGrandparents.indexOf(person);
-    const x = (paternal ? -1 : 1) * (1.12 + sideIndex * 1.62);
-    place(person, x, 4.72);
+    const x = (paternal ? -1 : 1) * (1.25 + sideIndex * 1.78);
+    place(person, x, 4.95);
   });
 
   const siblingGroups = new Map();
@@ -48,9 +48,12 @@ export function layoutSample(people, radius) {
     if (!anchor) return;
     const anchorXY = coordinates.get(anchor.id);
     const outward = anchor.branch === 'paternal' ? -1 : 1;
-    const columns = Math.min(group.length, 7);
-    const columnGap = 0.94;
-    const rowGap = 0.64;
+    const columns = Math.min(group.length, 5);
+    const columnGap = 1.08;
+    const rowGap = 0.88;
+    const branchGrandparents = grandparents.filter(person => person.branch === anchor.branch);
+    const anchorIndex = branchGrandparents.indexOf(anchor);
+    const rowBias = (anchorIndex % 2 === 0 ? -1 : 1) * 0.38;
 
     group.forEach((person, index) => {
       const row = Math.floor(index / columns);
@@ -58,7 +61,9 @@ export function layoutSample(people, radius) {
       const rowCount = Math.min(columns, group.length - row * columns);
       const offset = (col + 1) * columnGap + (rowCount < columns ? (columns - rowCount) * columnGap * 0.10 : 0);
       const x = anchorXY.x + outward * offset;
-      const y = anchorXY.y + (row - (Math.ceil(group.length / columns) - 1) / 2) * rowGap;
+      // Keep siblings in the grandparent generation band. Wrapped rows move
+      // only slightly within that band instead of masquerading as older generations.
+      const y = anchorXY.y + rowBias + (row - (Math.ceil(group.length / columns) - 1) / 2) * rowGap;
       place(person, x, y);
     });
   });

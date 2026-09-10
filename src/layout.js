@@ -1,12 +1,11 @@
 import { tangentPoint } from './geometry.js';
 
-// Compact by default. The constants deliberately leave breathing room while
-// avoiding the wide, sparse prototype layout. Branch-specific expansion can be
-// added later when the full relationship graph is available.
+// Generations get clear vertical bands. People within a generation are kept
+// compact, with branch-specific expansion only where large sibling groups need it.
 const BASE = {
   root: [0, 0],
-  spouse: [2.08, 0.10],
-  sibling: [-2.08, 0.10],
+  spouse: [1.82, 0.04],
+  sibling: [-1.82, 0.04],
 };
 
 export function layoutSample(people, radius) {
@@ -26,16 +25,16 @@ export function layoutSample(people, radius) {
   });
 
   parents.forEach(person => {
-    const x = person.branch === 'paternal' ? -1.46 : 1.46;
-    place(person, x, 2.18);
+    const x = person.branch === 'paternal' ? -1.28 : 1.28;
+    place(person, x, 2.35);
   });
 
   grandparents.forEach(person => {
     const paternal = person.branch === 'paternal';
     const branchGrandparents = grandparents.filter(p => p.branch === person.branch);
     const sideIndex = branchGrandparents.indexOf(person);
-    const x = (paternal ? -1 : 1) * (1.18 + sideIndex * 1.88);
-    place(person, x, 4.05);
+    const x = (paternal ? -1 : 1) * (1.12 + sideIndex * 1.62);
+    place(person, x, 4.72);
   });
 
   const siblingGroups = new Map();
@@ -49,17 +48,17 @@ export function layoutSample(people, radius) {
     if (!anchor) return;
     const anchorXY = coordinates.get(anchor.id);
     const outward = anchor.branch === 'paternal' ? -1 : 1;
-    const columns = Math.min(group.length, group.length > 9 ? 7 : 6);
-    const rowGap = 1.08;
-    const columnGap = 1.00;
+    const columns = Math.min(group.length, 7);
+    const columnGap = 0.94;
+    const rowGap = 0.64;
 
     group.forEach((person, index) => {
       const row = Math.floor(index / columns);
       const col = index % columns;
       const rowCount = Math.min(columns, group.length - row * columns);
-      const offset = (col + 1) * columnGap + (rowCount < columns ? (columns - rowCount) * columnGap * 0.16 : 0);
+      const offset = (col + 1) * columnGap + (rowCount < columns ? (columns - rowCount) * columnGap * 0.10 : 0);
       const x = anchorXY.x + outward * offset;
-      const y = anchorXY.y + 1.22 + row * rowGap;
+      const y = anchorXY.y + (row - (Math.ceil(group.length / columns) - 1) / 2) * rowGap;
       place(person, x, y);
     });
   });

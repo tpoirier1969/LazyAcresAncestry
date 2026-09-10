@@ -2,24 +2,26 @@ import {
   apparentSphereRadius,
   isVisible,
   projectSpherePoint,
+  projectedRaisedFrame,
   requiredSphereRadius,
   rotatePoint,
   tangentPoint,
   yawPitchToFront,
 } from './geometry.js';
 import { plaqueTexture } from './plaque.js';
+import { rigidPlaquePlacement } from './plaque-projection.js';
 import { layoutSample } from './layout.js';
 import { getAtlasTexture } from './atlas-map.js';
 import { atlasUnitFromUv, drawTexturedTriangle } from './sphere-texture.js';
 
 const POPULATION = 9099;
-const PLAQUE = { width: 0.96, height: 0.84 };
+const PLAQUE = { width: 0.90, height: 0.82 };
 const RADIUS = Math.max(120, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
 const HOME_PITCH = 0.14;
 const DEFAULT_GAP = 7.2;
 const MIN_GAP = 4.8;
 const MAX_GAP = 27;
-const PLAQUE_TOP_LIFT = 0.09;
+const PLAQUE_CAMERA_FACING = 0.82;
 
 export class GlobeScene {
   constructor(canvas, onSelect) {
@@ -226,8 +228,8 @@ export class GlobeScene {
     ctx.beginPath();
     ctx.arc(camera.cx, camera.cy, pr - 0.5, 0, Math.PI * 2);
     ctx.clip();
-    ctx.globalAlpha = 0.80;
-    ctx.globalCompositeOperation = 'multiply';
+    ctx.globalAlpha = 0.97;
+    ctx.globalCompositeOperation = 'source-over';
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
@@ -265,7 +267,8 @@ export class GlobeScene {
 
   projectAtlasUv(u, v, camera) {
     const unit = rotatePoint(atlasUnitFromUv(u, v), this.yaw, this.pitch);
-    return projectSpherePoint(unit, camera, RADIUS);
+    const projected = projectSpherePoint(unit, camera, RADIUS);
+    return projected || null;
   }
 
   drawRelationships(camera) {
@@ -350,73 +353,51 @@ export class GlobeScene {
       if (!local) return;
       const unit = rotatePoint(local, this.yaw, this.pitch);
       const projected = projectSpherePoint(unit, camera, RADIUS);
-      if (isVisible(unit, projected)) ordered.push({ person, local, projected });
+      if (isVisible(unit, projected)) ordered.push({ person, unit, projected });
     });
     ordered.sort((a, b) => b.projected.z - a.projected.z);
     this.hitAreas = [];
     ordered.forEach(entry => this.drawPlaque(entry, camera));
   }
 
-  drawPlaque({ person, local, projected }, camera) {
-    const centerXY = this.surfaceXY(local);
-    if (!centerXY) return;
-    const tex = plaqueTexture(person);
-    const left = this.projectPlaqueVertex(centerXY, 0, 0.5, camera);
-    const right = this.projectPlaqueVertex(centerXY, 1, 0.5, camera);
-    const top = this.projectPlaqueVertex(centerXY, 0.5, 0, camera);
-    const bottom = this.projectPlaqueVertex(centerXY, 0.5, 1, camera);
-    if (!left || !right || !top || !bottom) return;
-    const apparentWidth = Math.hypot(right.x - left.x, right.y - left.y);
-    const apparentHeight = Math.hypot(bottom.x - top.x, bottom.y - top.y);
-    if (apparentWidth < 7 || apparentHeight < 5) return;
+  drawPlaque({ person, unit, projected }, camera) {
+    const frame = projectedRaisedFrame(
+      unit,
+      camera,
+      RADIUS,
+      PLAQUE.width,
+      PLAQUE.height,
+      PLAQUE_CAMERA_FACING,
+    );
+    if (!frame) return;
 
-    const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
-    const cols = moving ? 2 : 4;
-    const rows = moving ? 3 : 5;
+    const tex = plaqueTexture(person);
+    const halfWidthPx = Math.hypot(frame.xAxis.x, frame.xAxis.y);
+    const apparentWidth = halfWidthPx * 2;
+    if (apparentWidth < 8) return;
+
+    const placement = rigidPlaquePlacement(frame, tex.width, tex.height);
+    if (!placement) return;
+    const { scale, angle, center, height: apparentHeight } = placement;
+
     const ctx = this.ctx;
     ctx.save();
-    ctx.globalAlpha = clamp((apparentWidth - 5) / 34, 0.22, 1);
+    ctx.globalAlpha = clamp((apparentWidth - 6) / 34, 0.28, 1);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-
-    for (let row = 0; row < rows; row += 1) {
-      const v0 = row / rows;
-      const v1 = (row + 1) / rows;
-      const sy0 = v0 * tex.height;
-      const sy1 = v1 * tex.height;
-      for (let col = 0; col < cols; col += 1) {
-        const u0 = col / cols;
-        const u1 = (col + 1) / cols;
-        const sx0 = u0 * tex.width;
-        const sx1 = u1 * tex.width;
-        const p00 = this.projectPlaqueVertex(centerXY, u0, v0, camera);
-        const p10 = this.projectPlaqueVertex(centerXY, u1, v0, camera);
-        const p11 = this.projectPlaqueVertex(centerXY, u1, v1, camera);
-        const p01 = this.projectPlaqueVertex(centerXY, u0, v1, camera);
-        if (!p00 || !p10 || !p11 || !p01) continue;
-        const bounds = { sx: sx0, sy: sy0, sw: sx1 - sx0, sh: sy1 - sy0 };
-        drawTexturedTriangle(ctx, tex,
-          [{ x: sx0, y: sy0 }, { x: sx1, y: sy0 }, { x: sx1, y: sy1 }],
-          [p00, p10, p11], bounds);
-        drawTexturedTriangle(ctx, tex,
-          [{ x: sx0, y: sy0 }, { x: sx1, y: sy1 }, { x: sx0, y: sy1 }],
-          [p00, p11, p01], bounds);
-      }
-    }
+    ctx.translate(center.x, center.y);
+    ctx.rotate(angle);
+    ctx.scale(scale, scale);
+    ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
     ctx.restore();
 
-    this.hitAreas.push({ id: person.id, x: projected.x, y: projected.y, r: Math.max(12, Math.max(apparentWidth, apparentHeight) * 0.58), z: projected.z });
-  }
-
-  projectPlaqueVertex(centerXY, u, v, camera) {
-    const x = centerXY.x + (u - 0.5) * PLAQUE.width;
-    const y = centerXY.y + (0.5 - v) * PLAQUE.height;
-    const local = tangentPoint(x, y, RADIUS);
-    const unit = rotatePoint(local, this.yaw, this.pitch);
-    const topFraction = clamp((0.22 - v) / 0.22, 0, 1);
-    const lift = PLAQUE_TOP_LIFT * topFraction * topFraction;
-    const projected = projectSpherePoint(unit, camera, RADIUS + lift);
-    return isVisible(unit, projected) ? projected : null;
+    this.hitAreas.push({
+      id: person.id,
+      x: center.x,
+      y: center.y,
+      r: Math.max(13, Math.max(apparentWidth, apparentHeight) * 0.54),
+      z: projected.z,
+    });
   }
 
   pick(x, y) {
@@ -443,7 +424,10 @@ export function buildRelationshipGroups(relationships, knownIds = null) {
     if (!groupedChildren.has(key)) groupedChildren.set(key, { parents: parentIds, children: [] });
     groupedChildren.get(key).children.push(childId);
   });
-  return { spousePairs, parentSets: [...groupedChildren.values()].map(group => ({ parents: group.parents, children: [...new Set(group.children)].sort() })) };
+  return {
+    spousePairs,
+    parentSets: [...groupedChildren.values()].map(group => ({ parents: group.parents, children: [...new Set(group.children)].sort() })),
+  };
 }
 
 function drawBackdrop(ctx, w, h) {
@@ -454,19 +438,71 @@ function drawBackdrop(ctx, w, h) {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 }
+
 function drawSphereBase(ctx, camera, radius) {
   const pr = apparentSphereRadius(camera, radius);
-  ctx.save(); ctx.shadowColor = 'rgba(45,29,18,.42)'; ctx.shadowBlur = 46; ctx.fillStyle = '#dec48d';
-  ctx.beginPath(); ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  ctx.save();
+  ctx.shadowColor = 'rgba(45,29,18,.42)';
+  ctx.shadowBlur = 46;
+  ctx.fillStyle = '#dec48d';
+  ctx.beginPath();
+  ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
+
 function drawSphereShade(ctx, camera, radius) {
   const pr = apparentSphereRadius(camera, radius);
   const g = ctx.createRadialGradient(camera.cx - pr * 0.10, camera.cy - pr * 0.28, pr * 0.10, camera.cx, camera.cy, pr);
-  g.addColorStop(0, 'rgba(255,244,207,.15)'); g.addColorStop(0.60, 'rgba(106,71,39,.035)'); g.addColorStop(0.84, 'rgba(78,49,28,.22)'); g.addColorStop(1, 'rgba(41,27,18,.64)');
-  ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = 'rgba(248,224,166,.72)'; ctx.lineWidth = 2.0; ctx.stroke(); ctx.restore();
+  g.addColorStop(0, 'rgba(255,244,207,.15)');
+  g.addColorStop(0.60, 'rgba(106,71,39,.035)');
+  g.addColorStop(0.84, 'rgba(78,49,28,.22)');
+  g.addColorStop(1, 'rgba(41,27,18,.64)');
+  ctx.save();
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(248,224,166,.72)';
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+  ctx.restore();
 }
-function uniquePairs(links) { const seen = new Set(); const out = []; links.forEach(link => { const key = [link.from, link.to].sort().join('|'); if (seen.has(key)) return; seen.add(key); out.push([link.from, link.to]); }); return out; }
-function averagePoint(points) { return { x: points.reduce((sum, point) => sum + point.x, 0) / points.length, y: points.reduce((sum, point) => sum + point.y, 0) / points.length }; }
-function strokeSegments(ctx, points) { ctx.beginPath(); let active = false; points.forEach(point => { if (!point) { active = false; return; } if (!active) { ctx.moveTo(point.x, point.y); active = true; } else ctx.lineTo(point.x, point.y); }); ctx.stroke(); }
-function shortestAngle(from, to) { let diff = (to - from) % (Math.PI * 2); if (diff > Math.PI) diff -= Math.PI * 2; if (diff < -Math.PI) diff += Math.PI * 2; return diff; }
+
+function uniquePairs(links) {
+  const seen = new Set();
+  const out = [];
+  links.forEach(link => {
+    const key = [link.from, link.to].sort().join('|');
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push([link.from, link.to]);
+  });
+  return out;
+}
+
+function averagePoint(points) {
+  return {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  };
+}
+
+function strokeSegments(ctx, points) {
+  ctx.beginPath();
+  let active = false;
+  points.forEach(point => {
+    if (!point) { active = false; return; }
+    if (!active) { ctx.moveTo(point.x, point.y); active = true; }
+    else ctx.lineTo(point.x, point.y);
+  });
+  ctx.stroke();
+}
+
+function shortestAngle(from, to) {
+  let diff = (to - from) % (Math.PI * 2);
+  if (diff > Math.PI) diff -= Math.PI * 2;
+  if (diff < -Math.PI) diff += Math.PI * 2;
+  return diff;
+}
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }

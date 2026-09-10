@@ -4,21 +4,28 @@ Interactive genealogy atlas built from the supplied Ancestry data.
 
 ## Current prototype
 
-The app uses a spherical family-atlas view with fixed-size person plaques. The globe is intentionally larger than the minimum 9,099-person capacity calculation so the visible family neighborhood reads flatter while the edge of the sphere remains visible on the horizon.
-
-Person plaques are no longer painted flat onto the globe. Each plaque is modeled as a small physical display hinged at its lower edge: the lower edge remains attached to the sphere while the plaque leans modestly toward the camera. This reduces portrait squashing away from the viewing apex without turning people into screen-space overlays.
+The app uses a spherical family-atlas view with fixed physical person plaques projected onto the same sphere as the map and family connectors. The globe is intentionally larger than the minimum 9,099-person capacity calculation so the visible family neighborhood reads flatter while the edge of the sphere remains visible on the horizon.
 
 The current Supabase sample contains 44 people: Tod, Donna, Amy, Tod's parents, grandparents, and grandparent sibling groups. The renderer remains single-canvas and is intended to scale to the full genealogy without one DOM element per person.
 
+## Unified sphere renderer
+
+The map, family connectors, and person plaques now share one spherical coordinate system and one yaw/pitch rotation around the exact globe center. Nothing is allowed to pan independently as a screen-space layer.
+
+Person plaques are mapped onto small curved surface patches. Most of each plaque remains directly attached to the sphere. Only the uppermost portion lifts slightly from the surface to preserve a little portrait readability. Person plaques no longer cast ground/drop shadows.
+
 ## Atlas surface
 
-The old procedural collection of polygons and map-like strokes has been removed. The globe now uses a single bundled antique-atlas image texture (`assets/antique-atlas-texture.svg`) containing coherent fictional landmasses, coastlines, islands, rivers, mountain marks, labels, rhumb lines, graticule, a compass rose, and ship ornamentation. The texture is clipped to the sphere, shaded by the globe lighting, and pans with globe rotation. It is decorative cartography, not a claim about real geography.
+The globe uses a bundled 4096×2048 antique-atlas texture (`assets/antique-atlas-texture.svg`) with recognizable world-map structure, parchment grain, coastlines, rivers, mountain marks, labels, graticule, rhumb lines, a compass rose, and ship ornamentation. It is decorative cartography, not a claim about exact historical geography.
+
+The texture is not simply clipped or panned behind the sphere. `src/sphere-texture.js` divides the source atlas into a mesh, maps the mesh to unit-sphere latitude/longitude coordinates, applies the exact same globe rotation as people and genealogy lines, projects each visible cell through the camera, and texture-maps the resulting triangles. That keeps the atlas physically locked to the globe during every drag, focus rotation, and zoom.
 
 ## Current interaction
 
-- Drag the atlas surface to rotate it.
+- Drag the atlas surface to rotate the entire globe around its center.
+- Map, people, and family lines rotate together because they share the same sphere transform.
 - Dragging and wheel movement use interpolated motion rather than snapping to every pointer event.
-- Use the mouse wheel or trackpad to move closer or farther away.
+- Use the mouse wheel or trackpad to move closer or farther away from the same fixed globe center.
 - Click a person to rotate that branch into focus.
 - Use `Return to Tod` or Home to restore the current prototype home person.
 - Search the current sample by name.
@@ -30,26 +37,29 @@ The old procedural collection of polygons and map-like strokes has been removed.
 
 ## Family layout and relationships
 
-Family spacing is compact by default. The current sample layout has been tightened while preserving room for genealogy connectors and descendant branches. Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, sibling rail, and child stems.
+Generations use explicit vertical bands. People within a generation are compact by default, but a generation itself is kept clearly separated from the generations above and below it. Large grandparent-sibling groups wrap within a narrow same-generation band instead of drifting upward and appearing to be an older generation.
 
-Connectors remain evidence-based. A layout cluster may influence where a prototype person is placed, but it can never create a genealogical relationship. Parent, spouse, and shared-parent sibling lines are drawn only from recorded relationship data.
+Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, sibling rail, and child stems. Connectors remain evidence-based. A layout cluster may influence where a prototype person is placed, but it can never create a genealogical relationship. Parent, spouse, and shared-parent sibling lines are drawn only from recorded relationship data.
 
-The next population test requested for the prototype is broader than the currently preserved data. The available Supabase import does not contain Donna's ancestral generations, the requested descendant branches, or the complete relationship graph needed to add siblings to every family group safely. Those people will not be fabricated. The full GEDCOM needs to be restored/re-imported before that population pass can be completed.
+The currently imported Supabase subset contains only 12 relationship records. All recorded relationships are rendered, but missing family relationships are not fabricated to make the prototype look fuller.
 
-## GEDCOM and saved records
+## GEDCOM and population coverage
 
 Person Details understands saved-record/source arrays when they are present in a person's preserved `raw_gedcom` payload and renders titles, citation details, repositories, and safe web links.
 
-The current 44-person Supabase prototype import does **not** contain those source/citation structures. Its `raw_gedcom` objects currently preserve birth, death, and alternate-name data only. Re-importing the complete GEDCOM source/citation and relationship structures is therefore required both for saved records and for the requested expanded family stress view.
+The current Supabase import is explicitly a 44-person prototype subset. It does **not** contain Donna's ancestral generations, the requested descendant branches, the complete parent/spouse graph, or the source/citation structures from the full GEDCOM. Re-importing the complete GEDCOM is therefore required both for saved records and for the requested expanded-family stress test.
+
+The missing relatives will not be fabricated. Once the complete GEDCOM is restored, the requested density test is: siblings for visible family groups, Donna's ancestry to the same depth, one additional ancestral generation with siblings, and descendants for displayed families.
 
 ## Architecture
 
-- `src/geometry.js` owns spherical placement, camera projection, hinged plaque frames, and capacity math.
-- `src/layout.js` maps the current sample into a deliberately compact local family neighborhood.
-- `src/plaque.js` owns the old-glass portrait medallion and parchment-scroll rendering.
-- `src/atlas-map.js` owns loading and positioning the bundled atlas texture.
-- `assets/antique-atlas-texture.svg` is the coherent antique map texture displayed on the globe.
-- `src/scene.js` owns the single-canvas globe renderer, horizon, atlas texture, evidence-based genealogy connectors, plaque projection, and smooth direct manipulation.
+- `src/geometry.js` owns spherical placement, camera projection, and capacity math.
+- `src/layout.js` maps the current sample into compact, generation-aware family bands.
+- `src/plaque.js` owns the old-glass portrait medallion and parchment-scroll texture.
+- `src/atlas-map.js` owns loading the bundled atlas texture.
+- `src/sphere-texture.js` owns reusable triangle-affine texture projection onto the sphere.
+- `assets/antique-atlas-texture.svg` is the high-resolution antique world-map texture.
+- `src/scene.js` owns the single-canvas globe renderer, horizon, unified sphere rotation, atlas mesh projection, evidence-based genealogy connectors, surface-attached plaque projection, and smooth direct manipulation.
 - `src/relationships.js` derives human-readable kinship labels from recorded relationship data.
 - `src/gedcom.js` normalizes preserved alternate names and saved source/citation records for Person Details.
 - `src/data.js` owns the Supabase/bundled-sample boundary.
@@ -73,12 +83,13 @@ Requested future enhancements are tracked in `FUTURE_ENHANCEMENTS.md`. The first
 ```bash
 node tests/geometry.test.mjs
 node tests/atlas-map.test.mjs
+node tests/sphere-texture.test.mjs
 node tests/layout.test.mjs
 node tests/relationships.test.mjs
 node tests/gedcom.test.mjs
 ```
 
-The geometry test verifies capacity math, perspective behavior, the hinged plaque projection, and evidence-based relationship grouping. The atlas-map test verifies the bundled map texture and its rotation placement. The layout test guards the compact spacing targets. Relationship and GEDCOM tests guard named kinship labels and saved-record parsing.
+The geometry test verifies capacity math and perspective behavior. Atlas and sphere-texture tests guard the high-resolution map asset and latitude/longitude triangle projection. The layout test guards generation-band spacing. Relationship and GEDCOM tests guard named kinship labels and saved-record parsing.
 
 ## Hosting
 

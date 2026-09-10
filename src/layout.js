@@ -1,9 +1,12 @@
 import { tangentPoint } from './geometry.js';
 
+// Compact by default. The constants deliberately leave breathing room while
+// avoiding the wide, sparse prototype layout. Branch-specific expansion can be
+// added later when the full relationship graph is available.
 const BASE = {
   root: [0, 0],
-  spouse: [2.55, 0.12],
-  sibling: [-2.55, 0.12],
+  spouse: [2.08, 0.10],
+  sibling: [-2.08, 0.10],
 };
 
 export function layoutSample(people, radius) {
@@ -23,16 +26,16 @@ export function layoutSample(people, radius) {
   });
 
   parents.forEach(person => {
-    const x = person.branch === 'paternal' ? -1.72 : 1.72;
-    place(person, x, 2.55);
+    const x = person.branch === 'paternal' ? -1.46 : 1.46;
+    place(person, x, 2.18);
   });
 
   grandparents.forEach(person => {
     const paternal = person.branch === 'paternal';
     const branchGrandparents = grandparents.filter(p => p.branch === person.branch);
     const sideIndex = branchGrandparents.indexOf(person);
-    const x = (paternal ? -1 : 1) * (1.35 + sideIndex * 2.2);
-    place(person, x, 4.85);
+    const x = (paternal ? -1 : 1) * (1.18 + sideIndex * 1.88);
+    place(person, x, 4.05);
   });
 
   const siblingGroups = new Map();
@@ -47,16 +50,16 @@ export function layoutSample(people, radius) {
     const anchorXY = coordinates.get(anchor.id);
     const outward = anchor.branch === 'paternal' ? -1 : 1;
     const columns = Math.min(group.length, group.length > 9 ? 7 : 6);
-    const rowGap = 1.28;
-    const columnGap = 1.18;
+    const rowGap = 1.08;
+    const columnGap = 1.00;
 
     group.forEach((person, index) => {
       const row = Math.floor(index / columns);
       const col = index % columns;
       const rowCount = Math.min(columns, group.length - row * columns);
-      const offset = (col + 1) * columnGap + (rowCount < columns ? (columns - rowCount) * columnGap * 0.18 : 0);
+      const offset = (col + 1) * columnGap + (rowCount < columns ? (columns - rowCount) * columnGap * 0.16 : 0);
       const x = anchorXY.x + outward * offset;
-      const y = anchorXY.y + 1.48 + row * rowGap;
+      const y = anchorXY.y + 1.22 + row * rowGap;
       place(person, x, y);
     });
   });

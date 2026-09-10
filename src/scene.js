@@ -13,9 +13,9 @@ import { layoutSample } from './layout.js';
 
 const POPULATION = 9099;
 const PLAQUE = { width: 1, height: 0.86 };
-const RADIUS = Math.max(40, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
-const HOME_PITCH = 0.18;
-const DEFAULT_GAP = 6.5;
+const RADIUS = Math.max(50, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
+const HOME_PITCH = 0.15;
+const DEFAULT_GAP = 6.2;
 const MIN_GAP = 4;
 const MAX_GAP = 24;
 
@@ -98,7 +98,7 @@ export class GlobeScene {
     });
     this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
-      this.cameraGap = clamp(this.cameraGap + Math.sign(event.deltaY) * 1.25, MIN_GAP, MAX_GAP);
+      this.cameraGap = clamp(this.cameraGap + Math.sign(event.deltaY) * 1.15, MIN_GAP, MAX_GAP);
       this.requestDraw();
     }, { passive: false });
   }
@@ -155,27 +155,58 @@ export class GlobeScene {
     const ctx = this.ctx;
     ctx.save();
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
     MAP_PATHS.forEach((path, index) => {
-      const points = path.map(([x, y]) => {
-        const local = tangentPoint(x, y, RADIUS);
-        const unit = rotatePoint(local, this.yaw, this.pitch);
-        const q = projectSpherePoint(unit, camera, RADIUS);
-        return isVisible(unit, q) ? q : null;
-      });
-      ctx.strokeStyle = index < 4 ? 'rgba(73,49,28,.32)' : 'rgba(73,49,28,.19)';
-      ctx.lineWidth = index < 4 ? 1.35 : 0.8;
+      const points = this.projectMapPath(path, camera);
+      ctx.strokeStyle = 'rgba(79,50,26,.14)';
+      ctx.lineWidth = index < 4 ? 3.4 : 2.1;
+      strokeSegments(ctx, points);
+      ctx.strokeStyle = index < 4 ? 'rgba(70,43,22,.62)' : 'rgba(70,43,22,.36)';
+      ctx.lineWidth = index < 4 ? 1.45 : 0.85;
       strokeSegments(ctx, points);
     });
+
+    MAP_HACHURES.forEach(path => {
+      ctx.strokeStyle = 'rgba(76,48,25,.22)';
+      ctx.lineWidth = 0.62;
+      strokeSegments(ctx, this.projectMapPath(path, camera));
+    });
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'italic 11px Georgia, serif';
+    ctx.fillStyle = 'rgba(67,42,22,.34)';
+    MAP_LABELS.forEach(label => {
+      const local = tangentPoint(label.x, label.y, RADIUS);
+      const unit = rotatePoint(local, this.yaw, this.pitch);
+      const projected = projectSpherePoint(unit, camera, RADIUS);
+      if (!isVisible(unit, projected)) return;
+      ctx.save();
+      ctx.translate(projected.x, projected.y);
+      ctx.rotate(label.rotation || 0);
+      ctx.fillText(label.text, 0, 0);
+      ctx.restore();
+    });
     ctx.restore();
+  }
+
+  projectMapPath(path, camera) {
+    return path.map(([x, y]) => {
+      const local = tangentPoint(x, y, RADIUS);
+      const unit = rotatePoint(local, this.yaw, this.pitch);
+      const q = projectSpherePoint(unit, camera, RADIUS);
+      return isVisible(unit, q) ? q : null;
+    });
   }
 
   drawGrid(camera) {
     const ctx = this.ctx;
     ctx.save();
-    ctx.strokeStyle = 'rgba(91,61,36,.10)';
-    ctx.lineWidth = 0.65;
-    for (let x = -22; x <= 22; x += 4) this.drawSurfacePolyline([[x, -18], [x, 18]], camera);
-    for (let y = -18; y <= 18; y += 4) this.drawSurfacePolyline([[-24, y], [24, y]], camera);
+    ctx.strokeStyle = 'rgba(91,61,36,.11)';
+    ctx.lineWidth = 0.62;
+    for (let x = -24; x <= 24; x += 4) this.drawSurfacePolyline([[x, -20], [x, 20]], camera);
+    for (let y = -20; y <= 20; y += 4) this.drawSurfacePolyline([[-26, y], [26, y]], camera);
     ctx.restore();
   }
 
@@ -195,7 +226,7 @@ export class GlobeScene {
     const b = this.surfaceXY(this.positions.get(bId));
     if (!a || !b) return;
     const y = (a.y + b.y) / 2;
-    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.6, 'rgba(69,45,27,.82)');
+    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.65, 'rgba(63,39,22,.88)');
   }
 
   drawDescent(parentIds, childId, camera) {
@@ -205,7 +236,7 @@ export class GlobeScene {
     if (!child || !parents.length) return;
     const source = averagePoint(parents);
     const bendY = source.y + (child.y - source.y) * 0.48;
-    this.drawSurfacePolyline([[source.x, source.y], [source.x, bendY], [child.x, bendY], [child.x, child.y]], camera, 1.7, 'rgba(69,45,27,.86)');
+    this.drawSurfacePolyline([[source.x, source.y], [source.x, bendY], [child.x, bendY], [child.x, child.y]], camera, 1.78, 'rgba(63,39,22,.90)');
   }
 
   drawSiblingGroup(parentIds, childIds, camera) {
@@ -219,10 +250,10 @@ export class GlobeScene {
     const minX = Math.min(...children.map(point => point.x));
     const maxX = Math.max(...children.map(point => point.x));
 
-    this.drawSurfacePolyline([[source.x, source.y], [source.x, railY]], camera, 1.7, 'rgba(69,45,27,.86)');
-    this.drawSurfacePolyline([[minX, railY], [maxX, railY]], camera, 1.55, 'rgba(69,45,27,.82)');
+    this.drawSurfacePolyline([[source.x, source.y], [source.x, railY]], camera, 1.78, 'rgba(63,39,22,.90)');
+    this.drawSurfacePolyline([[minX, railY], [maxX, railY]], camera, 1.62, 'rgba(63,39,22,.86)');
     children.forEach(child => {
-      this.drawSurfacePolyline([[child.x, railY], [child.x, child.y]], camera, 1.45, 'rgba(69,45,27,.78)');
+      this.drawSurfacePolyline([[child.x, railY], [child.x, child.y]], camera, 1.48, 'rgba(63,39,22,.82)');
     });
   }
 
@@ -282,13 +313,13 @@ export class GlobeScene {
     if (apparentWidth < 8) return;
     const ctx = this.ctx;
     ctx.save();
-    ctx.globalAlpha = clamp((apparentWidth - 7) / 55, 0.10, 1);
+    ctx.globalAlpha = clamp((apparentWidth - 7) / 48, 0.13, 1);
     const a = frame.xAxis.x / (tex.width / 2);
     const b = frame.xAxis.y / (tex.width / 2);
     const c = frame.yAxis.x / (tex.height / 2);
     const d = frame.yAxis.y / (tex.height / 2);
     ctx.setTransform(camera.dpr * a, camera.dpr * b, camera.dpr * c, camera.dpr * d, camera.dpr * frame.center.x, camera.dpr * frame.center.y);
-    if (apparentWidth >= 48) ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
+    if (apparentWidth >= 44) ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
     else drawMiniMedallion(ctx, tex.width, tex.height);
     ctx.restore();
     this.hitAreas.push({ id: person.id, x: frame.center.x, y: frame.center.y, r: Math.max(12, Math.max(xLen, yLen) * 1.35), z: frame.center.z });
@@ -339,16 +370,16 @@ function drawBackdrop(ctx, w, h) {
   ctx.fillRect(0, 0, w, h);
 
   ctx.save();
-  ctx.globalAlpha = 0.09;
+  ctx.globalAlpha = 0.07;
   ctx.strokeStyle = '#f1deb1';
-  ctx.lineWidth = 0.55;
-  for (let i = 0; i < 42; i += 1) {
-    const y = hash(i * 31 + 5) * Math.min(h * 0.34, 280);
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < 30; i += 1) {
+    const y = hash(i * 31 + 5) * Math.min(h * 0.30, 250);
     const x = hash(i * 17 + 9) * w;
-    const len = 28 + hash(i * 23 + 4) * 110;
+    const len = 24 + hash(i * 23 + 4) * 90;
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineTo(Math.min(w, x + len), y + (hash(i * 13 + 7) - 0.5) * 8);
+    ctx.lineTo(Math.min(w, x + len), y + (hash(i * 13 + 7) - 0.5) * 7);
     ctx.stroke();
   }
   ctx.restore();
@@ -356,32 +387,38 @@ function drawBackdrop(ctx, w, h) {
 
 function drawSphere(ctx, camera, radius) {
   const pr = apparentSphereRadius(camera, radius);
-  const g = ctx.createRadialGradient(camera.cx - pr * 0.18, camera.cy - pr * 0.40, pr * 0.08, camera.cx, camera.cy, pr);
-  g.addColorStop(0, '#efd9a6');
-  g.addColorStop(0.50, '#d2ae73');
-  g.addColorStop(0.82, '#916b43');
-  g.addColorStop(1, '#4c3726');
+  const g = ctx.createRadialGradient(camera.cx - pr * 0.15, camera.cy - pr * 0.34, pr * 0.08, camera.cx, camera.cy, pr);
+  g.addColorStop(0, '#f0dcad');
+  g.addColorStop(0.52, '#d5b47b');
+  g.addColorStop(0.83, '#987148');
+  g.addColorStop(1, '#503a28');
   ctx.save();
-  ctx.shadowColor = 'rgba(45,29,18,.48)';
-  ctx.shadowBlur = 52;
+  ctx.shadowColor = 'rgba(45,29,18,.42)';
+  ctx.shadowBlur = 46;
   ctx.fillStyle = g;
   ctx.beginPath(); ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(248,224,166,.62)';
-  ctx.lineWidth = 2.1;
+  ctx.strokeStyle = 'rgba(248,224,166,.64)';
+  ctx.lineWidth = 2.0;
   ctx.stroke();
   ctx.restore();
 }
 
 function drawMiniMedallion(ctx, w, h) {
-  const rx = w * 0.17, ry = h * 0.22;
+  const rx = w * 0.18, ry = h * 0.235;
   ctx.fillStyle = '#684728';
-  ctx.beginPath(); ctx.ellipse(0, -h * 0.03, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#b58a4c'; ctx.lineWidth = w * 0.011; ctx.stroke();
-  const glass = ctx.createRadialGradient(-rx * 0.55, -ry * 0.8, 0, 0, 0, rx * 1.4);
-  glass.addColorStop(0, 'rgba(255,250,224,.50)');
-  glass.addColorStop(0.25, 'rgba(255,255,255,.10)');
-  glass.addColorStop(1, 'rgba(20,12,7,.20)');
+  ctx.beginPath(); ctx.ellipse(0, -h * 0.035, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#c69a4b'; ctx.lineWidth = w * 0.012; ctx.stroke();
+  const glass = ctx.createRadialGradient(-rx * 0.55, -ry * 0.78, 0, 0, 0, rx * 1.42);
+  glass.addColorStop(0, 'rgba(255,253,231,.62)');
+  glass.addColorStop(0.23, 'rgba(255,255,255,.13)');
+  glass.addColorStop(0.72, 'rgba(255,255,255,.015)');
+  glass.addColorStop(1, 'rgba(20,12,7,.30)');
   ctx.fillStyle = glass; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,248,222,.50)';
+  ctx.lineWidth = w * 0.004;
+  ctx.beginPath();
+  ctx.ellipse(-rx * 0.12, -ry * 0.16, rx * 0.62, ry * 0.68, -0.16, Math.PI * 1.08, Math.PI * 1.58);
+  ctx.stroke();
 }
 
 function uniquePairs(links) {
@@ -422,6 +459,21 @@ function shortestAngle(from, to) {
 }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 function hash(value) { const x = Math.sin(value * 12.9898) * 43758.5453; return x - Math.floor(x); }
+
+const MAP_LABELS = [
+  { text: 'NORTH ATLANTIC', x: -7, y: 8, rotation: -0.08 },
+  { text: 'EUROPE', x: 7.5, y: 8.5, rotation: 0.04 },
+  { text: 'AFRICA', x: 5.5, y: -1.5, rotation: 0.03 },
+  { text: 'AMERICA', x: -14, y: 1.8, rotation: -0.12 },
+];
+
+const MAP_HACHURES = [
+  [[-18,10],[-17.4,9.3]], [[-16.8,9.2],[-16.1,8.4]], [[-14.6,7.7],[-13.8,7.0]],
+  [[-10,4.8],[-9.3,4.0]], [[-8.5,1.8],[-7.8,1.0]], [[-7,-3.0],[-6.2,-3.8]],
+  [[8.5,12.4],[9.1,11.6]], [[10.5,11.5],[11.1,10.6]], [[12.6,9.8],[13.2,8.9]],
+  [[7.8,4.2],[8.5,3.4]], [[6.3,1.2],[7.0,0.4]], [[4.8,-3.0],[5.5,-3.8]],
+  [[-1.2,10.4],[-0.5,9.7]], [[1.0,9.5],[1.6,8.8]], [[2.4,7.4],[3.0,6.8]],
+];
 
 const MAP_PATHS = [
   [[-21,11],[-19,12],[-17,11],[-16,9],[-14,8],[-13,6],[-11,5],[-9,3],[-8,1],[-9,-2],[-7,-4],[-5,-6],[-3,-7],[-2,-10]],

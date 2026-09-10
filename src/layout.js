@@ -2,30 +2,37 @@ import { tangentPoint } from './geometry.js';
 
 const BASE = {
   root: [0, 0],
-  spouse: [3.2, 0.2],
-  sibling: [-3.2, 0.2],
+  spouse: [2.55, 0.12],
+  sibling: [-2.55, 0.12],
 };
 
 export function layoutSample(people, radius) {
   const positions = new Map();
+  const coordinates = new Map();
   const grandparents = people.filter(p => p.role === 'grandparent');
   const parents = people.filter(p => p.role === 'parent');
 
+  const place = (person, x, y) => {
+    coordinates.set(person.id, { x, y });
+    positions.set(person.id, tangentPoint(x, y, radius));
+  };
+
   people.forEach(person => {
     const fixed = BASE[person.role];
-    if (fixed) positions.set(person.id, tangentPoint(fixed[0], fixed[1], radius));
+    if (fixed) place(person, fixed[0], fixed[1]);
   });
 
   parents.forEach(person => {
-    const x = person.branch === 'paternal' ? -2.25 : 2.25;
-    positions.set(person.id, tangentPoint(x, 3.25, radius));
+    const x = person.branch === 'paternal' ? -1.72 : 1.72;
+    place(person, x, 2.55);
   });
 
   grandparents.forEach(person => {
     const paternal = person.branch === 'paternal';
-    const sideIndex = grandparents.filter(p => p.branch === person.branch).indexOf(person);
-    const x = (paternal ? -1 : 1) * (1.7 + sideIndex * 2.65);
-    positions.set(person.id, tangentPoint(x, 6.35, radius));
+    const branchGrandparents = grandparents.filter(p => p.branch === person.branch);
+    const sideIndex = branchGrandparents.indexOf(person);
+    const x = (paternal ? -1 : 1) * (1.35 + sideIndex * 2.2);
+    place(person, x, 4.85);
   });
 
   const siblingGroups = new Map();
@@ -37,17 +44,21 @@ export function layoutSample(people, radius) {
   siblingGroups.forEach((group, cluster) => {
     const anchor = grandparents.find(person => person.cluster === cluster);
     if (!anchor) return;
-    const anchorUnit = positions.get(anchor.id);
-    const side = anchor.branch === 'paternal' ? -1 : 1;
+    const anchorXY = coordinates.get(anchor.id);
+    const outward = anchor.branch === 'paternal' ? -1 : 1;
+    const columns = Math.min(group.length, group.length > 9 ? 7 : 6);
+    const rowGap = 1.28;
+    const columnGap = 1.18;
+
     group.forEach((person, index) => {
-      const row = Math.floor(index / 5);
-      const col = index % 5;
-      const spread = (col - Math.min(4, group.length - 1) / 2) * 1.45;
-      const x = side * 5.6 + spread;
-      const y = 8.8 + row * 1.55;
-      positions.set(person.id, tangentPoint(x, y, radius));
+      const row = Math.floor(index / columns);
+      const col = index % columns;
+      const rowCount = Math.min(columns, group.length - row * columns);
+      const offset = (col + 1) * columnGap + (rowCount < columns ? (columns - rowCount) * columnGap * 0.18 : 0);
+      const x = anchorXY.x + outward * offset;
+      const y = anchorXY.y + 1.48 + row * rowGap;
+      place(person, x, y);
     });
-    positions.set(anchor.id, anchorUnit);
   });
 
   return positions;

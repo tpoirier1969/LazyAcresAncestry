@@ -12,6 +12,7 @@ const scaleReadout = document.getElementById('scaleReadout');
 const homePersonBtn = document.getElementById('homePersonBtn');
 const rail = document.querySelector('.rail');
 const scene = new GlobeScene(canvas, selectPerson);
+const NOTE_AUTHOR_KEY = 'lazy_acres_ancestry_note_author';
 
 let family = { people: [], relationships: [] };
 let byId = new Map();
@@ -89,13 +90,14 @@ function selectPerson(id, options = {}) {
 
 function showPerson(person) {
   const photoCount = person.photo ? 1 : 0;
+  const noteCount = readNotes(person.id).length;
   details.innerHTML = `
     <button class="panel-close" id="personCloseInner" aria-label="Close person details">×</button>
     <div class="panel-kicker">FOCUSED PERSON</div>
     <h2>${escapeHtml(person.name)}</h2>
     <div class="panel-actions">
       <button type="button" id="galleryBtn">Photos${photoCount ? ` (${photoCount})` : ''}</button>
-      <button type="button" id="notesBtn">Notes</button>
+      <button type="button" id="notesBtn">Notes${noteCount ? ` (${noteCount})` : ''}</button>
     </div>
     <dl>
       <div><dt>Born</dt><dd>${escapeHtml(person.birth?.date || 'Unknown')}<br>${escapeHtml(person.birth?.place || '')}</dd></div>
@@ -103,7 +105,7 @@ function showPerson(person) {
       <div><dt>Relationship distance</dt><dd>${formatDistance(distances.get(person.id))}</dd></div>
       <div><dt>GEDCOM</dt><dd>${escapeHtml(person.id)}</dd></div>
     </dl>
-    ${person.note ? `<p class="data-note">${escapeHtml(person.note)}</p>` : ''}
+    ${person.note ? `<p class="data-note"><strong>Data-quality note:</strong> ${escapeHtml(person.note)}</p>` : ''}
     <p class="panel-note">Click another person to rotate that branch into the viewing apex. <strong>Return to Tod</strong> always restores the home view.</p>`;
   openPanel();
   document.getElementById('galleryBtn').addEventListener('click', () => showGallery(person));
@@ -122,21 +124,90 @@ function showGallery(person) {
 }
 
 function showNotes(person) {
-  const key = noteKey(person.id);
-  const note = localStorage.getItem(key) || '';
+  const notes = readNotes(person.id).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  const savedAuthor = localStorage.getItem(NOTE_AUTHOR_KEY) || '';
   details.innerHTML = `
     <button class="panel-close" id="personCloseInner" aria-label="Close notes">×</button>
     <div class="panel-kicker">FAMILY NOTES</div>
     <h2>${escapeHtml(person.name)}</h2>
-    <label class="notes-field">Notes<textarea id="personNotes" rows="10" placeholder="Add research notes, family stories, corrections, or questions…">${escapeHtml(note)}</textarea></label>
-    <div class="notes-actions"><button type="button" id="saveNotes">Save notes</button><button class="text-action" type="button" id="backToPerson">Back</button></div>
-    <p class="microcopy">Prototype notes are saved in this browser only. The production version will use the project-specific Supabase ancestry tables.</p>`;
+    <div class="note-history">
+      ${notes.length ? notes.map(renderNoteCard).join('') : '<p class="empty-copy">No family notes have been saved for this person yet.</p>'}
+    </div>
+    <div class="note-entry">
+      <div class="note-entry-title">Add a note</div>
+      <label class="notes-author">Author<input id="noteAuthor" type="text" maxlength="80" autocomplete="name" placeholder="Your name" value="${escapeHtml(savedAuthor)}"></label>
+      <label class="notes-field">Note<textarea id="personNotes" rows="6" placeholder="Add research notes, family stories, corrections, or questions…"></textarea></label>
+      <div class="notes-actions"><button type="button" id="saveNotes">Save note</button><button class="text-action" type="button" id="backToPerson">Back</button></div>
+      <p class="note-status" id="noteStatus" role="status" aria-live="polite"></p>
+    </div>
+    <p class="microcopy">Each note is saved as a separate dated entry in this browser. Cross-device note storage will move to the project-specific ancestry data store.</p>`;
   openPanel();
-  document.getElementById('saveNotes').addEventListener('click', () => {
-    localStorage.setItem(key, document.getElementById('personNotes').value);
-    document.getElementById('saveNotes').textContent = 'Saved';
-  });
+  document.getElementById('saveNotes').addEventListener('click', () => saveNote(person));
   document.getElementById('backToPerson').addEventListener('click', () => showPerson(person));
+}
+
+function saveNote(person) {
+  const authorInput = document.getElementById('noteAuthor');
+  const bodyInput = document.getElementById('personNotes');
+  const status = document.getElementById('noteStatus');
+  const author = authorInput.value.trim();
+  const body = bodyInput.value.trim();
+
+  if (!author) {
+    status.textContent = 'Enter an author name before saving.';
+    authorInput.focus();
+    return;
+  }
+  if (!body) {
+    status.textContent = 'Enter a note before saving.';
+    bodyInput.focus();
+    return;
+  }
+
+  const notes = readNotes(person.id);
+  notes.push({
+    id: typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    author,
+    body,
+    createdAt: new Date().toISOString(),
+  });
+  writeNotes(person.id, notes);
+  localStorage.setItem(NOTE_AUTHOR_KEY, author);
+  showNotes(person);
+}
+
+function renderNoteCard(note) {
+  const stamp = note.createdAt ? new Date(note.createdAt) : null;
+  const validStamp = stamp && !Number.isNaN(stamp.valueOf());
+  const date = validStamp ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(stamp) : 'Date unavailable';
+  const time = validStamp ? new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(stamp) : 'Time unavailable';
+  return `<article class="note-card">
+    <div class="note-meta"><strong>${escapeHtml(note.author || 'Unknown author')}</strong><span>${escapeHtml(date)} · ${escapeHtml(time)}</span></div>
+    <div class="note-body">${escapeHtml(note.body || '')}</div>
+  </article>`;
+}
+
+function readNotes(personId) {
+  const key = notesKey(personId);
+  const stored = localStorage.getItem(key);
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) return parsed.filter(note => note && typeof note === 'object');
+    } catch {
+      // If structured note data is damaged, preserve any legacy note below.
+    }
+  }
+
+  const legacy = localStorage.getItem(legacyNoteKey(personId));
+  if (!legacy) return [];
+  const migrated = [{ id: `legacy-${personId}`, author: 'Previous browser note', body: legacy, createdAt: null }];
+  writeNotes(personId, migrated);
+  return migrated;
+}
+
+function writeNotes(personId, notes) {
+  localStorage.setItem(notesKey(personId), JSON.stringify(notes));
 }
 
 function showPeopleIndex() {
@@ -147,7 +218,7 @@ function showPeopleIndex() {
     <h2>Family index</h2>
     <div class="people-filters">
       <label>Family side<select id="filterSide"><option value="all">All sides</option><option value="paternal">Paternal</option><option value="maternal">Maternal</option><option value="center">Immediate / spouse</option></select></label>
-      <label>Century<select id="filterCentury"><option value="all">All centuries</option>${centuries.map(c => `<option value="${c}">${c}th century</option>`).join('')}</select></label>
+      <label>Century<select id="filterCentury"><option value="all">All centuries</option>${centuries.map(c => `<option value="${c}">${ordinal(c)} century</option>`).join('')}</select></label>
       <label>Relation distance<select id="filterDistance"><option value="all">Any distance</option><option value="0">Home person</option><option value="1">1 step</option><option value="2">2 steps</option><option value="3">3 steps</option><option value="4+">4+ steps</option></select></label>
       <label>Name<input id="filterName" type="search" placeholder="Filter names"></label>
     </div>
@@ -197,36 +268,46 @@ function openPanel() {
 function computeDistances(rootId) {
   const graph = new Map(family.people.map(person => [person.id, new Set()]));
   family.relationships.forEach(link => {
-    graph.get(link.from)?.add(link.to);
-    graph.get(link.to)?.add(link.from);
-  });
-  const clusters = new Map();
-  family.people.filter(p => p.cluster).forEach(person => {
-    if (!clusters.has(person.cluster)) clusters.set(person.cluster, []);
-    clusters.get(person.cluster).push(person.id);
-  });
-  clusters.forEach(ids => {
-    const anchor = ids.find(id => byId.get(id)?.role === 'grandparent') || ids[0];
-    ids.forEach(id => { if (id !== anchor) { graph.get(anchor)?.add(id); graph.get(id)?.add(anchor); } });
+    if (!graph.has(link.from) || !graph.has(link.to)) return;
+    graph.get(link.from).add(link.to);
+    graph.get(link.to).add(link.from);
   });
   const result = new Map();
   if (!rootId) return result;
-  const queue = [rootId]; result.set(rootId, 0);
+  const queue = [rootId];
+  result.set(rootId, 0);
   for (let i = 0; i < queue.length; i += 1) {
     const id = queue[i];
-    for (const next of graph.get(id) || []) if (!result.has(next)) { result.set(next, result.get(id) + 1); queue.push(next); }
+    for (const next of graph.get(id) || []) {
+      if (result.has(next)) continue;
+      result.set(next, result.get(id) + 1);
+      queue.push(next);
+    }
   }
   return result;
 }
 
-function yearFrom(value = '') { return value.match(/(?:^|\D)(\d{4})(?:\D|$)/)?.[1] || ''; }
+function yearFrom(value = '') {
+  const fourDigit = String(value).match(/(?:^|\D)(\d{4})(?:\D|$)/)?.[1];
+  if (fourDigit) return fourDigit;
+  const shortDate = String(value).match(/\b\d{1,2}[\/-]\d{1,2}[\/-](\d{2})\b/);
+  if (!shortDate) return '';
+  const year = Number(shortDate[1]);
+  return String(year <= 30 ? 2000 + year : 1900 + year);
+}
 function centuryFrom(value = '') { const y = Number(yearFrom(value)); return y ? Math.floor((y - 1) / 100) + 1 : null; }
+function ordinal(value) {
+  const mod100 = value % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
+  return `${value}${value % 10 === 1 ? 'st' : value % 10 === 2 ? 'nd' : value % 10 === 3 ? 'rd' : 'th'}`;
+}
 function formatDistance(value, short = false) {
-  if (!Number.isFinite(value)) return 'Not calculated';
+  if (!Number.isFinite(value)) return short ? 'connection unavailable' : 'Connection not available in current sample';
   if (value === 0) return short ? 'home' : 'Home person';
   return `${value} ${value === 1 ? 'step' : 'steps'} from Tod`;
 }
-function noteKey(id) { return `lazy_acres_ancestry_note_${id}`; }
+function notesKey(id) { return `lazy_acres_ancestry_notes_v2_${id}`; }
+function legacyNoteKey(id) { return `lazy_acres_ancestry_note_${id}`; }
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 }

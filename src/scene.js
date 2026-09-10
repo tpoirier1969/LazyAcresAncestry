@@ -1,8 +1,8 @@
 import {
   apparentSphereRadius,
   isVisible,
+  projectedRaisedFrame,
   projectSpherePoint,
-  projectedTangentFrame,
   requiredSphereRadius,
   rotatePoint,
   tangentPoint,
@@ -10,26 +10,16 @@ import {
 } from './geometry.js';
 import { plaqueTexture } from './plaque.js';
 import { layoutSample } from './layout.js';
-import {
-  ATLAS_COMPASS,
-  ATLAS_DETAIL_PATHS,
-  ATLAS_HACHURES,
-  ATLAS_ISLANDS,
-  ATLAS_LABELS,
-  ATLAS_LANDMASSES,
-  ATLAS_MOUNTAINS,
-  ATLAS_RHUMB_LINES,
-  ATLAS_RIVERS,
-  ATLAS_SHIP,
-} from './atlas-map.js';
+import { atlasTexturePlacement, getAtlasTexture } from './atlas-map.js';
 
 const POPULATION = 9099;
 const PLAQUE = { width: 1, height: 0.86 };
-const RADIUS = Math.max(50, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
+const RADIUS = Math.max(78, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
 const HOME_PITCH = 0.15;
 const DEFAULT_GAP = 6.2;
 const MIN_GAP = 4;
 const MAX_GAP = 24;
+const PLAQUE_CAMERA_FACING = 0.20;
 
 export class GlobeScene {
   constructor(canvas, onSelect) {
@@ -51,6 +41,7 @@ export class GlobeScene {
     this.motionFrame = null;
     this.focusFrame = null;
     this.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.atlasTexture = getAtlasTexture(() => this.requestDraw());
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
     window.addEventListener('ancestry-photo-loaded', () => this.requestDraw());
@@ -107,8 +98,8 @@ export class GlobeScene {
       const dx = event.clientX - this.drag.x;
       const dy = event.clientY - this.drag.y;
       if (Math.hypot(dx, dy) > 3) this.drag.moved = true;
-      this.targetYaw = this.drag.yaw - dx * 0.003;
-      this.targetPitch = clamp(this.drag.pitch - dy * 0.003, -0.95, 1.25);
+      this.targetYaw = this.drag.yaw - dx * 0.0027;
+      this.targetPitch = clamp(this.drag.pitch - dy * 0.0027, -0.95, 1.25);
       if (this.reduceMotion) {
         this.yaw = this.targetYaw;
         this.pitch = this.targetPitch;
@@ -124,7 +115,8 @@ export class GlobeScene {
     this.canvas.addEventListener('pointercancel', () => { this.drag = null; });
     this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
-      this.targetCameraGap = clamp(this.targetCameraGap + Math.sign(event.deltaY) * 1.15, MIN_GAP, MAX_GAP);
+      const delta = Math.sign(event.deltaY) * 0.82;
+      this.targetCameraGap = clamp(this.targetCameraGap + delta, MIN_GAP, MAX_GAP);
       if (this.reduceMotion) {
         this.cameraGap = this.targetCameraGap;
         this.requestDraw();
@@ -140,11 +132,11 @@ export class GlobeScene {
       const yawDelta = shortestAngle(this.yaw, this.targetYaw);
       const pitchDelta = this.targetPitch - this.pitch;
       const gapDelta = this.targetCameraGap - this.cameraGap;
-      this.yaw += yawDelta * 0.24;
-      this.pitch += pitchDelta * 0.24;
-      this.cameraGap += gapDelta * 0.22;
+      this.yaw += yawDelta * 0.20;
+      this.pitch += pitchDelta * 0.20;
+      this.cameraGap += gapDelta * 0.18;
 
-      const settled = Math.abs(yawDelta) < 0.00035 && Math.abs(pitchDelta) < 0.00035 && Math.abs(gapDelta) < 0.01;
+      const settled = Math.abs(yawDelta) < 0.0003 && Math.abs(pitchDelta) < 0.0003 && Math.abs(gapDelta) < 0.008;
       if (settled) {
         this.yaw = this.targetYaw;
         this.pitch = this.targetPitch;
@@ -195,7 +187,7 @@ export class GlobeScene {
     const from = { yaw: this.yaw, pitch: this.pitch };
     const start = performance.now();
     const tick = now => {
-      const t = Math.min(1, (now - start) / 650);
+      const t = Math.min(1, (now - start) / 720);
       const eased = t * t * (3 - 2 * t);
       this.yaw = from.yaw + shortestAngle(from.yaw, target.yaw) * eased;
       this.pitch = from.pitch + (target.pitch - from.pitch) * eased;
@@ -224,158 +216,49 @@ export class GlobeScene {
     const h = this.canvas.height / dpr;
     ctx.clearRect(0, 0, w, h);
     drawBackdrop(ctx, w, h);
-    drawSphere(ctx, camera, RADIUS);
-    this.drawMap(camera);
-    this.drawGrid(camera);
+    drawSphereBase(ctx, camera, RADIUS);
+    this.drawMapTexture(camera);
+    drawSphereShade(ctx, camera, RADIUS);
     this.drawRelationships(camera);
     this.drawPeople(camera);
   }
 
-  drawMap(camera) {
+  drawMapTexture(camera) {
+    const image = this.atlasTexture;
+    if (!image?.complete || !image.naturalWidth) return;
     const ctx = this.ctx;
+    const pr = apparentSphereRadius(camera, RADIUS);
+    const placement = atlasTexturePlacement({
+      yaw: this.yaw,
+      pitch: this.pitch,
+      sphereRadius: pr,
+      imageWidth: image.naturalWidth,
+      imageHeight: image.naturalHeight,
+    });
+    const sphereTop = camera.cy - pr;
+    const sphereLeft = camera.cx - pr;
+    const sphereRight = camera.cx + pr;
+    const sphereBottom = camera.cy + pr;
+    const mapTop = sphereTop - placement.height * 0.08 + placement.yShift;
+    let firstX = camera.cx - placement.width / 2 + placement.xShift;
+    while (firstX > sphereLeft) firstX -= placement.width;
+    while (firstX + placement.width < sphereLeft) firstX += placement.width;
+
     ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    ATLAS_LANDMASSES.forEach(path => {
-      const points = this.projectMapPath(path, camera, 5);
-      fillProjectedPolygon(ctx, points, 'rgba(79,50,25,.075)');
-      ctx.strokeStyle = 'rgba(242,218,165,.16)';
-      ctx.lineWidth = 3.4;
-      strokeSegments(ctx, points);
-      ctx.strokeStyle = 'rgba(61,38,20,.58)';
-      ctx.lineWidth = 1.18;
-      strokeSegments(ctx, points);
-    });
-
-    ATLAS_ISLANDS.forEach(path => {
-      const points = this.projectMapPath(path, camera, 4);
-      fillProjectedPolygon(ctx, points, 'rgba(75,47,24,.09)');
-      ctx.strokeStyle = 'rgba(66,41,21,.50)';
-      ctx.lineWidth = 0.95;
-      strokeSegments(ctx, points);
-    });
-
-    ATLAS_DETAIL_PATHS.forEach(path => {
-      ctx.strokeStyle = 'rgba(67,42,22,.31)';
-      ctx.lineWidth = 0.72;
-      strokeSegments(ctx, this.projectMapPath(path, camera, 4));
-    });
-
-    ATLAS_RIVERS.forEach(path => {
-      ctx.strokeStyle = 'rgba(74,52,35,.34)';
-      ctx.lineWidth = 0.78;
-      strokeSegments(ctx, this.projectMapPath(path, camera, 5));
-    });
-
-    ctx.setLineDash([5, 6]);
-    ATLAS_RHUMB_LINES.forEach(path => {
-      ctx.strokeStyle = 'rgba(64,41,23,.20)';
-      ctx.lineWidth = 0.72;
-      strokeSegments(ctx, this.projectMapPath(path, camera, 4));
-    });
-    ctx.setLineDash([]);
-
-    ATLAS_HACHURES.forEach(path => {
-      ctx.strokeStyle = 'rgba(73,45,23,.28)';
-      ctx.lineWidth = 0.68;
-      strokeSegments(ctx, this.projectMapPath(path, camera, 3));
-    });
-
-    ATLAS_MOUNTAINS.forEach(mountain => this.drawMountain(mountain, camera));
-    this.drawCompassRose(ATLAS_COMPASS, camera);
-    this.drawShip(ATLAS_SHIP, camera);
-
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(58,37,21,.46)';
-    ATLAS_LABELS.forEach(label => {
-      const projected = this.projectAtlasPoint(label.x, label.y, camera);
-      if (!projected) return;
-      ctx.save();
-      ctx.translate(projected.x, projected.y);
-      ctx.rotate(label.rotation || 0);
-      ctx.font = `italic ${label.size || 12}px Georgia, serif`;
-      ctx.fillText(label.text, 0, 0);
-      ctx.restore();
-    });
-    ctx.restore();
-  }
-
-  projectMapPath(path, camera, samplesPerSegment = 4) {
-    const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
-    const samples = moving ? Math.max(2, samplesPerSegment - 2) : samplesPerSegment;
-    const sampled = [];
-    for (let segment = 0; segment < path.length - 1; segment += 1) {
-      const a = path[segment];
-      const b = path[segment + 1];
-      for (let i = 0; i <= samples; i += 1) {
-        if (segment > 0 && i === 0) continue;
-        const t = i / samples;
-        const point = this.projectAtlasPoint(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, camera);
-        sampled.push(point);
+    ctx.beginPath();
+    ctx.arc(camera.cx, camera.cy, pr - 1, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = 0.67;
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.imageSmoothingEnabled = true;
+    for (let x = firstX; x < sphereRight; x += placement.width) {
+      for (let y = mapTop; y < sphereBottom; y += placement.height) {
+        ctx.drawImage(image, x, y, placement.width, placement.height);
+      }
+      for (let y = mapTop - placement.height; y + placement.height > sphereTop; y -= placement.height) {
+        ctx.drawImage(image, x, y, placement.width, placement.height);
       }
     }
-    return sampled;
-  }
-
-  projectAtlasPoint(x, y, camera) {
-    const local = tangentPoint(x, y, RADIUS);
-    const unit = rotatePoint(local, this.yaw, this.pitch);
-    const projected = projectSpherePoint(unit, camera, RADIUS);
-    return isVisible(unit, projected) ? projected : null;
-  }
-
-  drawMountain({ x, y, size }, camera) {
-    const stroke = 'rgba(66,41,22,.34)';
-    this.drawSurfacePolyline([[x - size, y - size * .30], [x, y + size], [x + size, y - size * .30]], camera, 0.66, stroke);
-    this.drawSurfacePolyline([[x - size * .44, y + size * .16], [x, y + size * .58], [x + size * .40, y + size * .10]], camera, 0.52, stroke);
-  }
-
-  drawCompassRose({ x, y, size }, camera) {
-    const ring = [];
-    for (let i = 0; i <= 32; i += 1) {
-      const angle = Math.PI * 2 * i / 32;
-      ring.push([x + Math.cos(angle) * size * .72, y + Math.sin(angle) * size * .72]);
-    }
-    this.drawSurfacePolyline(ring, camera, 0.72, 'rgba(61,38,20,.42)');
-    for (let i = 0; i < 8; i += 1) {
-      const angle = Math.PI * 2 * i / 8;
-      const length = size * (i % 2 ? .52 : .95);
-      this.drawSurfacePolyline([[x, y], [x + Math.cos(angle) * length, y + Math.sin(angle) * length]], camera, i % 2 ? 0.55 : 0.82, 'rgba(61,38,20,.48)');
-    }
-    const labels = [
-      ['N', x, y + size * 1.18], ['E', x + size * 1.18, y], ['S', x, y - size * 1.18], ['W', x - size * 1.18, y],
-    ];
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.font = 'italic 10px Georgia, serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(58,37,21,.48)';
-    labels.forEach(([text, px, py]) => {
-      const point = this.projectAtlasPoint(px, py, camera);
-      if (point) ctx.fillText(text, point.x, point.y);
-    });
-    ctx.restore();
-  }
-
-  drawShip({ x, y, size }, camera) {
-    const ink = 'rgba(61,38,20,.40)';
-    this.drawSurfacePolyline([[x - size, y - .15 * size], [x - .62 * size, y - .55 * size], [x + .72 * size, y - .55 * size], [x + size, y - .12 * size], [x - size, y - .15 * size]], camera, 0.76, ink);
-    this.drawSurfacePolyline([[x, y - .5 * size], [x, y + .95 * size]], camera, 0.72, ink);
-    this.drawSurfacePolyline([[x, y + .78 * size], [x - .68 * size, y + .08 * size], [x, y + .08 * size]], camera, 0.66, ink);
-    this.drawSurfacePolyline([[x + .08 * size, y + .66 * size], [x + .72 * size, y + .04 * size], [x + .08 * size, y + .04 * size]], camera, 0.66, ink);
-    this.drawSurfacePolyline([[x - 1.15 * size, y - .78 * size], [x - .55 * size, y - .70 * size], [x, y - .78 * size], [x + .6 * size, y - .70 * size], [x + 1.15 * size, y - .78 * size]], camera, 0.48, 'rgba(61,38,20,.26)');
-  }
-
-  drawGrid(camera) {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(91,61,36,.12)';
-    ctx.lineWidth = 0.62;
-    for (let x = -24; x <= 24; x += 4) this.drawSurfacePolyline([[x, -20], [x, 20]], camera);
-    for (let y = -20; y <= 20; y += 4) this.drawSurfacePolyline([[-26, y], [26, y]], camera);
     ctx.restore();
   }
 
@@ -428,7 +311,7 @@ export class GlobeScene {
 
   drawSurfacePolyline(xyPoints, camera, width = 0.7, stroke = null) {
     const sampled = [];
-    const steps = this.drag || this.motionFrame || this.focusFrame ? 10 : 16;
+    const steps = this.drag || this.motionFrame || this.focusFrame ? 8 : 14;
     for (let segment = 0; segment < xyPoints.length - 1; segment += 1) {
       const a = xyPoints[segment];
       const b = xyPoints[segment + 1];
@@ -474,7 +357,7 @@ export class GlobeScene {
   }
 
   drawPlaque({ person, unit }, camera) {
-    const frame = projectedTangentFrame(unit, camera, RADIUS, PLAQUE.width, PLAQUE.height);
+    const frame = projectedRaisedFrame(unit, camera, RADIUS, PLAQUE.width, PLAQUE.height, PLAQUE_CAMERA_FACING);
     if (!frame) return;
     const tex = plaqueTexture(person);
     const xLen = Math.hypot(frame.xAxis.x, frame.xAxis.y);
@@ -482,14 +365,23 @@ export class GlobeScene {
     const apparentWidth = xLen * 2;
     if (apparentWidth < 8) return;
     const ctx = this.ctx;
+
     ctx.save();
-    ctx.globalAlpha = clamp((apparentWidth - 7) / 48, 0.13, 1);
+    ctx.globalAlpha = clamp((apparentWidth - 7) / 60, 0.08, 0.34);
+    ctx.fillStyle = 'rgba(45,29,15,.55)';
+    ctx.beginPath();
+    ctx.ellipse(frame.anchor.x, frame.anchor.y + 1.5, Math.max(4, xLen * 0.72), Math.max(1.5, yLen * 0.10), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = clamp((apparentWidth - 7) / 44, 0.18, 1);
     const a = frame.xAxis.x / (tex.width / 2);
     const b = frame.xAxis.y / (tex.width / 2);
     const c = frame.yAxis.x / (tex.height / 2);
     const d = frame.yAxis.y / (tex.height / 2);
     ctx.setTransform(camera.dpr * a, camera.dpr * b, camera.dpr * c, camera.dpr * d, camera.dpr * frame.center.x, camera.dpr * frame.center.y);
-    if (apparentWidth >= 44) ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
+    if (apparentWidth >= 38) ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
     else drawMiniMedallion(ctx, tex.width, tex.height);
     ctx.restore();
     this.hitAreas.push({ id: person.id, x: frame.center.x, y: frame.center.y, r: Math.max(12, Math.max(xLen, yLen) * 1.35), z: frame.center.z });
@@ -538,36 +430,33 @@ function drawBackdrop(ctx, w, h) {
   g.addColorStop(1, '#5c4631');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
-
-  ctx.save();
-  ctx.globalAlpha = 0.07;
-  ctx.strokeStyle = '#f1deb1';
-  ctx.lineWidth = 0.5;
-  for (let i = 0; i < 30; i += 1) {
-    const y = hash(i * 31 + 5) * Math.min(h * 0.30, 250);
-    const x = hash(i * 17 + 9) * w;
-    const len = 24 + hash(i * 23 + 4) * 90;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(Math.min(w, x + len), y + (hash(i * 13 + 7) - 0.5) * 7);
-    ctx.stroke();
-  }
-  ctx.restore();
 }
 
-function drawSphere(ctx, camera, radius) {
+function drawSphereBase(ctx, camera, radius) {
   const pr = apparentSphereRadius(camera, radius);
-  const g = ctx.createRadialGradient(camera.cx - pr * 0.15, camera.cy - pr * 0.34, pr * 0.08, camera.cx, camera.cy, pr);
-  g.addColorStop(0, '#f0dcad');
-  g.addColorStop(0.52, '#d5b47b');
-  g.addColorStop(0.83, '#987148');
-  g.addColorStop(1, '#503a28');
   ctx.save();
   ctx.shadowColor = 'rgba(45,29,18,.42)';
   ctx.shadowBlur = 46;
+  ctx.fillStyle = '#dec48d';
+  ctx.beginPath();
+  ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSphereShade(ctx, camera, radius) {
+  const pr = apparentSphereRadius(camera, radius);
+  const g = ctx.createRadialGradient(camera.cx - pr * 0.13, camera.cy - pr * 0.30, pr * 0.10, camera.cx, camera.cy, pr);
+  g.addColorStop(0, 'rgba(255,244,207,.22)');
+  g.addColorStop(0.55, 'rgba(106,71,39,.05)');
+  g.addColorStop(0.82, 'rgba(78,49,28,.27)');
+  g.addColorStop(1, 'rgba(41,27,18,.70)');
+  ctx.save();
   ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(248,224,166,.64)';
+  ctx.beginPath();
+  ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(248,224,166,.72)';
   ctx.lineWidth = 2.0;
   ctx.stroke();
   ctx.restore();
@@ -576,31 +465,24 @@ function drawSphere(ctx, camera, radius) {
 function drawMiniMedallion(ctx, w, h) {
   const rx = w * 0.18, ry = h * 0.235;
   ctx.fillStyle = '#684728';
-  ctx.beginPath(); ctx.ellipse(0, -h * 0.035, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#c69a4b'; ctx.lineWidth = w * 0.012; ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(0, -h * 0.035, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#c69a4b';
+  ctx.lineWidth = w * 0.012;
+  ctx.stroke();
   const glass = ctx.createRadialGradient(-rx * 0.55, -ry * 0.78, 0, 0, 0, rx * 1.42);
   glass.addColorStop(0, 'rgba(255,253,231,.62)');
   glass.addColorStop(0.23, 'rgba(255,255,255,.13)');
   glass.addColorStop(0.72, 'rgba(255,255,255,.015)');
   glass.addColorStop(1, 'rgba(20,12,7,.30)');
-  ctx.fillStyle = glass; ctx.fill();
+  ctx.fillStyle = glass;
+  ctx.fill();
   ctx.strokeStyle = 'rgba(255,248,222,.50)';
   ctx.lineWidth = w * 0.004;
   ctx.beginPath();
   ctx.ellipse(-rx * 0.12, -ry * 0.16, rx * 0.62, ry * 0.68, -0.16, Math.PI * 1.08, Math.PI * 1.58);
   ctx.stroke();
-}
-
-function fillProjectedPolygon(ctx, points, fillStyle) {
-  if (!points.length || points.some(point => !point)) return;
-  ctx.save();
-  ctx.fillStyle = fillStyle;
-  ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y);
-  points.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
 }
 
 function uniquePairs(links) {
@@ -640,4 +522,3 @@ function shortestAngle(from, to) {
   return diff;
 }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
-function hash(value) { const x = Math.sin(value * 12.9898) * 43758.5453; return x - Math.floor(x); }

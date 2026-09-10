@@ -29,7 +29,7 @@ The visible sphere is intentionally somewhat larger than the minimum capacity ca
 - Family spacing is compact by default and only opens where branch crowding requires it.
 - Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, sibling rail, and child stems.
 - Connectors are evidence-based. Layout grouping is never allowed to invent a genealogical relationship.
-- The globe uses visible antique-map coastlines, hachures, labels, and graticule rather than anonymous background markers.
+- The globe carries a deliberately fictional antique-atlas surface: pseudo-coastlines, islands, rivers, mountain marks, cartographic labels, rhumb lines, graticule, a compass rose, and engraved-style ship linework. It is decorative cartography, not a claim about real geography.
 - Distant people use level-of-detail simplification rather than full readable plaques.
 
 ## Architecture
@@ -37,7 +37,8 @@ The visible sphere is intentionally somewhat larger than the minimum capacity ca
 - `src/geometry.js` owns spherical placement, camera projection, tangent frames, and capacity math.
 - `src/layout.js` maps the current sample family into a compact local surface neighborhood.
 - `src/plaque.js` owns the old-glass portrait medallion and parchment-scroll rendering.
-- `src/scene.js` owns the single-canvas atlas renderer, horizon, map treatment, genealogy connectors, and direct manipulation.
+- `src/atlas-map.js` owns the reusable fictional antique-map geometry and ornament data.
+- `src/scene.js` owns the single-canvas atlas renderer, horizon, cartographic projection, genealogy connectors, and direct manipulation.
 - `src/data.js` owns the Supabase/bundled-sample boundary.
 - `src/version.js` is the sole application-version source.
 - `src/version-checker.js` checks that canonical source and reloads when a deployed version changes.
@@ -56,9 +57,10 @@ The complete GEDCOM is intentionally not committed to this public repository. Th
 
 ```bash
 node tests/geometry.test.mjs
+node tests/atlas-map.test.mjs
 ```
 
-The geometry test verifies the full-tree sphere sizing calculation, perspective behavior, and evidence-based relationship grouping.
+The geometry test verifies the full-tree sphere sizing calculation, perspective behavior, and evidence-based relationship grouping. The atlas-map test guards against the cartographic surface collapsing back into a handful of anonymous decorative lines.
 
 ## Hosting
 

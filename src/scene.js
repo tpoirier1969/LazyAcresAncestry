@@ -10,6 +10,18 @@ import {
 } from './geometry.js';
 import { plaqueTexture } from './plaque.js';
 import { layoutSample } from './layout.js';
+import {
+  ATLAS_COMPASS,
+  ATLAS_DETAIL_PATHS,
+  ATLAS_HACHURES,
+  ATLAS_ISLANDS,
+  ATLAS_LABELS,
+  ATLAS_LANDMASSES,
+  ATLAS_MOUNTAINS,
+  ATLAS_RHUMB_LINES,
+  ATLAS_RIVERS,
+  ATLAS_SHIP,
+} from './atlas-map.js';
 
 const POPULATION = 9099;
 const PLAQUE = { width: 1, height: 0.86 };
@@ -157,53 +169,140 @@ export class GlobeScene {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    MAP_PATHS.forEach((path, index) => {
-      const points = this.projectMapPath(path, camera);
-      ctx.strokeStyle = 'rgba(79,50,26,.14)';
-      ctx.lineWidth = index < 4 ? 3.4 : 2.1;
+    ATLAS_LANDMASSES.forEach(path => {
+      const points = this.projectMapPath(path, camera, 5);
+      fillProjectedPolygon(ctx, points, 'rgba(79,50,25,.075)');
+      ctx.strokeStyle = 'rgba(242,218,165,.16)';
+      ctx.lineWidth = 3.4;
       strokeSegments(ctx, points);
-      ctx.strokeStyle = index < 4 ? 'rgba(70,43,22,.62)' : 'rgba(70,43,22,.36)';
-      ctx.lineWidth = index < 4 ? 1.45 : 0.85;
+      ctx.strokeStyle = 'rgba(61,38,20,.58)';
+      ctx.lineWidth = 1.18;
       strokeSegments(ctx, points);
     });
 
-    MAP_HACHURES.forEach(path => {
-      ctx.strokeStyle = 'rgba(76,48,25,.22)';
-      ctx.lineWidth = 0.62;
-      strokeSegments(ctx, this.projectMapPath(path, camera));
+    ATLAS_ISLANDS.forEach(path => {
+      const points = this.projectMapPath(path, camera, 4);
+      fillProjectedPolygon(ctx, points, 'rgba(75,47,24,.09)');
+      ctx.strokeStyle = 'rgba(66,41,21,.50)';
+      ctx.lineWidth = 0.95;
+      strokeSegments(ctx, points);
     });
+
+    ATLAS_DETAIL_PATHS.forEach(path => {
+      ctx.strokeStyle = 'rgba(67,42,22,.31)';
+      ctx.lineWidth = 0.72;
+      strokeSegments(ctx, this.projectMapPath(path, camera, 4));
+    });
+
+    ATLAS_RIVERS.forEach(path => {
+      ctx.strokeStyle = 'rgba(74,52,35,.34)';
+      ctx.lineWidth = 0.78;
+      strokeSegments(ctx, this.projectMapPath(path, camera, 5));
+    });
+
+    ctx.setLineDash([5, 6]);
+    ATLAS_RHUMB_LINES.forEach(path => {
+      ctx.strokeStyle = 'rgba(64,41,23,.20)';
+      ctx.lineWidth = 0.72;
+      strokeSegments(ctx, this.projectMapPath(path, camera, 4));
+    });
+    ctx.setLineDash([]);
+
+    ATLAS_HACHURES.forEach(path => {
+      ctx.strokeStyle = 'rgba(73,45,23,.28)';
+      ctx.lineWidth = 0.68;
+      strokeSegments(ctx, this.projectMapPath(path, camera, 3));
+    });
+
+    ATLAS_MOUNTAINS.forEach(mountain => this.drawMountain(mountain, camera));
+    this.drawCompassRose(ATLAS_COMPASS, camera);
+    this.drawShip(ATLAS_SHIP, camera);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = 'italic 11px Georgia, serif';
-    ctx.fillStyle = 'rgba(67,42,22,.34)';
-    MAP_LABELS.forEach(label => {
-      const local = tangentPoint(label.x, label.y, RADIUS);
-      const unit = rotatePoint(local, this.yaw, this.pitch);
-      const projected = projectSpherePoint(unit, camera, RADIUS);
-      if (!isVisible(unit, projected)) return;
+    ctx.fillStyle = 'rgba(58,37,21,.46)';
+    ATLAS_LABELS.forEach(label => {
+      const projected = this.projectAtlasPoint(label.x, label.y, camera);
+      if (!projected) return;
       ctx.save();
       ctx.translate(projected.x, projected.y);
       ctx.rotate(label.rotation || 0);
+      ctx.font = `italic ${label.size || 12}px Georgia, serif`;
       ctx.fillText(label.text, 0, 0);
       ctx.restore();
     });
     ctx.restore();
   }
 
-  projectMapPath(path, camera) {
-    return path.map(([x, y]) => {
-      const local = tangentPoint(x, y, RADIUS);
-      const unit = rotatePoint(local, this.yaw, this.pitch);
-      const q = projectSpherePoint(unit, camera, RADIUS);
-      return isVisible(unit, q) ? q : null;
+  projectMapPath(path, camera, samplesPerSegment = 4) {
+    const sampled = [];
+    for (let segment = 0; segment < path.length - 1; segment += 1) {
+      const a = path[segment];
+      const b = path[segment + 1];
+      for (let i = 0; i <= samplesPerSegment; i += 1) {
+        if (segment > 0 && i === 0) continue;
+        const t = i / samplesPerSegment;
+        const point = this.projectAtlasPoint(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, camera);
+        sampled.push(point);
+      }
+    }
+    return sampled;
+  }
+
+  projectAtlasPoint(x, y, camera) {
+    const local = tangentPoint(x, y, RADIUS);
+    const unit = rotatePoint(local, this.yaw, this.pitch);
+    const projected = projectSpherePoint(unit, camera, RADIUS);
+    return isVisible(unit, projected) ? projected : null;
+  }
+
+  drawMountain({ x, y, size }, camera) {
+    const stroke = 'rgba(66,41,22,.34)';
+    this.drawSurfacePolyline([[x - size, y - size * .30], [x, y + size], [x + size, y - size * .30]], camera, 0.66, stroke);
+    this.drawSurfacePolyline([[x - size * .44, y + size * .16], [x, y + size * .58], [x + size * .40, y + size * .10]], camera, 0.52, stroke);
+  }
+
+  drawCompassRose({ x, y, size }, camera) {
+    const ring = [];
+    for (let i = 0; i <= 32; i += 1) {
+      const angle = Math.PI * 2 * i / 32;
+      ring.push([x + Math.cos(angle) * size * .72, y + Math.sin(angle) * size * .72]);
+    }
+    this.drawSurfacePolyline(ring, camera, 0.72, 'rgba(61,38,20,.42)');
+    for (let i = 0; i < 8; i += 1) {
+      const angle = Math.PI * 2 * i / 8;
+      const length = size * (i % 2 ? .52 : .95);
+      this.drawSurfacePolyline([[x, y], [x + Math.cos(angle) * length, y + Math.sin(angle) * length]], camera, i % 2 ? 0.55 : 0.82, 'rgba(61,38,20,.48)');
+    }
+    const labels = [
+      ['N', x, y + size * 1.18], ['E', x + size * 1.18, y], ['S', x, y - size * 1.18], ['W', x - size * 1.18, y],
+    ];
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = 'italic 10px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(58,37,21,.48)';
+    labels.forEach(([text, px, py]) => {
+      const point = this.projectAtlasPoint(px, py, camera);
+      if (point) ctx.fillText(text, point.x, point.y);
     });
+    ctx.restore();
+  }
+
+  drawShip({ x, y, size }, camera) {
+    const ink = 'rgba(61,38,20,.40)';
+    this.drawSurfacePolyline([[x - size, y - .15 * size], [x - .62 * size, y - .55 * size], [x + .72 * size, y - .55 * size], [x + size, y - .12 * size], [x - size, y - .15 * size]], camera, 0.76, ink);
+    this.drawSurfacePolyline([[x, y - .5 * size], [x, y + .95 * size]], camera, 0.72, ink);
+    this.drawSurfacePolyline([[x, y + .78 * size], [x - .68 * size, y + .08 * size], [x, y + .08 * size]], camera, 0.66, ink);
+    this.drawSurfacePolyline([[x + .08 * size, y + .66 * size], [x + .72 * size, y + .04 * size], [x + .08 * size, y + .04 * size]], camera, 0.66, ink);
+    this.drawSurfacePolyline([[x - 1.15 * size, y - .78 * size], [x - .55 * size, y - .70 * size], [x, y - .78 * size], [x + .6 * size, y - .70 * size], [x + 1.15 * size, y - .78 * size]], camera, 0.48, 'rgba(61,38,20,.26)');
   }
 
   drawGrid(camera) {
     const ctx = this.ctx;
     ctx.save();
-    ctx.strokeStyle = 'rgba(91,61,36,.11)';
+    ctx.strokeStyle = 'rgba(91,61,36,.12)';
     ctx.lineWidth = 0.62;
     for (let x = -24; x <= 24; x += 4) this.drawSurfacePolyline([[x, -20], [x, 20]], camera);
     for (let y = -20; y <= 20; y += 4) this.drawSurfacePolyline([[-26, y], [26, y]], camera);
@@ -421,6 +520,18 @@ function drawMiniMedallion(ctx, w, h) {
   ctx.stroke();
 }
 
+function fillProjectedPolygon(ctx, points, fillStyle) {
+  if (!points.length || points.some(point => !point)) return;
+  ctx.save();
+  ctx.fillStyle = fillStyle;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  points.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function uniquePairs(links) {
   const seen = new Set();
   const out = [];
@@ -459,35 +570,3 @@ function shortestAngle(from, to) {
 }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 function hash(value) { const x = Math.sin(value * 12.9898) * 43758.5453; return x - Math.floor(x); }
-
-const MAP_LABELS = [
-  { text: 'NORTH ATLANTIC', x: -7, y: 8, rotation: -0.08 },
-  { text: 'EUROPE', x: 7.5, y: 8.5, rotation: 0.04 },
-  { text: 'AFRICA', x: 5.5, y: -1.5, rotation: 0.03 },
-  { text: 'AMERICA', x: -14, y: 1.8, rotation: -0.12 },
-];
-
-const MAP_HACHURES = [
-  [[-18,10],[-17.4,9.3]], [[-16.8,9.2],[-16.1,8.4]], [[-14.6,7.7],[-13.8,7.0]],
-  [[-10,4.8],[-9.3,4.0]], [[-8.5,1.8],[-7.8,1.0]], [[-7,-3.0],[-6.2,-3.8]],
-  [[8.5,12.4],[9.1,11.6]], [[10.5,11.5],[11.1,10.6]], [[12.6,9.8],[13.2,8.9]],
-  [[7.8,4.2],[8.5,3.4]], [[6.3,1.2],[7.0,0.4]], [[4.8,-3.0],[5.5,-3.8]],
-  [[-1.2,10.4],[-0.5,9.7]], [[1.0,9.5],[1.6,8.8]], [[2.4,7.4],[3.0,6.8]],
-];
-
-const MAP_PATHS = [
-  [[-21,11],[-19,12],[-17,11],[-16,9],[-14,8],[-13,6],[-11,5],[-9,3],[-8,1],[-9,-2],[-7,-4],[-5,-6],[-3,-7],[-2,-10]],
-  [[-12,14],[-9,15],[-7,14],[-5,13],[-3,11],[-2,8],[-4,6],[-3,4],[-1,2],[1,1],[3,2],[5,4],[6,6]],
-  [[7,13],[9,14],[12,13],[14,11],[15,8],[13,6],[12,4],[14,2],[13,-1],[11,-2],[10,-5],[8,-7],[7,-10]],
-  [[5,8],[7,7],[9,5],[8,3],[6,2],[5,0],[4,-2],[3,-4],[1,-5],[-1,-4]],
-  [[-18,4],[-16,3],[-15,1],[-13,0],[-12,-2],[-10,-3],[-9,-5]],
-  [[-2,12],[0,11],[2,10],[3,8],[2,6],[0,5],[-1,3],[-2,1]],
-  [[10,2],[9,0],[8,-2],[7,-3],[6,-5],[5,-7]],
-  [[-6,-7],[-4,-9],[-2,-11],[1,-12],[4,-11],[6,-9]],
-  [[14,9],[16,8],[18,6],[19,4],[18,2],[17,0]],
-  [[-20,7],[-17,6],[-15,5],[-12,5],[-10,4]],
-  [[-16,-5],[-13,-6],[-10,-7],[-7,-8],[-4,-9]],
-  [[1,13],[4,12],[7,11],[10,10],[13,9]],
-  [[2,-1],[4,-1],[6,-2],[8,-4],[10,-6]],
-  [[-4,8],[-1,8],[2,7],[5,6],[8,6]],
-];

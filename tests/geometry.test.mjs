@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { requiredSphereRadius, tangentPoint, projectSpherePoint, projectedTangentFrame, rotatePoint, slerpUnit, yawPitchToFront } from '../src/geometry.js';
+import { buildRelationshipGroups } from '../src/scene.js';
 
 const radius = requiredSphereRadius({ count: 9099, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8, packingEfficiency: 0.65 });
 assert(radius > 38 && radius < 40, `unexpected radius ${radius}`);
@@ -26,4 +27,21 @@ const offAxis = tangentPoint(5, 4, 40);
 const focus = yawPitchToFront(offAxis);
 const focused = rotatePoint(offAxis, focus.yaw, focus.pitch);
 assert(Math.abs(focused.x) < 1e-8 && Math.abs(focused.y) < 1e-8 && focused.z < -0.999, 'focus rotation must bring the selected point to the viewing apex');
-console.log(`geometry ok: sphere diameter ${(radius * 2).toFixed(1)} plaque widths`);
+
+const relationshipSample = [
+  { type: 'spouse', from: 'P1', to: 'P2' },
+  { type: 'parent', from: 'P1', to: 'C1' },
+  { type: 'parent', from: 'P2', to: 'C1' },
+  { type: 'parent', from: 'P1', to: 'C2' },
+  { type: 'parent', from: 'P2', to: 'C2' },
+  { type: 'parent', from: 'MISSING', to: 'C3' },
+];
+const knownIds = new Set(['P1', 'P2', 'C1', 'C2', 'C3', 'UNRELATED']);
+const grouped = buildRelationshipGroups(relationshipSample, knownIds);
+assert.deepEqual(grouped.spousePairs, [['P1', 'P2']], 'recorded spouses should produce one partner bar');
+assert.equal(grouped.parentSets.length, 1, 'children with the same recorded parents should form one sibling group');
+assert.deepEqual(grouped.parentSets[0], { parents: ['P1', 'P2'], children: ['C1', 'C2'] });
+assert(!JSON.stringify(grouped).includes('UNRELATED'), 'layout clusters must never invent genealogical connectors');
+assert(!JSON.stringify(grouped).includes('MISSING'), 'relationships to people outside the rendered sample must not create stray lines');
+
+console.log(`geometry ok: sphere diameter ${(radius * 2).toFixed(1)} plaque widths; relationship grouping ok`);

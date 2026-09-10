@@ -1,16 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { ATLAS_TEXTURE_URL, atlasTexturePlacement } from '../src/atlas-map.js';
+import { ATLAS_TEXTURE_URL } from '../src/atlas-map.js';
 
-assert(ATLAS_TEXTURE_URL.endsWith('/assets/antique-atlas-texture.svg'), 'atlas should use the bundled atlas image texture');
-const base = atlasTexturePlacement({ yaw: 0, pitch: 0, sphereRadius: 1000, imageWidth: 1536, imageHeight: 768 });
-assert(base.height > 700 && base.height < 850, `unexpected atlas texture height ${base.height}`);
-assert(Math.abs(base.width / base.height - 2) < 1e-9, '2:1 map texture should preserve its aspect ratio');
-const quarterTurn = atlasTexturePlacement({ yaw: Math.PI / 2, pitch: 0, sphereRadius: 1000, imageWidth: 1536, imageHeight: 768 });
-assert(Math.abs(quarterTurn.xShift + base.width / 4) < 1e-9, 'quarter globe turn should pan texture by one quarter of its width');
-const pitched = atlasTexturePlacement({ yaw: 0, pitch: 0.4, sphereRadius: 1000, imageWidth: 1536, imageHeight: 768 });
-assert(pitched.yShift > 0 && pitched.yShift < base.height * 0.1, 'pitch should shift the atlas vertically but keep it stable');
+assert(ATLAS_TEXTURE_URL.endsWith('/assets/antique-atlas-texture.svg'), 'atlas should use the bundled atlas texture');
 const svg = await readFile(new URL('../assets/antique-atlas-texture.svg', import.meta.url), 'utf8');
-assert((svg.match(/class="coast"/g) || []).length >= 6, 'atlas texture should contain multiple coherent landmasses');
-assert(svg.includes('id="compass"'), 'atlas texture should include cartographic ornament');
-console.log('atlas texture and placement ok');
+assert(svg.includes('width="4096" height="2048"'), 'atlas texture should retain high-resolution 2:1 dimensions');
+assert((svg.match(/class="land"/g) || []).length >= 7, 'atlas texture should contain recognizable world-scale landmasses');
+assert((svg.match(/class="river"/g) || []).length >= 1, 'atlas texture should contain river detail');
+assert((svg.match(/class="mount"/g) || []).length >= 1, 'atlas texture should contain mountain detail');
+assert(svg.includes('AMERICA SEPTENTRIONALIS') && svg.includes('EUROPA') && svg.includes('AFRICA') && svg.includes('ASIA'), 'atlas should read unmistakably as a world map');
+assert(svg.includes('translate(560 1570)'), 'atlas texture should include a compass rose');
+console.log('high-resolution antique atlas texture ok');

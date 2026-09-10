@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict';
-import { requiredSphereRadius, tangentPoint, projectSpherePoint, projectedTangentFrame, rotatePoint, slerpUnit, yawPitchToFront } from '../src/geometry.js';
+import {
+  requiredSphereRadius,
+  tangentPoint,
+  projectSpherePoint,
+  projectedTangentFrame,
+  projectedRaisedFrame,
+  rotatePoint,
+  slerpUnit,
+  yawPitchToFront,
+} from '../src/geometry.js';
 import { buildRelationshipGroups } from '../src/scene.js';
 
 const radius = requiredSphereRadius({ count: 9099, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8, packingEfficiency: 0.65 });
@@ -17,8 +26,17 @@ const fn = projectedTangentFrame(near, camera, 40, 1, 0.82);
 const fm = projectedTangentFrame(mid, camera, 40, 1, 0.82);
 const ff = projectedTangentFrame(far, camera, 40, 1, 0.82);
 const width = frame => Math.hypot(frame.xAxis.x, frame.xAxis.y) * 2;
+const height = frame => Math.hypot(frame.yAxis.x, frame.yAxis.y) * 2;
 assert(width(fn) > width(fm) && width(fm) > width(ff), 'equal-size plaques must shrink monotonically with distance');
 assert(width(fn) / width(fm) < 1.35, 'near generations should not jump abruptly in apparent size');
+
+const raisedCamera = { cx: 800, cy: 2100, focal: 900, centerZ: 84.2, near: 0.1 };
+const sloped = rotatePoint(tangentPoint(0, 15, 78), 0, 0.15);
+const flatSloped = projectedTangentFrame(sloped, raisedCamera, 78, 1, 0.86);
+const raisedSloped = projectedRaisedFrame(sloped, raisedCamera, 78, 1, 0.86, 0.20);
+assert(raisedSloped?.anchor, 'raised plaque must expose its projected sphere contact point');
+assert(height(raisedSloped) > height(flatSloped) * 1.1, 'hinging plaques toward camera should reduce vertical foreshortening');
+assert(width(raisedSloped) > 0 && height(raisedSloped) > 0, 'raised plaque must remain projectable');
 
 const arcMid = slerpUnit(tangentPoint(-2, 3, 40), tangentPoint(2, 3, 40), 0.5);
 assert(Math.abs(Math.hypot(arcMid.x, arcMid.y, arcMid.z) - 1) < 1e-10, 'relationship paths must remain on the sphere');
@@ -44,4 +62,4 @@ assert.deepEqual(grouped.parentSets[0], { parents: ['P1', 'P2'], children: ['C1'
 assert(!JSON.stringify(grouped).includes('UNRELATED'), 'layout clusters must never invent genealogical connectors');
 assert(!JSON.stringify(grouped).includes('MISSING'), 'relationships to people outside the rendered sample must not create stray lines');
 
-console.log(`geometry ok: sphere diameter ${(radius * 2).toFixed(1)} plaque widths; relationship grouping ok`);
+console.log(`geometry ok: capacity sphere diameter ${(radius * 2).toFixed(1)} plaque widths; raised plaques and relationships ok`);

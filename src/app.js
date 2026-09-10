@@ -8,9 +8,12 @@ const search = document.getElementById('searchInput');
 const source = document.getElementById('sourcePill');
 const details = document.getElementById('personPanel');
 const scaleReadout = document.getElementById('scaleReadout');
+const homePersonBtn = document.getElementById('homePersonBtn');
+const rail = document.querySelector('.rail');
 const scene = new GlobeScene(canvas, selectPerson);
 let family = { people: [], relationships: [] };
 let byId = new Map();
+let homePerson = null;
 
 boot().catch(error => {
   console.error(error);
@@ -23,9 +26,10 @@ async function boot() {
   scene.setFamily(family.people, family.relationships);
   source.textContent = `${family.source} · v${APP_VERSION}`;
   scaleReadout.textContent = `${scene.diameter.toFixed(0)} plaque-width sphere · 9,099-person capacity model`;
+  homePerson = family.people.find(person => person.role === 'root') || family.people[0];
   wireSearch();
-  const focus = family.people.find(person => person.role === 'root') || family.people[0];
-  if (focus) scene.focus(focus.id);
+  wireNavigation();
+  if (homePerson) selectPerson(homePerson.id, { resetZoom: true });
 }
 
 function wireSearch() {
@@ -44,10 +48,35 @@ function wireSearch() {
   });
 }
 
-function selectPerson(id) {
+function wireNavigation() {
+  homePersonBtn.addEventListener('click', goHome);
+  rail.addEventListener('click', event => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    rail.querySelectorAll('button').forEach(item => item.classList.toggle('active', item === button));
+    const action = button.dataset.action;
+    if (action === 'home') return goHome();
+    if (action === 'search') return search.focus();
+    if (action === 'people') return showPeopleIndex();
+    showSectionStatus(action);
+  });
+}
+
+function goHome() {
+  if (!homePerson) return;
+  search.value = '';
+  document.getElementById('searchResults').hidden = true;
+  selectPerson(homePerson.id, { resetZoom: true });
+}
+
+function selectPerson(id, options = {}) {
   const person = byId.get(id);
   if (!person) return;
-  scene.focus(id);
+  scene.focus(id, options);
+  showPerson(person);
+}
+
+function showPerson(person) {
   details.innerHTML = `
     <button class="panel-close" id="personCloseInner" aria-label="Close person details">×</button>
     <div class="panel-kicker">FOCUSED PERSON</div>
@@ -58,9 +87,34 @@ function selectPerson(id) {
       <div><dt>GEDCOM</dt><dd>${escapeHtml(person.id)}</dd></div>
     </dl>
     ${person.note ? `<p class="data-note">${escapeHtml(person.note)}</p>` : ''}
-    <p class="panel-note">Clicking a person rotates that point of the family surface into the viewing apex. Full genealogy navigation will use the same behavior.</p>`;
+    <p class="panel-note">Click another person to rotate that branch into the viewing apex. Use <strong>Return to Tod</strong> whenever you want the home position back.</p>`;
+  openPanel();
+}
+
+function showPeopleIndex() {
+  const visible = family.people.filter(person => ['root', 'spouse', 'sibling', 'parent', 'grandparent'].includes(person.role));
+  details.innerHTML = `
+    <button class="panel-close" id="personCloseInner" aria-label="Close people list">×</button>
+    <div class="panel-kicker">PEOPLE IN THIS PROTOTYPE</div>
+    <h2>Family index</h2>
+    <div class="people-index">${visible.map(person => `<button type="button" data-id="${escapeHtml(person.id)}"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(person.birth?.date || '')}</span></button>`).join('')}</div>`;
+  openPanel();
+  details.querySelectorAll('.people-index button').forEach(button => button.addEventListener('click', () => selectPerson(button.dataset.id)));
+}
+
+function showSectionStatus(section) {
+  const labels = { places: 'Places', stories: 'Stories', media: 'Media' };
+  details.innerHTML = `
+    <button class="panel-close" id="personCloseInner" aria-label="Close panel">×</button>
+    <div class="panel-kicker">${escapeHtml(labels[section] || section).toUpperCase()}</div>
+    <h2>${escapeHtml(labels[section] || section)}</h2>
+    <p class="panel-note">This section is wired into the navigation now, but its full view is intentionally deferred while we finish the globe interaction and family geometry.</p>`;
+  openPanel();
+}
+
+function openPanel() {
   details.classList.add('open');
-  document.getElementById('personCloseInner').addEventListener('click', () => details.classList.remove('open'));
+  document.getElementById('personCloseInner')?.addEventListener('click', () => details.classList.remove('open'));
 }
 
 function escapeHtml(value = '') {

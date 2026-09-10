@@ -15,14 +15,3 @@ export function getAtlasTexture(onReady) {
   cachedTexture = image;
   return image;
 }
-
-// Size the atlas against the apparent sphere radius. The texture is deliberately
-// large enough to read as a map, while still repeating beyond the viewport so a
-// rotation never exposes an untextured patch.
-export function atlasTexturePlacement({ yaw, pitch, sphereRadius, imageWidth, imageHeight }) {
-  const height = sphereRadius * 0.78;
-  const width = height * Math.max(1, imageWidth / Math.max(1, imageHeight));
-  const xShift = -(yaw / (Math.PI * 2)) * width;
-  const yShift = pitch * height * 0.18;
-  return { width, height, xShift, yShift };
-}

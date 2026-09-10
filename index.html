@@ -21,15 +21,16 @@
   <main class="atlas-shell">
     <canvas id="globeCanvas" aria-label="Interactive spherical family tree"></canvas>
     <nav class="rail" aria-label="Prototype sections">
-      <button class="active" type="button"><span>⌂</span>Tree</button>
-      <button type="button"><span>⌕</span>Search</button>
-      <button type="button"><span>♙</span>People</button>
-      <button type="button"><span>⌖</span>Places</button>
-      <button type="button"><span>▧</span>Stories</button>
-      <button type="button"><span>▣</span>Media</button>
+      <button class="active" type="button" data-action="home"><span>⌂</span>Home</button>
+      <button type="button" data-action="search"><span>⌕</span>Search</button>
+      <button type="button" data-action="people"><span>♙</span>People</button>
+      <button type="button" data-action="places"><span>⌖</span>Places</button>
+      <button type="button" data-action="stories"><span>▧</span>Stories</button>
+      <button type="button" data-action="media"><span>▣</span>Media</button>
     </nav>
     <div class="source-pill" id="sourcePill">Loading…</div>
     <div class="scale-pill" id="scaleReadout"></div>
+    <button class="home-person" id="homePersonBtn" type="button">⌂ Return to Tod</button>
     <div class="interaction-hint"><strong>Drag</strong> to rotate · <strong>Wheel</strong> to move closer/farther · <strong>Click</strong> a person</div>
     <div class="atlas-caption"><span>FAMILIES</span><span>ACROSS TIME</span></div>
   </main>

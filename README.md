@@ -4,11 +4,11 @@ Interactive genealogy atlas built from the supplied Ancestry GEDCOM.
 
 ## Current prototype
 
-Version 0.3.0 uses a spherical family-atlas view with fixed-size person plaques projected onto the globe surface. Apparent size and foreshortening come from perspective and curvature rather than hand-tuned generation sizes.
+The current prototype uses a spherical family-atlas view with fixed-size person plaques projected onto the globe surface. Apparent size and foreshortening come from perspective and curvature rather than hand-tuned generation sizes.
 
 The current sample uses Tod, Donna, Amy, Tod's parents, grandparents, and grandparent sibling groups from project-specific Supabase tables. The production model is sized for the 9,099-person GEDCOM without rendering thousands of DOM nodes.
 
-The sphere sizing model produces a diameter of about 78 plaque-widths for 9,099 people. The current camera is intentionally near the surface so the globe horizon remains visible while the focused family neighborhood stays readable.
+The sphere sizing model produces a diameter of about 78 plaque-widths for 9,099 people. The camera stays close to the surface so the globe horizon remains visible while the focused family neighborhood stays readable.
 
 ## Current interaction
 
@@ -24,16 +24,17 @@ The sphere sizing model produces a diameter of about 78 plaque-widths for 9,099 
 ## Visual grammar
 
 - Person portraits use an antique oval gold medallion with a convex old-glass treatment and a parchment scroll for name and dates.
-- Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, sibling rail, and child stems. They are projected onto the spherical surface rather than drawn as arbitrary point-to-point diagonals.
+- Relationship connectors are evidence-based. Partner bars require recorded spouse relationships, parent-child descents require recorded parent relationships, and sibling rails are derived only when multiple rendered children share the same recorded parent set.
+- Layout clusters never create genealogical connectors. Grandparent-sibling groups remain visually unconnected until their actual shared-parent relationships are present in the rendered data.
 - The globe uses subdued antique-map linework and graticule instead of anonymous background markers.
-- Distant people will use level-of-detail simplification rather than full readable plaques.
+- Distant people use level-of-detail simplification rather than full readable plaques.
 
 ## Architecture
 
 - `src/geometry.js` owns spherical placement, camera projection, tangent frames, and capacity math.
 - `src/layout.js` maps the current sample family into a local surface neighborhood.
 - `src/plaque.js` owns the old-glass portrait medallion and parchment-scroll rendering.
-- `src/scene.js` owns the single-canvas atlas renderer, horizon, map treatment, genealogy connectors, and direct manipulation.
+- `src/scene.js` owns the single-canvas atlas renderer, horizon, map treatment, evidence-based genealogy connectors, and direct manipulation.
 - `src/data.js` owns the Supabase/bundled-sample boundary.
 - `src/version.js` is the sole application-version source.
 - `src/version-checker.js` checks that canonical source and reloads when a deployed version changes.
@@ -54,7 +55,7 @@ The complete GEDCOM is intentionally not committed to this public repository. Th
 node tests/geometry.test.mjs
 ```
 
-The geometry test verifies the full-tree sphere sizing calculation and checks that equal physical plaques shrink smoothly and monotonically with increasing surface distance.
+The geometry test verifies the full-tree sphere sizing calculation, checks that equal physical plaques shrink smoothly and monotonically with increasing surface distance, and protects the rule that relationship lines come only from recorded genealogical relationships rather than layout clusters.
 
 ## Hosting
 

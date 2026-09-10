@@ -4,15 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#b7925d" />
-  <title>Lazy Acres Ancestry · Globe Prototype</title>
-  <meta name="description" content="A geometry prototype for exploring family history on an antique spherical family atlas." />
+  <title>Lazy Acres Ancestry · Family Atlas</title>
+  <meta name="description" content="An interactive spherical family-history atlas." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="tree-mark" aria-hidden="true">♜</span><div><strong>Lazy Acres Ancestry</strong><span>family atlas prototype</span></div></div>
     <div class="search-shell">
-      <label><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Search the sample family…" autocomplete="off" /></label>
+      <label><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Search people…" autocomplete="off" /></label>
       <div id="searchResults" class="search-results" hidden></div>
     </div>
     <div class="history-line">Past lives.<br><strong>Still connected.</strong></div>
@@ -20,7 +20,7 @@
 
   <main class="atlas-shell">
     <canvas id="globeCanvas" aria-label="Interactive spherical family tree"></canvas>
-    <nav class="rail" aria-label="Prototype sections">
+    <nav class="rail" aria-label="Family atlas sections">
       <button class="active" type="button" data-action="home"><span>⌂</span>Home</button>
       <button type="button" data-action="search"><span>⌕</span>Search</button>
       <button type="button" data-action="people"><span>♙</span>People</button>

@@ -1,12 +1,11 @@
 import {
   apparentSphereRadius,
-  fibonacciSphere,
   isVisible,
   projectSpherePoint,
   projectedTangentFrame,
   requiredSphereRadius,
   rotatePoint,
-  slerpUnit,
+  tangentPoint,
   yawPitchToFront,
 } from './geometry.js';
 import { plaqueTexture } from './plaque.js';
@@ -15,20 +14,21 @@ import { layoutSample } from './layout.js';
 const POPULATION = 9099;
 const PLAQUE = { width: 1, height: 0.86 };
 const RADIUS = Math.max(40, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
+const HOME_PITCH = 0.40;
+const DEFAULT_GAP = 30;
 
 export class GlobeScene {
   constructor(canvas, onSelect) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.onSelect = onSelect;
-    this.population = fibonacciSphere(POPULATION);
     this.people = [];
     this.relationships = [];
     this.positions = new Map();
     this.hitAreas = [];
     this.yaw = 0;
-    this.pitch = 0;
-    this.cameraGap = 7.5;
+    this.pitch = HOME_PITCH;
+    this.cameraGap = DEFAULT_GAP;
     this.drag = null;
     this.needsDraw = false;
     this.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -62,11 +62,14 @@ export class GlobeScene {
     const dpr = Number(this.canvas.dataset.dpr || 1);
     const w = this.canvas.width / dpr;
     const h = this.canvas.height / dpr;
+    const focal = Math.min(w, h) * 1.02;
+    const centerZ = RADIUS + this.cameraGap;
+    const projectedRadius = focal * RADIUS / Math.sqrt(Math.max(1e-6, centerZ * centerZ - RADIUS * RADIUS));
     return {
       cx: w / 2,
-      cy: h / 2,
-      focal: Math.min(w, h) * 1.08,
-      centerZ: RADIUS + this.cameraGap,
+      cy: projectedRadius + Math.max(42, h * 0.055),
+      focal,
+      centerZ,
       near: 0.1,
       dpr,
     };
@@ -82,9 +85,8 @@ export class GlobeScene {
       const dx = event.clientX - this.drag.x;
       const dy = event.clientY - this.drag.y;
       if (Math.hypot(dx, dy) > 3) this.drag.moved = true;
-      // Drag the surface in the same direction as the pointer.
-      this.yaw = this.drag.yaw - dx * 0.0033;
-      this.pitch = clamp(this.drag.pitch - dy * 0.0033, -1.22, 1.22);
+      this.yaw = this.drag.yaw - dx * 0.003;
+      this.pitch = clamp(this.drag.pitch - dy * 0.003, -0.95, 1.25);
       this.requestDraw();
     });
     this.canvas.addEventListener('pointerup', event => {
@@ -93,34 +95,27 @@ export class GlobeScene {
     });
     this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
-      this.cameraGap = clamp(this.cameraGap + Math.sign(event.deltaY) * 0.9, 3.5, 18);
+      this.cameraGap = clamp(this.cameraGap + Math.sign(event.deltaY) * 2, 16, 52);
       this.requestDraw();
     }, { passive: false });
-  }
-
-  resetView() {
-    this.yaw = 0;
-    this.pitch = 0;
-    this.cameraGap = 7.5;
-    this.requestDraw();
   }
 
   focus(id, { resetZoom = false } = {}) {
     const local = this.positions.get(id);
     if (!local) return;
-    if (resetZoom) this.cameraGap = 7.5;
+    if (resetZoom) this.cameraGap = DEFAULT_GAP;
     const target = yawPitchToFront(local);
+    target.pitch += HOME_PITCH;
     if (this.reduceMotion) {
       this.yaw = target.yaw;
       this.pitch = target.pitch;
       this.requestDraw();
       return;
     }
-    const start = performance.now();
     const from = { yaw: this.yaw, pitch: this.pitch };
-    const duration = 520;
+    const start = performance.now();
     const tick = now => {
-      const t = Math.min(1, (now - start) / duration);
+      const t = Math.min(1, (now - start) / 520);
       const eased = 1 - Math.pow(1 - t, 3);
       this.yaw = from.yaw + shortestAngle(from.yaw, target.yaw) * eased;
       this.pitch = from.pitch + (target.pitch - from.pitch) * eased;
@@ -139,129 +134,131 @@ export class GlobeScene {
   draw() {
     this.needsDraw = false;
     const camera = this.camera();
-    const { ctx } = this;
+    const ctx = this.ctx;
     const dpr = camera.dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const w = this.canvas.width / dpr, h = this.canvas.height / dpr;
+    const w = this.canvas.width / dpr;
+    const h = this.canvas.height / dpr;
     ctx.clearRect(0, 0, w, h);
     drawBackdrop(ctx, w, h);
-    drawSphere(ctx, camera, RADIUS, w, h);
-    this.drawAtlasGrid(camera);
-    this.drawPopulation(camera);
+    drawSphere(ctx, camera, RADIUS);
+    this.drawMap(camera);
+    this.drawGrid(camera);
     this.drawRelationships(camera);
     this.drawPeople(camera);
   }
 
-  drawAtlasGrid(camera) {
+  drawMap(camera) {
     const ctx = this.ctx;
     ctx.save();
-    ctx.strokeStyle = 'rgba(95,66,36,.12)';
-    ctx.lineWidth = 0.7;
-    for (let lat = -60; lat <= 60; lat += 20) this.drawParallel(camera, lat * Math.PI / 180);
-    for (let lon = 0; lon < 360; lon += 20) this.drawMeridian(camera, lon * Math.PI / 180);
+    ctx.lineCap = 'round';
+    MAP_PATHS.forEach((path, index) => {
+      const points = path.map(([x, y]) => {
+        const local = tangentPoint(x, y, RADIUS);
+        const unit = rotatePoint(local, this.yaw, this.pitch);
+        const q = projectSpherePoint(unit, camera, RADIUS);
+        return isVisible(unit, q) ? q : null;
+      });
+      ctx.strokeStyle = index < 4 ? 'rgba(77,55,34,.25)' : 'rgba(77,55,34,.14)';
+      ctx.lineWidth = index < 4 ? 1.2 : 0.7;
+      strokeSegments(ctx, points);
+    });
     ctx.restore();
   }
 
-  drawParallel(camera, lat) {
-    const points = [];
-    for (let i = 0; i <= 140; i += 1) {
-      const lon = i / 140 * Math.PI * 2;
-      let p = { x: Math.cos(lat) * Math.cos(lon), y: Math.sin(lat), z: Math.cos(lat) * Math.sin(lon) };
-      p = rotatePoint(p, this.yaw, this.pitch);
-      const q = projectSpherePoint(p, camera, RADIUS);
-      points.push(isVisible(p, q) ? q : null);
-    }
-    strokeSegments(this.ctx, points);
-  }
-
-  drawMeridian(camera, lon) {
-    const points = [];
-    for (let i = 0; i <= 100; i += 1) {
-      const lat = -Math.PI / 2 + i / 100 * Math.PI;
-      let p = { x: Math.cos(lat) * Math.cos(lon), y: Math.sin(lat), z: Math.cos(lat) * Math.sin(lon) };
-      p = rotatePoint(p, this.yaw, this.pitch);
-      const q = projectSpherePoint(p, camera, RADIUS);
-      points.push(isVisible(p, q) ? q : null);
-    }
-    strokeSegments(this.ctx, points);
-  }
-
-  drawPopulation(camera) {
+  drawGrid(camera) {
     const ctx = this.ctx;
     ctx.save();
-    ctx.fillStyle = 'rgba(74,50,28,.30)';
-    for (let i = 0; i < POPULATION; i += 1) {
-      let p = { x: this.population[i * 3], y: this.population[i * 3 + 1], z: this.population[i * 3 + 2] };
-      p = rotatePoint(p, this.yaw, this.pitch);
-      const q = projectSpherePoint(p, camera, RADIUS);
-      if (!isVisible(p, q)) continue;
-      const tangent = projectedTangentFrame(p, camera, RADIUS, PLAQUE.width, PLAQUE.height);
-      if (!tangent) continue;
-      const rw = Math.max(0.55, Math.hypot(tangent.xAxis.x, tangent.xAxis.y) * 0.20);
-      if (rw < 0.7) continue;
-      ctx.globalAlpha = clamp((rw - 0.5) / 8, 0.04, 0.22);
-      ctx.beginPath();
-      ctx.ellipse(q.x, q.y, rw, rw * 1.18, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.strokeStyle = 'rgba(96,68,40,.08)';
+    ctx.lineWidth = 0.65;
+    for (let x = -22; x <= 22; x += 4) this.drawSurfacePolyline([[x, -18], [x, 18]], camera);
+    for (let y = -18; y <= 18; y += 4) this.drawSurfacePolyline([[-24, y], [24, y]], camera);
     ctx.restore();
   }
 
   drawRelationships(camera) {
-    const spousePairs = this.relationships.filter(r => r.type === 'spouse');
     const parentLinks = this.relationships.filter(r => r.type === 'parent');
+    const spousePairs = uniquePairs(this.relationships.filter(r => r.type === 'spouse'));
     const parentsByChild = new Map();
     parentLinks.forEach(link => {
       if (!parentsByChild.has(link.to)) parentsByChild.set(link.to, []);
       parentsByChild.get(link.to).push(link.from);
     });
 
-    const drawnSpouses = new Set();
-    spousePairs.forEach(link => {
-      const key = pairKey(link.from, link.to);
-      if (drawnSpouses.has(key)) return;
-      drawnSpouses.add(key);
-      this.drawSurfaceArc(link.from, link.to, camera, 'rgba(86,57,30,.72)', 1.55);
-    });
+    spousePairs.forEach(([a, b]) => this.drawCoupleBar(a, b, camera));
+    parentsByChild.forEach((parents, childId) => this.drawDescent(parents, childId, camera));
+    this.drawClusterRails(camera, parentLinks);
+  }
 
-    parentsByChild.forEach((parents, childId) => {
-      const unique = [...new Set(parents)].filter(id => this.positions.has(id));
-      if (!unique.length || !this.positions.has(childId)) return;
-      if (unique.length === 1) {
-        this.drawSurfaceArc(unique[0], childId, camera, 'rgba(86,57,30,.68)', 1.5);
-        return;
+  drawCoupleBar(aId, bId, camera) {
+    const a = this.surfaceXY(this.positions.get(aId));
+    const b = this.surfaceXY(this.positions.get(bId));
+    if (!a || !b) return;
+    const y = (a.y + b.y) / 2;
+    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.6, 'rgba(78,52,30,.78)');
+  }
+
+  drawDescent(parentIds, childId, camera) {
+    const child = this.surfaceXY(this.positions.get(childId));
+    const parents = [...new Set(parentIds)].map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
+    if (!child || !parents.length) return;
+    const source = parents.length > 1
+      ? { x: (parents[0].x + parents[1].x) / 2, y: (parents[0].y + parents[1].y) / 2 }
+      : parents[0];
+    const bendY = source.y + (child.y - source.y) * 0.48;
+    this.drawSurfacePolyline([[source.x, source.y], [source.x, bendY], [child.x, bendY], [child.x, child.y]], camera, 1.7, 'rgba(78,52,30,.82)');
+  }
+
+  drawClusterRails(camera, parentLinks) {
+    const hasVisibleParent = new Set(parentLinks.map(link => link.to));
+    const groups = new Map();
+    this.people.filter(p => p.cluster).forEach(person => {
+      if (!groups.has(person.cluster)) groups.set(person.cluster, []);
+      groups.get(person.cluster).push(person);
+    });
+    groups.forEach(group => {
+      const orphans = group.filter(person => !hasVisibleParent.has(person.id));
+      if (orphans.length < 2) return;
+      const points = orphans.map(person => ({ xy: this.surfaceXY(this.positions.get(person.id)) })).filter(item => item.xy);
+      if (points.length < 2) return;
+      const railY = Math.min(...points.map(item => item.xy.y)) - 0.5;
+      const minX = Math.min(...points.map(item => item.xy.x));
+      const maxX = Math.max(...points.map(item => item.xy.x));
+      this.drawSurfacePolyline([[minX, railY], [maxX, railY]], camera, 1.25, 'rgba(91,64,38,.50)');
+      points.forEach(item => this.drawSurfacePolyline([[item.xy.x, railY], [item.xy.x, item.xy.y]], camera, 1.05, 'rgba(91,64,38,.44)'));
+    });
+  }
+
+  drawSurfacePolyline(xyPoints, camera, width = 0.7, stroke = null) {
+    const sampled = [];
+    for (let segment = 0; segment < xyPoints.length - 1; segment += 1) {
+      const a = xyPoints[segment];
+      const b = xyPoints[segment + 1];
+      for (let i = 0; i <= 18; i += 1) {
+        const t = i / 18;
+        const local = tangentPoint(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, RADIUS);
+        const unit = rotatePoint(local, this.yaw, this.pitch);
+        const q = projectSpherePoint(unit, camera, RADIUS);
+        sampled.push(isVisible(unit, q) ? q : null);
       }
-
-      const [a, b] = unique;
-      const pair = spousePairs.some(link => pairKey(link.from, link.to) === pairKey(a, b));
-      if (!pair) this.drawSurfaceArc(a, b, camera, 'rgba(86,57,30,.72)', 1.55);
-      const midpoint = slerpUnit(this.positions.get(a), this.positions.get(b), 0.5);
-      this.drawUnitArc(midpoint, this.positions.get(childId), camera, 'rgba(86,57,30,.72)', 1.6);
-    });
-  }
-
-  drawSurfaceArc(fromId, toId, camera, stroke, width) {
-    const from = this.positions.get(fromId), to = this.positions.get(toId);
-    if (!from || !to) return;
-    this.drawUnitArc(from, to, camera, stroke, width);
-  }
-
-  drawUnitArc(from, to, camera, stroke, width) {
-    const ctx = this.ctx;
-    const points = [];
-    for (let i = 0; i <= 30; i += 1) {
-      const local = slerpUnit(from, to, i / 30);
-      const unit = rotatePoint(local, this.yaw, this.pitch);
-      const projected = projectSpherePoint(unit, camera, RADIUS);
-      points.push(isVisible(unit, projected) ? projected : null);
     }
+    const ctx = this.ctx;
     ctx.save();
-    ctx.strokeStyle = stroke;
+    if (stroke) ctx.strokeStyle = stroke;
     ctx.lineWidth = width;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    strokeSegments(ctx, points);
+    strokeSegments(ctx, sampled);
     ctx.restore();
+  }
+
+  surfaceXY(unit) {
+    if (!unit) return null;
+    const theta = Math.acos(clamp(-unit.z, -1, 1));
+    const s = Math.sin(theta);
+    if (Math.abs(s) < 1e-7) return { x: 0, y: 0 };
+    const d = RADIUS * theta;
+    return { x: d * unit.x / s, y: d * unit.y / s };
   }
 
   drawPeople(camera) {
@@ -271,8 +268,7 @@ export class GlobeScene {
       if (!local) return;
       const unit = rotatePoint(local, this.yaw, this.pitch);
       const projected = projectSpherePoint(unit, camera, RADIUS);
-      if (!isVisible(unit, projected)) return;
-      ordered.push({ person, unit, projected });
+      if (isVisible(unit, projected)) ordered.push({ person, unit, projected });
     });
     ordered.sort((a, b) => b.projected.z - a.projected.z);
     this.hitAreas = [];
@@ -287,20 +283,18 @@ export class GlobeScene {
     const yLen = Math.hypot(frame.yAxis.x, frame.yAxis.y);
     const apparentWidth = xLen * 2;
     if (apparentWidth < 8) return;
-
     const ctx = this.ctx;
     ctx.save();
-    ctx.globalAlpha = clamp((apparentWidth - 6) / 50, 0.12, 1);
+    ctx.globalAlpha = clamp((apparentWidth - 7) / 55, 0.10, 1);
     const a = frame.xAxis.x / (tex.width / 2);
     const b = frame.xAxis.y / (tex.width / 2);
     const c = frame.yAxis.x / (tex.height / 2);
     const d = frame.yAxis.y / (tex.height / 2);
     ctx.setTransform(camera.dpr * a, camera.dpr * b, camera.dpr * c, camera.dpr * d, camera.dpr * frame.center.x, camera.dpr * frame.center.y);
-    if (apparentWidth >= 58) ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
+    if (apparentWidth >= 62) ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
     else drawMiniMedallion(ctx, tex.width, tex.height);
     ctx.restore();
-
-    this.hitAreas.push({ id: person.id, x: frame.center.x, y: frame.center.y, r: Math.max(12, Math.max(xLen, yLen) * 1.3), z: frame.center.z });
+    this.hitAreas.push({ id: person.id, x: frame.center.x, y: frame.center.y, r: Math.max(12, Math.max(xLen, yLen) * 1.35), z: frame.center.z });
   }
 
   pick(x, y) {
@@ -313,50 +307,60 @@ export class GlobeScene {
 
 function drawBackdrop(ctx, w, h) {
   const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, '#d7bd82');
-  g.addColorStop(0.23, '#b5915b');
-  g.addColorStop(1, '#5c472e');
+  g.addColorStop(0, '#c8ad78');
+  g.addColorStop(0.35, '#9a7850');
+  g.addColorStop(1, '#5d4732');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(248,232,189,.10)';
+  for (let i = 0; i < 45; i += 1) {
+    const x = hash(i * 19) * w;
+    const y = hash(i * 31 + 2) * h * 0.35;
+    const r = 30 + hash(i * 11 + 4) * 95;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
-function drawSphere(ctx, camera, radius, w, h) {
-  const projectedRadius = apparentSphereRadius(camera, radius);
-  const g = ctx.createRadialGradient(camera.cx - projectedRadius * 0.22, camera.cy - projectedRadius * 0.28, projectedRadius * 0.05, camera.cx, camera.cy, projectedRadius);
-  g.addColorStop(0, '#efd9a3');
-  g.addColorStop(0.5, '#c8a36b');
-  g.addColorStop(0.86, '#997445');
-  g.addColorStop(1, '#563c25');
+function drawSphere(ctx, camera, radius) {
+  const pr = apparentSphereRadius(camera, radius);
+  const g = ctx.createRadialGradient(camera.cx - pr * 0.18, camera.cy - pr * 0.40, pr * 0.08, camera.cx, camera.cy, pr);
+  g.addColorStop(0, '#ead49f');
+  g.addColorStop(0.52, '#c4a06b');
+  g.addColorStop(0.84, '#8e6842');
+  g.addColorStop(1, '#4e3827');
   ctx.save();
-  ctx.shadowColor = 'rgba(62,38,17,.42)';
-  ctx.shadowBlur = 60;
+  ctx.shadowColor = 'rgba(45,29,18,.48)';
+  ctx.shadowBlur = 52;
   ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(camera.cx, camera.cy, projectedRadius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.clip();
-  ctx.globalAlpha = 0.08;
-  ctx.strokeStyle = '#6d4c29';
-  ctx.lineWidth = 0.7;
-  for (let i = 0; i < 36; i += 1) {
-    const y = hash(i * 13) * h;
-    const start = hash(i * 19 + 1) * w * 0.4;
-    ctx.beginPath();
-    ctx.moveTo(start, y);
-    for (let x = start; x < w; x += 42) ctx.lineTo(x, y + Math.sin(x * 0.012 + i) * (2 + hash(i * 7) * 5));
-    ctx.stroke();
-  }
+  ctx.beginPath(); ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(248,224,166,.55)';
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
   ctx.restore();
 }
 
 function drawMiniMedallion(ctx, w, h) {
-  const rx = w * 0.15, ry = h * 0.19;
-  ctx.fillStyle = '#66503a';
-  ctx.beginPath(); ctx.ellipse(0, -h * 0.04, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#a97c43'; ctx.lineWidth = w * 0.008; ctx.stroke();
-  const glass = ctx.createRadialGradient(-rx * 0.55, -h * 0.11 - ry * 0.5, 0, 0, -h * 0.04, rx);
-  glass.addColorStop(0, 'rgba(255,248,218,.42)'); glass.addColorStop(0.3, 'rgba(255,255,255,.08)'); glass.addColorStop(1, 'rgba(25,15,8,.18)');
+  const rx = w * 0.17, ry = h * 0.22;
+  ctx.fillStyle = '#684728';
+  ctx.beginPath(); ctx.ellipse(0, -h * 0.03, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#b58a4c'; ctx.lineWidth = w * 0.011; ctx.stroke();
+  const glass = ctx.createRadialGradient(-rx * 0.55, -ry * 0.8, 0, 0, 0, rx * 1.4);
+  glass.addColorStop(0, 'rgba(255,250,224,.50)');
+  glass.addColorStop(0.25, 'rgba(255,255,255,.10)');
+  glass.addColorStop(1, 'rgba(20,12,7,.20)');
   ctx.fillStyle = glass; ctx.fill();
+}
+
+function uniquePairs(links) {
+  const seen = new Set();
+  const out = [];
+  links.forEach(link => {
+    const key = [link.from, link.to].sort().join('|');
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push([link.from, link.to]);
+  });
+  return out;
 }
 
 function strokeSegments(ctx, points) {
@@ -370,7 +374,6 @@ function strokeSegments(ctx, points) {
   ctx.stroke();
 }
 
-function pairKey(a, b) { return [a, b].sort().join('|'); }
 function shortestAngle(from, to) {
   let diff = (to - from) % (Math.PI * 2);
   if (diff > Math.PI) diff -= Math.PI * 2;
@@ -379,3 +382,15 @@ function shortestAngle(from, to) {
 }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 function hash(value) { const x = Math.sin(value * 12.9898) * 43758.5453; return x - Math.floor(x); }
+
+const MAP_PATHS = [
+  [[-21,11],[-19,12],[-17,11],[-16,9],[-14,8],[-13,6],[-11,5],[-9,3],[-8,1],[-9,-2],[-7,-4],[-5,-6],[-3,-7],[-2,-10]],
+  [[-12,14],[-9,15],[-7,14],[-5,13],[-3,11],[-2,8],[-4,6],[-3,4],[-1,2],[1,1],[3,2],[5,4],[6,6]],
+  [[7,13],[9,14],[12,13],[14,11],[15,8],[13,6],[12,4],[14,2],[13,-1],[11,-2],[10,-5],[8,-7],[7,-10]],
+  [[5,8],[7,7],[9,5],[8,3],[6,2],[5,0],[4,-2],[3,-4],[1,-5],[-1,-4]],
+  [[-18,4],[-16,3],[-15,1],[-13,0],[-12,-2],[-10,-3],[-9,-5]],
+  [[-2,12],[0,11],[2,10],[3,8],[2,6],[0,5],[-1,3],[-2,1]],
+  [[10,2],[9,0],[8,-2],[7,-3],[6,-5],[5,-7]],
+  [[-6,-7],[-4,-9],[-2,-11],[1,-12],[4,-11],[6,-9]],
+  [[14,9],[16,8],[18,6],[19,4],[18,2],[17,0]],
+];

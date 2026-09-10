@@ -4,16 +4,20 @@ Interactive genealogy atlas built from the supplied Ancestry data.
 
 ## Current prototype
 
-The app uses a spherical family-atlas view with fixed-size person plaques projected onto the globe surface. Apparent size and foreshortening come from perspective and curvature rather than hand-tuned generation sizes.
+The app uses a spherical family-atlas view with fixed-size person plaques. The globe is intentionally larger than the minimum 9,099-person capacity calculation so the visible family neighborhood reads flatter while the edge of the sphere remains visible on the horizon.
 
-The current sample uses Tod, Donna, Amy, Tod's parents, grandparents, and grandparent sibling groups from project-specific Supabase tables. The production model is sized for the 9,099-person family data without rendering thousands of DOM nodes.
+Person plaques are no longer painted flat onto the globe. Each plaque is modeled as a small physical display hinged at its lower edge: the lower edge remains attached to the sphere while the plaque leans modestly toward the camera. This reduces portrait squashing away from the viewing apex without turning people into screen-space overlays.
 
-The visible sphere is intentionally somewhat larger than the minimum capacity calculation so the local family neighborhood reads flatter while the horizon remains visible.
+The current Supabase sample contains 44 people: Tod, Donna, Amy, Tod's parents, grandparents, and grandparent sibling groups. The renderer remains single-canvas and is intended to scale to the full genealogy without one DOM element per person.
+
+## Atlas surface
+
+The old procedural collection of polygons and map-like strokes has been removed. The globe now uses a single bundled antique-atlas image texture (`assets/antique-atlas-texture.svg`) containing coherent fictional landmasses, coastlines, islands, rivers, mountain marks, labels, rhumb lines, graticule, a compass rose, and ship ornamentation. The texture is clipped to the sphere, shaded by the globe lighting, and pans with globe rotation. It is decorative cartography, not a claim about real geography.
 
 ## Current interaction
 
 - Drag the atlas surface to rotate it.
-- Dragging and wheel movement use interpolated motion so the globe settles smoothly rather than snapping to every pointer event.
+- Dragging and wheel movement use interpolated motion rather than snapping to every pointer event.
 - Use the mouse wheel or trackpad to move closer or farther away.
 - Click a person to rotate that branch into focus.
 - Use `Return to Tod` or Home to restore the current prototype home person.
@@ -24,40 +28,33 @@ The visible sphere is intentionally somewhat larger than the minimum capacity ca
 - The canonical app version is shown directly beside the app title and is derived from `src/version.js`.
 - The app checks that canonical version source periodically and reloads itself when a newer deployed version appears.
 
-## Relationship labels
+## Family layout and relationships
 
-Person Details uses genealogical labels such as `Father`, `Sister`, `Paternal Grandmother`, and `Maternal Grandfather` instead of raw graph-hop counts. Labels are derived from recorded parent/spouse relationships only. When the current sample lacks enough relationship data, the UI says that the relationship is not identified rather than inventing one from layout clusters.
+Family spacing is compact by default. The current sample layout has been tightened while preserving room for genealogy connectors and descendant branches. Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, sibling rail, and child stems.
 
-## Visual grammar
+Connectors remain evidence-based. A layout cluster may influence where a prototype person is placed, but it can never create a genealogical relationship. Parent, spouse, and shared-parent sibling lines are drawn only from recorded relationship data.
 
-- Person portraits use a larger antique oval gold medallion with a stronger convex old-glass treatment.
-- Name and life dates sit on a parchment scroll with curled ends rather than a flat banner.
-- Family spacing is compact by default and only opens where branch crowding requires it.
-- Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, sibling rail, and child stems.
-- Connectors are evidence-based. Layout grouping is never allowed to invent a genealogical relationship.
-- The globe carries a deliberately fictional antique-atlas surface: pseudo-coastlines, islands, rivers, mountain marks, cartographic labels, rhumb lines, graticule, a compass rose, and engraved-style ship linework. It is decorative cartography, not a claim about real geography.
-- Distant people use level-of-detail simplification rather than full readable plaques.
+The next population test requested for the prototype is broader than the currently preserved data. The available Supabase import does not contain Donna's ancestral generations, the requested descendant branches, or the complete relationship graph needed to add siblings to every family group safely. Those people will not be fabricated. The full GEDCOM needs to be restored/re-imported before that population pass can be completed.
 
 ## GEDCOM and saved records
 
-The Person Details panel now understands saved-record/source arrays when they are present in a person's preserved `raw_gedcom` payload and will render titles, citation details, repositories, and safe web links.
+Person Details understands saved-record/source arrays when they are present in a person's preserved `raw_gedcom` payload and renders titles, citation details, repositories, and safe web links.
 
-The current 44-person Supabase prototype import does **not** yet contain those source/citation structures. Its preserved `raw_gedcom` objects currently contain birth, death, and alternate-name data only. The UI therefore reports when no saved source records were preserved instead of pretending they exist. Re-importing the full GEDCOM source/citation structure is tracked in `FUTURE_ENHANCEMENTS.md`.
+The current 44-person Supabase prototype import does **not** contain those source/citation structures. Its `raw_gedcom` objects currently preserve birth, death, and alternate-name data only. Re-importing the complete GEDCOM source/citation and relationship structures is therefore required both for saved records and for the requested expanded family stress view.
 
 ## Architecture
 
-- `src/geometry.js` owns spherical placement, camera projection, tangent frames, and capacity math.
-- `src/layout.js` maps the current sample family into a compact local surface neighborhood.
+- `src/geometry.js` owns spherical placement, camera projection, hinged plaque frames, and capacity math.
+- `src/layout.js` maps the current sample into a deliberately compact local family neighborhood.
 - `src/plaque.js` owns the old-glass portrait medallion and parchment-scroll rendering.
-- `src/atlas-map.js` owns the reusable fictional antique-map geometry and ornament data.
-- `src/scene.js` owns the single-canvas atlas renderer, horizon, cartographic projection, genealogy connectors, and smooth direct manipulation.
+- `src/atlas-map.js` owns loading and positioning the bundled atlas texture.
+- `assets/antique-atlas-texture.svg` is the coherent antique map texture displayed on the globe.
+- `src/scene.js` owns the single-canvas globe renderer, horizon, atlas texture, evidence-based genealogy connectors, plaque projection, and smooth direct manipulation.
 - `src/relationships.js` derives human-readable kinship labels from recorded relationship data.
 - `src/gedcom.js` normalizes preserved alternate names and saved source/citation records for Person Details.
 - `src/data.js` owns the Supabase/bundled-sample boundary.
 - `src/version.js` is the sole application-version source.
 - `src/version-checker.js` checks that canonical source and reloads when a deployed version changes.
-
-The geometry prototype still uses a single Canvas 2D render surface rather than a large DOM tree or a 3D framework. That keeps memory and dependencies small while the visual and navigation rules are being validated.
 
 ## Data and storage
 
@@ -69,18 +66,19 @@ The complete GEDCOM is intentionally not committed to this public repository. Th
 
 ## Future work
 
-Requested future enhancements are tracked in `FUTURE_ENHANCEMENTS.md`. The first queued interaction is a **Make home person** action that will change the reference person used for relationship labels and navigation without hardcoding that change into the current prototype.
+Requested future enhancements are tracked in `FUTURE_ENHANCEMENTS.md`. The first queued interaction is a **Make home person** action. Restoring the full GEDCOM is a data prerequisite rather than an invitation to invent missing relatives.
 
 ## Test
 
 ```bash
 node tests/geometry.test.mjs
 node tests/atlas-map.test.mjs
+node tests/layout.test.mjs
 node tests/relationships.test.mjs
 node tests/gedcom.test.mjs
 ```
 
-The geometry test verifies the full-tree sphere sizing calculation, perspective behavior, and evidence-based relationship grouping. The atlas-map test guards against the cartographic surface collapsing back into a handful of anonymous decorative lines. Relationship and GEDCOM tests guard named-kinship labels and saved-record parsing.
+The geometry test verifies capacity math, perspective behavior, the hinged plaque projection, and evidence-based relationship grouping. The atlas-map test verifies the bundled map texture and its rotation placement. The layout test guards the compact spacing targets. Relationship and GEDCOM tests guard named kinship labels and saved-record parsing.
 
 ## Hosting
 

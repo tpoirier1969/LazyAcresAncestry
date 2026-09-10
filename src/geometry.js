@@ -50,11 +50,11 @@ export function rotatePoint(p, yaw, pitch) {
   };
 }
 
-export function projectSpherePoint(unit, camera, radius) {
+export function projectLocalPoint(local, camera) {
   const world = {
-    x: radius * unit.x,
-    y: radius * unit.y,
-    z: camera.centerZ + radius * unit.z,
+    x: local.x,
+    y: local.y,
+    z: camera.centerZ + local.z,
   };
   if (world.z <= camera.near) return null;
   const scale = camera.focal / world.z;
@@ -65,6 +65,14 @@ export function projectSpherePoint(unit, camera, radius) {
     scale,
     world,
   };
+}
+
+export function projectSpherePoint(unit, camera, radius) {
+  return projectLocalPoint({
+    x: radius * unit.x,
+    y: radius * unit.y,
+    z: radius * unit.z,
+  }, camera);
 }
 
 export function isVisible(unit, projected) {
@@ -111,6 +119,83 @@ export function projectedTangentFrame(unit, camera, radius, width, height) {
     center,
     xAxis: { x: su.x - center.x, y: su.y - center.y },
     yAxis: { x: sv.x - center.x, y: sv.y - center.y },
+  };
+}
+
+// Models a fixed-size physical plaque hinged at its lower edge. The lower edge
+// stays attached to the sphere, while the plaque rotates around its horizontal
+// axis toward the camera. That keeps portraits legible away from the viewing
+// apex without turning the plaque into a screen-space overlay.
+export function projectedRaisedFrame(unit, camera, radius, width, height, cameraFacing = 0.88) {
+  const { u } = tangentBasis(unit);
+  const halfW = width / 2;
+  const halfH = height / 2;
+  const anchor = { x: unit.x * radius, y: unit.y * radius, z: unit.z * radius };
+  const cameraPoint = { x: 0, y: 0, z: -camera.centerZ };
+  const toCamera = normalize({
+    x: cameraPoint.x - anchor.x,
+    y: cameraPoint.y - anchor.y,
+    z: cameraPoint.z - anchor.z,
+  });
+
+  // Constrain the camera-facing normal to a hinge rotation around the plaque's
+  // horizontal tangent axis. Blending keeps a little of the globe's local
+  // orientation so distant plaques still feel planted on the atlas.
+  const tangentNormal = unit;
+  const viewDotU = toCamera.x * u.x + toCamera.y * u.y + toCamera.z * u.z;
+  const hingedViewNormal = normalize({
+    x: toCamera.x - u.x * viewDotU,
+    y: toCamera.y - u.y * viewDotU,
+    z: toCamera.z - u.z * viewDotU,
+  });
+  const normal = normalize({
+    x: tangentNormal.x * (1 - cameraFacing) + hingedViewNormal.x * cameraFacing,
+    y: tangentNormal.y * (1 - cameraFacing) + hingedViewNormal.y * cameraFacing,
+    z: tangentNormal.z * (1 - cameraFacing) + hingedViewNormal.z * cameraFacing,
+  });
+
+  let down = normalize(cross(normal, u));
+  const tangentDown = tangentBasis(unit).v;
+  if (down.x * tangentDown.x + down.y * tangentDown.y + down.z * tangentDown.z < 0) {
+    down = { x: -down.x, y: -down.y, z: -down.z };
+  }
+
+  const centerLocal = {
+    x: anchor.x - down.x * halfH,
+    y: anchor.y - down.y * halfH,
+    z: anchor.z - down.z * halfH,
+  };
+  const sideLocal = {
+    x: centerLocal.x + u.x * halfW,
+    y: centerLocal.y + u.y * halfW,
+    z: centerLocal.z + u.z * halfW,
+  };
+  const lowerLocal = {
+    x: centerLocal.x + down.x * halfH,
+    y: centerLocal.y + down.y * halfH,
+    z: centerLocal.z + down.z * halfH,
+  };
+
+  const center = projectLocalPoint(centerLocal, camera);
+  const side = projectLocalPoint(sideLocal, camera);
+  const lower = projectLocalPoint(lowerLocal, camera);
+  const anchorProjected = projectLocalPoint(anchor, camera);
+  if (!center || !side || !lower || !anchorProjected) return null;
+
+  return {
+    center,
+    anchor: anchorProjected,
+    xAxis: { x: side.x - center.x, y: side.y - center.y },
+    yAxis: { x: lower.x - center.x, y: lower.y - center.y },
+    normal,
+  };
+}
+
+function cross(a, b) {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
   };
 }
 

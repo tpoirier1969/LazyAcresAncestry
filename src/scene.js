@@ -13,7 +13,7 @@ import { plaqueTexture } from './plaque.js';
 import { layoutSample } from './layout.js';
 
 const POPULATION = 9099;
-const PLAQUE = { width: 1, height: 0.82 };
+const PLAQUE = { width: 1, height: 0.86 };
 const RADIUS = Math.max(40, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
 
 export class GlobeScene {
@@ -34,6 +34,7 @@ export class GlobeScene {
     this.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
+    window.addEventListener('ancestry-photo-loaded', () => this.requestDraw());
     this.bind();
     this.resize();
   }
@@ -61,11 +62,10 @@ export class GlobeScene {
     const dpr = Number(this.canvas.dataset.dpr || 1);
     const w = this.canvas.width / dpr;
     const h = this.canvas.height / dpr;
-    const focal = Math.min(w, h) * 1.08;
     return {
       cx: w / 2,
       cy: h / 2,
-      focal,
+      focal: Math.min(w, h) * 1.08,
       centerZ: RADIUS + this.cameraGap,
       near: 0.1,
       dpr,
@@ -82,7 +82,8 @@ export class GlobeScene {
       const dx = event.clientX - this.drag.x;
       const dy = event.clientY - this.drag.y;
       if (Math.hypot(dx, dy) > 3) this.drag.moved = true;
-      this.yaw = this.drag.yaw + dx * 0.0033;
+      // Drag the surface in the same direction as the pointer.
+      this.yaw = this.drag.yaw - dx * 0.0033;
       this.pitch = clamp(this.drag.pitch - dy * 0.0033, -1.22, 1.22);
       this.requestDraw();
     });
@@ -97,9 +98,17 @@ export class GlobeScene {
     }, { passive: false });
   }
 
-  focus(id) {
+  resetView() {
+    this.yaw = 0;
+    this.pitch = 0;
+    this.cameraGap = 7.5;
+    this.requestDraw();
+  }
+
+  focus(id, { resetZoom = false } = {}) {
     const local = this.positions.get(id);
     if (!local) return;
+    if (resetZoom) this.cameraGap = 7.5;
     const target = yawPitchToFront(local);
     if (this.reduceMotion) {
       this.yaw = target.yaw;
@@ -146,33 +155,33 @@ export class GlobeScene {
   drawAtlasGrid(camera) {
     const ctx = this.ctx;
     ctx.save();
-    ctx.strokeStyle = 'rgba(95,66,36,.20)';
-    ctx.lineWidth = 0.8;
-    for (let lat = -60; lat <= 60; lat += 15) this.drawParallel(camera, lat * Math.PI / 180);
-    for (let lon = 0; lon < 360; lon += 15) this.drawMeridian(camera, lon * Math.PI / 180);
+    ctx.strokeStyle = 'rgba(95,66,36,.12)';
+    ctx.lineWidth = 0.7;
+    for (let lat = -60; lat <= 60; lat += 20) this.drawParallel(camera, lat * Math.PI / 180);
+    for (let lon = 0; lon < 360; lon += 20) this.drawMeridian(camera, lon * Math.PI / 180);
     ctx.restore();
   }
 
   drawParallel(camera, lat) {
     const points = [];
-    for (let i = 0; i <= 160; i += 1) {
-      const lon = i / 160 * Math.PI * 2;
+    for (let i = 0; i <= 140; i += 1) {
+      const lon = i / 140 * Math.PI * 2;
       let p = { x: Math.cos(lat) * Math.cos(lon), y: Math.sin(lat), z: Math.cos(lat) * Math.sin(lon) };
       p = rotatePoint(p, this.yaw, this.pitch);
       const q = projectSpherePoint(p, camera, RADIUS);
-      if (isVisible(p, q)) points.push(q); else points.push(null);
+      points.push(isVisible(p, q) ? q : null);
     }
     strokeSegments(this.ctx, points);
   }
 
   drawMeridian(camera, lon) {
     const points = [];
-    for (let i = 0; i <= 120; i += 1) {
-      const lat = -Math.PI / 2 + i / 120 * Math.PI;
+    for (let i = 0; i <= 100; i += 1) {
+      const lat = -Math.PI / 2 + i / 100 * Math.PI;
       let p = { x: Math.cos(lat) * Math.cos(lon), y: Math.sin(lat), z: Math.cos(lat) * Math.sin(lon) };
       p = rotatePoint(p, this.yaw, this.pitch);
       const q = projectSpherePoint(p, camera, RADIUS);
-      if (isVisible(p, q)) points.push(q); else points.push(null);
+      points.push(isVisible(p, q) ? q : null);
     }
     strokeSegments(this.ctx, points);
   }
@@ -180,54 +189,78 @@ export class GlobeScene {
   drawPopulation(camera) {
     const ctx = this.ctx;
     ctx.save();
-    ctx.fillStyle = 'rgba(74,50,28,.43)';
+    ctx.fillStyle = 'rgba(74,50,28,.30)';
     for (let i = 0; i < POPULATION; i += 1) {
-      let p = {
-        x: this.population[i * 3],
-        y: this.population[i * 3 + 1],
-        z: this.population[i * 3 + 2],
-      };
+      let p = { x: this.population[i * 3], y: this.population[i * 3 + 1], z: this.population[i * 3 + 2] };
       p = rotatePoint(p, this.yaw, this.pitch);
       const q = projectSpherePoint(p, camera, RADIUS);
       if (!isVisible(p, q)) continue;
       const tangent = projectedTangentFrame(p, camera, RADIUS, PLAQUE.width, PLAQUE.height);
       if (!tangent) continue;
-      const rw = Math.max(0.65, Math.hypot(tangent.xAxis.x, tangent.xAxis.y) * 0.32);
-      if (rw < 0.85) continue;
-      const alpha = clamp((rw - 0.7) / 7, 0.08, 0.38);
-      ctx.globalAlpha = alpha;
+      const rw = Math.max(0.55, Math.hypot(tangent.xAxis.x, tangent.xAxis.y) * 0.20);
+      if (rw < 0.7) continue;
+      ctx.globalAlpha = clamp((rw - 0.5) / 8, 0.04, 0.22);
       ctx.beginPath();
-      ctx.ellipse(q.x, q.y, rw, rw * 0.72, 0, 0, Math.PI * 2);
+      ctx.ellipse(q.x, q.y, rw, rw * 1.18, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
   }
 
   drawRelationships(camera) {
+    const spousePairs = this.relationships.filter(r => r.type === 'spouse');
+    const parentLinks = this.relationships.filter(r => r.type === 'parent');
+    const parentsByChild = new Map();
+    parentLinks.forEach(link => {
+      if (!parentsByChild.has(link.to)) parentsByChild.set(link.to, []);
+      parentsByChild.get(link.to).push(link.from);
+    });
+
+    const drawnSpouses = new Set();
+    spousePairs.forEach(link => {
+      const key = pairKey(link.from, link.to);
+      if (drawnSpouses.has(key)) return;
+      drawnSpouses.add(key);
+      this.drawSurfaceArc(link.from, link.to, camera, 'rgba(86,57,30,.72)', 1.55);
+    });
+
+    parentsByChild.forEach((parents, childId) => {
+      const unique = [...new Set(parents)].filter(id => this.positions.has(id));
+      if (!unique.length || !this.positions.has(childId)) return;
+      if (unique.length === 1) {
+        this.drawSurfaceArc(unique[0], childId, camera, 'rgba(86,57,30,.68)', 1.5);
+        return;
+      }
+
+      const [a, b] = unique;
+      const pair = spousePairs.some(link => pairKey(link.from, link.to) === pairKey(a, b));
+      if (!pair) this.drawSurfaceArc(a, b, camera, 'rgba(86,57,30,.72)', 1.55);
+      const midpoint = slerpUnit(this.positions.get(a), this.positions.get(b), 0.5);
+      this.drawUnitArc(midpoint, this.positions.get(childId), camera, 'rgba(86,57,30,.72)', 1.6);
+    });
+  }
+
+  drawSurfaceArc(fromId, toId, camera, stroke, width) {
+    const from = this.positions.get(fromId), to = this.positions.get(toId);
+    if (!from || !to) return;
+    this.drawUnitArc(from, to, camera, stroke, width);
+  }
+
+  drawUnitArc(from, to, camera, stroke, width) {
     const ctx = this.ctx;
+    const points = [];
+    for (let i = 0; i <= 30; i += 1) {
+      const local = slerpUnit(from, to, i / 30);
+      const unit = rotatePoint(local, this.yaw, this.pitch);
+      const projected = projectSpherePoint(unit, camera, RADIUS);
+      points.push(isVisible(unit, projected) ? projected : null);
+    }
     ctx.save();
-    ctx.lineWidth = 1.45;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = width;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    this.relationships.forEach(relationship => {
-      const from = this.positions.get(relationship.from);
-      const to = this.positions.get(relationship.to);
-      if (!from || !to) return;
-      const fromPerson = this.people.find(person => person.id === relationship.from);
-      const toPerson = this.people.find(person => person.id === relationship.to);
-      const maternal = fromPerson?.branch === 'maternal' || toPerson?.branch === 'maternal';
-      ctx.strokeStyle = relationship.type === 'spouse'
-        ? 'rgba(113,73,35,.58)'
-        : maternal ? 'rgba(112,77,50,.56)' : 'rgba(93,62,34,.62)';
-      const points = [];
-      for (let i = 0; i <= 24; i += 1) {
-        const local = slerpUnit(from, to, i / 24);
-        const unit = rotatePoint(local, this.yaw, this.pitch);
-        const projected = projectSpherePoint(unit, camera, RADIUS);
-        points.push(isVisible(unit, projected) ? projected : null);
-      }
-      strokeSegments(ctx, points);
-    });
+    strokeSegments(ctx, points);
     ctx.restore();
   }
 
@@ -253,30 +286,21 @@ export class GlobeScene {
     const xLen = Math.hypot(frame.xAxis.x, frame.xAxis.y);
     const yLen = Math.hypot(frame.yAxis.x, frame.yAxis.y);
     const apparentWidth = xLen * 2;
-    if (apparentWidth < 7) return;
+    if (apparentWidth < 8) return;
 
     const ctx = this.ctx;
     ctx.save();
-    ctx.globalAlpha = clamp((apparentWidth - 5) / 45, 0.10, 1);
+    ctx.globalAlpha = clamp((apparentWidth - 6) / 50, 0.12, 1);
     const a = frame.xAxis.x / (tex.width / 2);
     const b = frame.xAxis.y / (tex.width / 2);
     const c = frame.yAxis.x / (tex.height / 2);
     const d = frame.yAxis.y / (tex.height / 2);
     ctx.setTransform(camera.dpr * a, camera.dpr * b, camera.dpr * c, camera.dpr * d, camera.dpr * frame.center.x, camera.dpr * frame.center.y);
-    if (apparentWidth >= 42) {
-      ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
-    } else {
-      drawMiniMedallion(ctx, tex.width, tex.height);
-    }
+    if (apparentWidth >= 58) ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
+    else drawMiniMedallion(ctx, tex.width, tex.height);
     ctx.restore();
 
-    this.hitAreas.push({
-      id: person.id,
-      x: frame.center.x,
-      y: frame.center.y,
-      r: Math.max(12, Math.max(xLen, yLen) * 1.25),
-      z: frame.center.z,
-    });
+    this.hitAreas.push({ id: person.id, x: frame.center.x, y: frame.center.y, r: Math.max(12, Math.max(xLen, yLen) * 1.3), z: frame.center.z });
   }
 
   pick(x, y) {
@@ -294,13 +318,6 @@ function drawBackdrop(ctx, w, h) {
   g.addColorStop(1, '#5c472e');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = 'rgba(255,248,220,.16)';
-  for (let i = 0; i < 160; i += 1) {
-    const x = hash(i * 17) * w;
-    const y = hash(i * 31 + 7) * h;
-    const r = 8 + hash(i * 53 + 4) * 30;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  }
 }
 
 function drawSphere(ctx, camera, radius, w, h) {
@@ -318,30 +335,27 @@ function drawSphere(ctx, camera, radius, w, h) {
   ctx.arc(camera.cx, camera.cy, projectedRadius, 0, Math.PI * 2);
   ctx.fill();
   ctx.clip();
-
-  ctx.globalAlpha = 0.17;
+  ctx.globalAlpha = 0.08;
   ctx.strokeStyle = '#6d4c29';
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 120; i += 1) {
+  ctx.lineWidth = 0.7;
+  for (let i = 0; i < 36; i += 1) {
     const y = hash(i * 13) * h;
     const start = hash(i * 19 + 1) * w * 0.4;
     ctx.beginPath();
     ctx.moveTo(start, y);
-    for (let x = start; x < w; x += 24) {
-      ctx.lineTo(x, y + Math.sin(x * 0.016 + i) * (3 + hash(i * 7) * 8));
-    }
+    for (let x = start; x < w; x += 42) ctx.lineTo(x, y + Math.sin(x * 0.012 + i) * (2 + hash(i * 7) * 5));
     ctx.stroke();
   }
   ctx.restore();
 }
 
 function drawMiniMedallion(ctx, w, h) {
-  const rx = w * 0.20, ry = h * 0.23;
-  ctx.fillStyle = '#5d452e';
-  ctx.beginPath(); ctx.ellipse(0, -h * 0.06, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#b58a4c'; ctx.lineWidth = w * 0.01; ctx.stroke();
-  const glass = ctx.createRadialGradient(-rx * 0.55, -h * 0.12 - ry * 0.5, 0, 0, -h * 0.06, rx);
-  glass.addColorStop(0, 'rgba(255,248,218,.48)'); glass.addColorStop(0.3, 'rgba(255,255,255,.10)'); glass.addColorStop(1, 'rgba(25,15,8,.20)');
+  const rx = w * 0.15, ry = h * 0.19;
+  ctx.fillStyle = '#66503a';
+  ctx.beginPath(); ctx.ellipse(0, -h * 0.04, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#a97c43'; ctx.lineWidth = w * 0.008; ctx.stroke();
+  const glass = ctx.createRadialGradient(-rx * 0.55, -h * 0.11 - ry * 0.5, 0, 0, -h * 0.04, rx);
+  glass.addColorStop(0, 'rgba(255,248,218,.42)'); glass.addColorStop(0.3, 'rgba(255,255,255,.08)'); glass.addColorStop(1, 'rgba(25,15,8,.18)');
   ctx.fillStyle = glass; ctx.fill();
 }
 
@@ -356,6 +370,7 @@ function strokeSegments(ctx, points) {
   ctx.stroke();
 }
 
+function pairKey(a, b) { return [a, b].sort().join('|'); }
 function shortestAngle(from, to) {
   let diff = (to - from) % (Math.PI * 2);
   if (diff > Math.PI) diff -= Math.PI * 2;

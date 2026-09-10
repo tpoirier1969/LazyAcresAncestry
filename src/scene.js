@@ -43,8 +43,13 @@ export class GlobeScene {
     this.yaw = 0;
     this.pitch = HOME_PITCH;
     this.cameraGap = DEFAULT_GAP;
+    this.targetYaw = this.yaw;
+    this.targetPitch = this.pitch;
+    this.targetCameraGap = this.cameraGap;
     this.drag = null;
     this.needsDraw = false;
+    this.motionFrame = null;
+    this.focusFrame = null;
     this.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -92,6 +97,8 @@ export class GlobeScene {
 
   bind() {
     this.canvas.addEventListener('pointerdown', event => {
+      this.cancelFocus();
+      this.stopMotion();
       this.canvas.setPointerCapture(event.pointerId);
       this.drag = { x: event.clientX, y: event.clientY, yaw: this.yaw, pitch: this.pitch, moved: false };
     });
@@ -100,44 +107,105 @@ export class GlobeScene {
       const dx = event.clientX - this.drag.x;
       const dy = event.clientY - this.drag.y;
       if (Math.hypot(dx, dy) > 3) this.drag.moved = true;
-      this.yaw = this.drag.yaw - dx * 0.003;
-      this.pitch = clamp(this.drag.pitch - dy * 0.003, -0.95, 1.25);
-      this.requestDraw();
+      this.targetYaw = this.drag.yaw - dx * 0.003;
+      this.targetPitch = clamp(this.drag.pitch - dy * 0.003, -0.95, 1.25);
+      if (this.reduceMotion) {
+        this.yaw = this.targetYaw;
+        this.pitch = this.targetPitch;
+        this.requestDraw();
+      } else {
+        this.requestMotion();
+      }
     });
     this.canvas.addEventListener('pointerup', event => {
       if (!this.drag?.moved) this.pick(event.offsetX, event.offsetY);
       this.drag = null;
     });
+    this.canvas.addEventListener('pointercancel', () => { this.drag = null; });
     this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
-      this.cameraGap = clamp(this.cameraGap + Math.sign(event.deltaY) * 1.15, MIN_GAP, MAX_GAP);
-      this.requestDraw();
+      this.targetCameraGap = clamp(this.targetCameraGap + Math.sign(event.deltaY) * 1.15, MIN_GAP, MAX_GAP);
+      if (this.reduceMotion) {
+        this.cameraGap = this.targetCameraGap;
+        this.requestDraw();
+      } else {
+        this.requestMotion();
+      }
     }, { passive: false });
+  }
+
+  requestMotion() {
+    if (this.motionFrame) return;
+    const tick = () => {
+      const yawDelta = shortestAngle(this.yaw, this.targetYaw);
+      const pitchDelta = this.targetPitch - this.pitch;
+      const gapDelta = this.targetCameraGap - this.cameraGap;
+      this.yaw += yawDelta * 0.24;
+      this.pitch += pitchDelta * 0.24;
+      this.cameraGap += gapDelta * 0.22;
+
+      const settled = Math.abs(yawDelta) < 0.00035 && Math.abs(pitchDelta) < 0.00035 && Math.abs(gapDelta) < 0.01;
+      if (settled) {
+        this.yaw = this.targetYaw;
+        this.pitch = this.targetPitch;
+        this.cameraGap = this.targetCameraGap;
+        this.motionFrame = null;
+        this.requestDraw();
+        return;
+      }
+
+      this.requestDraw();
+      this.motionFrame = requestAnimationFrame(tick);
+    };
+    this.motionFrame = requestAnimationFrame(tick);
+  }
+
+  stopMotion() {
+    if (this.motionFrame) cancelAnimationFrame(this.motionFrame);
+    this.motionFrame = null;
+    this.targetYaw = this.yaw;
+    this.targetPitch = this.pitch;
+    this.targetCameraGap = this.cameraGap;
+  }
+
+  cancelFocus() {
+    if (this.focusFrame) cancelAnimationFrame(this.focusFrame);
+    this.focusFrame = null;
   }
 
   focus(id, { resetZoom = false } = {}) {
     const local = this.positions.get(id);
     if (!local) return;
-    if (resetZoom) this.cameraGap = DEFAULT_GAP;
+    this.stopMotion();
+    this.cancelFocus();
+    if (resetZoom) {
+      this.cameraGap = DEFAULT_GAP;
+      this.targetCameraGap = DEFAULT_GAP;
+    }
     const target = yawPitchToFront(local);
     target.pitch += HOME_PITCH;
     if (this.reduceMotion) {
       this.yaw = target.yaw;
       this.pitch = target.pitch;
+      this.targetYaw = this.yaw;
+      this.targetPitch = this.pitch;
       this.requestDraw();
       return;
     }
     const from = { yaw: this.yaw, pitch: this.pitch };
     const start = performance.now();
     const tick = now => {
-      const t = Math.min(1, (now - start) / 520);
-      const eased = 1 - Math.pow(1 - t, 3);
+      const t = Math.min(1, (now - start) / 650);
+      const eased = t * t * (3 - 2 * t);
       this.yaw = from.yaw + shortestAngle(from.yaw, target.yaw) * eased;
       this.pitch = from.pitch + (target.pitch - from.pitch) * eased;
+      this.targetYaw = this.yaw;
+      this.targetPitch = this.pitch;
       this.requestDraw();
-      if (t < 1) requestAnimationFrame(tick);
+      if (t < 1) this.focusFrame = requestAnimationFrame(tick);
+      else this.focusFrame = null;
     };
-    requestAnimationFrame(tick);
+    this.focusFrame = requestAnimationFrame(tick);
   }
 
   requestDraw() {
@@ -235,13 +303,15 @@ export class GlobeScene {
   }
 
   projectMapPath(path, camera, samplesPerSegment = 4) {
+    const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
+    const samples = moving ? Math.max(2, samplesPerSegment - 2) : samplesPerSegment;
     const sampled = [];
     for (let segment = 0; segment < path.length - 1; segment += 1) {
       const a = path[segment];
       const b = path[segment + 1];
-      for (let i = 0; i <= samplesPerSegment; i += 1) {
+      for (let i = 0; i <= samples; i += 1) {
         if (segment > 0 && i === 0) continue;
-        const t = i / samplesPerSegment;
+        const t = i / samples;
         const point = this.projectAtlasPoint(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, camera);
         sampled.push(point);
       }
@@ -358,11 +428,12 @@ export class GlobeScene {
 
   drawSurfacePolyline(xyPoints, camera, width = 0.7, stroke = null) {
     const sampled = [];
+    const steps = this.drag || this.motionFrame || this.focusFrame ? 10 : 16;
     for (let segment = 0; segment < xyPoints.length - 1; segment += 1) {
       const a = xyPoints[segment];
       const b = xyPoints[segment + 1];
-      for (let i = 0; i <= 18; i += 1) {
-        const t = i / 18;
+      for (let i = 0; i <= steps; i += 1) {
+        const t = i / steps;
         const local = tangentPoint(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, RADIUS);
         const unit = rotatePoint(local, this.yaw, this.pitch);
         const q = projectSpherePoint(unit, camera, RADIUS);

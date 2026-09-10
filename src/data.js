@@ -17,7 +17,7 @@ async function loadSupabase(config) {
     Authorization: `Bearer ${config.supabasePublishableKey}`,
   };
   const prefix = config.tablePrefix || 'lazy_acres_ancestry_';
-  const peopleUrl = `${config.supabaseUrl}/rest/v1/${prefix}people?select=gedcom_id,display_name,given_name,surname,sex,birth_date_text,birth_place,death_date_text,death_place,is_living,branch,sample_role,cluster_key,data_quality_note&sample_role=not.is.null`;
+  const peopleUrl = `${config.supabaseUrl}/rest/v1/${prefix}people?select=gedcom_id,display_name,given_name,surname,sex,birth_date_text,birth_place,death_date_text,death_place,is_living,branch,sample_role,cluster_key,data_quality_note,raw_gedcom&sample_role=not.is.null`;
   const relUrl = `${config.supabaseUrl}/rest/v1/${prefix}relationships?select=relationship_type,from:${prefix}people!lazy_acres_ancestry_relationships_from_person_id_fkey(gedcom_id),to:${prefix}people!lazy_acres_ancestry_relationships_to_person_id_fkey(gedcom_id)`;
   const [peopleRes, relRes] = await Promise.all([fetch(peopleUrl, { headers }), fetch(relUrl, { headers })]);
   if (!peopleRes.ok || !relRes.ok) throw new Error('Supabase sample unavailable');
@@ -37,6 +37,7 @@ async function loadSupabase(config) {
       branch: row.branch,
       cluster: row.cluster_key,
       note: row.data_quality_note,
+      rawGedcom: row.raw_gedcom && typeof row.raw_gedcom === 'object' ? row.raw_gedcom : {},
     })),
     relationships: relRows.map(row => ({ type: row.relationship_type, from: row.from?.gedcom_id, to: row.to?.gedcom_id })).filter(r => r.from && r.to),
   };
@@ -61,6 +62,12 @@ async function loadFallback() {
       branch: person.branch,
       cluster: person.cluster,
       note: null,
+      rawGedcom: {
+        birth: person.birth || {},
+        death: person.death || {},
+        alternate_names: person.alternate_names || [],
+        ...(person.raw_gedcom && typeof person.raw_gedcom === 'object' ? person.raw_gedcom : {}),
+      },
     })),
     relationships: data.relationships || [],
   };

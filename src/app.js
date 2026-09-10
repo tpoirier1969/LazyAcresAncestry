@@ -1,6 +1,8 @@
 import { APP_VERSION } from './version.js';
 import { startVersionChecker } from './version-checker.js';
 import { loadFamily } from './data.js';
+import { extractAlternateNames, extractSavedRecords } from './gedcom.js';
+import { describeRelationship } from './relationships.js';
 import { GlobeScene } from './scene.js';
 
 const config = window.LAZY_ACRES_ANCESTRY_CONFIG || {};
@@ -10,6 +12,7 @@ const source = document.getElementById('sourcePill');
 const details = document.getElementById('personPanel');
 const scaleReadout = document.getElementById('scaleReadout');
 const homePersonBtn = document.getElementById('homePersonBtn');
+const appVersion = document.getElementById('appVersion');
 const rail = document.querySelector('.rail');
 const scene = new GlobeScene(canvas, selectPerson);
 const NOTE_AUTHOR_KEY = 'lazy_acres_ancestry_note_author';
@@ -19,6 +22,8 @@ let byId = new Map();
 let homePerson = null;
 let selectedPerson = null;
 let distances = new Map();
+
+if (appVersion) appVersion.textContent = `v${APP_VERSION}`;
 
 boot().catch(error => {
   console.error(error);
@@ -31,7 +36,7 @@ async function boot() {
   homePerson = family.people.find(person => person.role === 'root') || family.people[0] || null;
   distances = computeDistances(homePerson?.id);
   scene.setFamily(family.people, family.relationships);
-  source.textContent = `${family.source} · v${APP_VERSION}`;
+  source.textContent = family.source;
   scaleReadout.textContent = `${scene.diameter.toFixed(0)} plaque-width sphere · 9,099-person capacity model`;
   wireSearch();
   wireNavigation();
@@ -91,10 +96,14 @@ function selectPerson(id, options = {}) {
 function showPerson(person) {
   const photoCount = person.photo ? 1 : 0;
   const noteCount = readNotes(person.id).length;
+  const relationship = describeRelationship(homePerson?.id, person.id, family.people, family.relationships);
   details.innerHTML = `
     <button class="panel-close" id="personCloseInner" aria-label="Close person details">×</button>
     <div class="panel-kicker">FOCUSED PERSON</div>
-    <h2>${escapeHtml(person.name)}</h2>
+    <div class="person-heading">
+      ${renderProfileImage(person)}
+      <div><h2>${escapeHtml(person.name)}</h2><div class="person-relationship">${escapeHtml(relationship)}</div></div>
+    </div>
     <div class="panel-actions">
       <button type="button" id="galleryBtn">Photos${photoCount ? ` (${photoCount})` : ''}</button>
       <button type="button" id="notesBtn">Notes${noteCount ? ` (${noteCount})` : ''}</button>
@@ -102,14 +111,40 @@ function showPerson(person) {
     <dl>
       <div><dt>Born</dt><dd>${escapeHtml(person.birth?.date || 'Unknown')}<br>${escapeHtml(person.birth?.place || '')}</dd></div>
       <div><dt>Died</dt><dd>${person.death?.date ? `${escapeHtml(person.death.date)}<br>${escapeHtml(person.death?.place || '')}` : 'No death recorded'}</dd></div>
-      <div><dt>Relationship distance</dt><dd>${formatDistance(distances.get(person.id))}</dd></div>
-      <div><dt>GEDCOM</dt><dd>${escapeHtml(person.id)}</dd></div>
+      <div><dt>Relationship</dt><dd>${escapeHtml(relationship)}</dd></div>
+      <div><dt>GEDCOM ID</dt><dd>${escapeHtml(person.id)}</dd></div>
     </dl>
+    ${renderGedcomDetails(person)}
     ${person.note ? `<p class="data-note"><strong>Data-quality note:</strong> ${escapeHtml(person.note)}</p>` : ''}
-    <p class="panel-note">Click another person to rotate that branch into the viewing apex. <strong>Return to Tod</strong> always restores the home view.</p>`;
+    <p class="panel-note">Click another person to rotate that branch into the viewing apex. <strong>Return to ${escapeHtml(homePerson?.name || 'home')}</strong> restores the home view.</p>`;
   openPanel();
   document.getElementById('galleryBtn').addEventListener('click', () => showGallery(person));
   document.getElementById('notesBtn').addEventListener('click', () => showNotes(person));
+  document.getElementById('profilePhotoBtn')?.addEventListener('click', () => showGallery(person));
+}
+
+function renderProfileImage(person) {
+  if (person.photo) {
+    return `<button class="person-profile person-profile-button" id="profilePhotoBtn" type="button" aria-label="Open ${escapeHtml(person.name)} photo gallery"><img src="${escapeHtml(person.photo)}" alt="${escapeHtml(person.name)}"></button>`;
+  }
+  const initial = (person.name || '?').trim().charAt(0).toUpperCase() || '?';
+  return `<div class="person-profile person-profile-placeholder" aria-hidden="true">${escapeHtml(initial)}</div>`;
+}
+
+function renderGedcomDetails(person) {
+  const records = extractSavedRecords(person.rawGedcom);
+  const alternateNames = extractAlternateNames(person.rawGedcom);
+  const recordMarkup = records.length
+    ? `<div class="saved-record-list">${records.map(record => `<article class="saved-record"><strong>${escapeHtml(record.title)}</strong>${record.detail ? `<span>${escapeHtml(record.detail)}</span>` : ''}${record.url ? `<a href="${escapeHtml(record.url)}" target="_blank" rel="noopener noreferrer">Open record</a>` : ''}</article>`).join('')}</div>`
+    : '<p class="record-empty">No saved source records were preserved in the current prototype import.</p>';
+  const aliases = alternateNames.length
+    ? `<div class="gedcom-aliases"><span>Also recorded as</span>${alternateNames.map(name => `<strong>${escapeHtml(name)}</strong>`).join('')}</div>`
+    : '';
+  return `<section class="gedcom-section" aria-label="GEDCOM saved records">
+    <div class="section-heading"><h3>Saved records</h3><span>${records.length}</span></div>
+    ${recordMarkup}
+    ${aliases}
+  </section>`;
 }
 
 function showGallery(person) {
@@ -117,7 +152,7 @@ function showGallery(person) {
     <button class="panel-close" id="personCloseInner" aria-label="Close photo gallery">×</button>
     <div class="panel-kicker">PHOTO GALLERY</div>
     <h2>${escapeHtml(person.name)}</h2>
-    ${person.photo ? `<figure class="gallery-card"><img src="${person.photo}" alt="${escapeHtml(person.name)}"><figcaption>Current profile photograph</figcaption></figure>` : '<p class="empty-copy">No photographs are attached to this person yet.</p>'}
+    ${person.photo ? `<figure class="gallery-card"><img src="${escapeHtml(person.photo)}" alt="${escapeHtml(person.name)}"><figcaption>Current profile photograph</figcaption></figure>` : '<p class="empty-copy">No photographs are attached to this person yet.</p>'}
     <button class="text-action" type="button" id="backToPerson">← Back to person details</button>`;
   openPanel();
   document.getElementById('backToPerson').addEventListener('click', () => showPerson(person));
@@ -246,7 +281,7 @@ function renderPeopleList() {
   }).sort((a, b) => a.name.localeCompare(b.name));
   document.getElementById('peopleCount').textContent = `${matches.length} of ${family.people.length} people`;
   const list = document.getElementById('peopleIndex');
-  list.innerHTML = matches.map(person => `<button type="button" data-id="${escapeHtml(person.id)}"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(yearFrom(person.birth?.date) || 'date unknown')} · ${formatDistance(distances.get(person.id), true)}</span></button>`).join('') || '<p class="empty-copy">No people match these filters.</p>';
+  list.innerHTML = matches.map(person => `<button type="button" data-id="${escapeHtml(person.id)}"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(yearFrom(person.birth?.date) || 'date unknown')} · ${escapeHtml(describeRelationship(homePerson?.id, person.id, family.people, family.relationships))}</span></button>`).join('') || '<p class="empty-copy">No people match these filters.</p>';
   list.querySelectorAll('button[data-id]').forEach(button => button.addEventListener('click', () => selectPerson(button.dataset.id)));
 }
 
@@ -300,11 +335,6 @@ function ordinal(value) {
   const mod100 = value % 100;
   if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
   return `${value}${value % 10 === 1 ? 'st' : value % 10 === 2 ? 'nd' : value % 10 === 3 ? 'rd' : 'th'}`;
-}
-function formatDistance(value, short = false) {
-  if (!Number.isFinite(value)) return short ? 'connection unavailable' : 'Connection not available in current sample';
-  if (value === 0) return short ? 'home' : 'Home person';
-  return `${value} ${value === 1 ? 'step' : 'steps'} from Tod`;
 }
 function notesKey(id) { return `lazy_acres_ancestry_notes_v2_${id}`; }
 function legacyNoteKey(id) { return `lazy_acres_ancestry_note_${id}`; }

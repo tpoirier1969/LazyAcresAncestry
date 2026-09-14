@@ -6,31 +6,43 @@ Interactive genealogy atlas built from the supplied Ancestry data.
 
 The app uses a spherical family-atlas view with fixed physical person plaques anchored to the same globe as the family connectors. The current Supabase sample contains 44 people: Tod, Donna, Amy, Tod's parents, grandparents, and grandparent sibling groups. The renderer remains scalable to the full genealogy without one DOM element per person.
 
+The working globe radius is now **150 physical layout units**, up from 120, so the visible genealogy occupies a flatter-looking patch of the sphere and leaves substantially more surface area for deeper generations. Person plaques remain fixed-size physical objects but have been enlarged to restore the readable portrait/name hierarchy from the approved visual reference.
+
 ## Globe renderer
 
 The world map is rendered as a genuine GPU-textured sphere rather than as Canvas 2D affine triangles.
 
-- `src/globe-webgl.js` builds a normal latitude/longitude sphere mesh with UV coordinates.
-- `src/atlas-map.js` owns the canonical atlas texture URL and provenance metadata.
-- The source texture is a 4,424 × 2,214 equirectangular physical world map from Wikimedia Commons. It supplies real coastlines, islands, mountain relief, drainage, and ocean-depth detail instead of the former hand-drawn placeholder polygons.
-- The fragment shader converts that modern physical map into a restrained sepia/antique-atlas palette while preserving the underlying geographic relief. It adds only a faint 15-degree graticule and subtle paper grain.
+- `src/globe-webgl.js` builds a latitude/longitude sphere mesh with perspective-correct UV mapping.
+- `src/atlas-map.js` owns the canonical atlas texture URLs, geographic home anchor, and provenance metadata.
+- The base texture is a 4,424 × 2,214 equirectangular physical world map from Wikimedia Commons.
+- A separate **8K elevation/bathymetry layer** restores fine terrain detail for close inspection. GPUs that cannot accept 8192-pixel textures use a 3840-pixel fallback.
+- A vector-derived monochrome political map is sampled for crisp country/coastline boundaries without replacing the shaded physical geography underneath it.
+- A transparent cartographic label layer adds restrained serif place names for the Great Lakes/North America and the principal European regions represented in the family history.
+- The fragment shader converts the combined geography into a parchment/sepia atlas palette, adds a subdued graticule and paper grain, and retains enough relief to read as a detailed historical wall map rather than a blank decorative globe.
 - WebGL performs perspective-correct texture interpolation, hidden-surface removal, horizon clipping, mipmapping where supported, and anisotropic filtering where available.
-- The WebGL projection intentionally uses the same yaw, pitch, focal length, sphere radius, and camera distance as the genealogy overlay so the map, people, and family lines remain locked to one sphere.
-- `src/scene.js` keeps the interactive genealogy overlay on the existing 2D canvas and renders the map sphere on a WebGL canvas directly beneath it.
+- The WebGL projection uses the same runtime yaw, pitch, focal length, sphere radius, and camera distance as the genealogy overlay so the map, people, and family lines remain locked together during interaction.
 
-The obsolete hand-built `sphere-texture.js` affine mapper and the crude local pseudo-map texture have been removed rather than retained as repair layers.
+The obsolete hand-built `sphere-texture.js` affine mapper and the crude local pseudo-map texture were removed rather than retained as repair layers.
 
-The map is decorative cartography. A person's position on the family globe does not claim to represent birthplace or residence.
+### Upper Peninsula home anchor
+
+The atlas is statically aligned so the family-tree home point corresponds to approximately **46.55° N, 87.45° W**, in Michigan's central Upper Peninsula / Lake Superior region. Tod therefore begins over the region where he lives rather than over an arbitrary point near the prime meridian.
+
+This geographic home anchor is only a visual reference for the family tree. Other people remain positioned by genealogy layout rules unless a future migration/geographic view explicitly maps individual events to real coordinates.
 
 ### Atlas texture provenance
 
-Current source: `Equirectangular-projection-topographic-world.jpg` on Wikimedia Commons, created by Gundan / mapswire.com and distributed under CC BY-SA 4.0. The observed Wikimedia SHA-1 is recorded in `src/atlas-map.js` alongside the source page and credit string.
+Base source: `Equirectangular-projection-topographic-world.jpg` on Wikimedia Commons, created by Gundan / mapswire.com and distributed under CC BY-SA 4.0. Its observed Wikimedia SHA-1 is recorded in `src/atlas-map.js`.
 
-The application requests the original high-resolution image directly from Wikimedia with anonymous CORS. If the remote texture cannot be loaded, WebGL retains its neutral parchment placeholder rather than falling back to the rejected low-detail map. This external dependency is deliberate for the prototype because the connected GitHub writer can update text source but cannot place the 1.66 MB binary image into the repository. A controlled local/R2 copy should replace the remote dependency before production.
+Fine relief: `World elevation map.png`, created by Avsa from NASA Blue Marble topography/bathymetry material and distributed under CC BY-SA 4.0. The app requests an 8192px Wikimedia derivative where supported rather than the 21,600px original.
+
+Political boundaries: `World location map mono.svg`, released to the public domain by its contributors. The app uses a Wikimedia raster derivative and extracts its edges in the shader.
+
+These external dependencies are acceptable for the prototype, but controlled copies should move to the application's own storage, such as Cloudflare R2, before production.
 
 ## Family spacing model
 
-Visible family layout now uses named physical spacing rules rather than cluster-specific magic numbers:
+Visible family layout uses named physical spacing rules rather than cluster-specific magic numbers:
 
 - `COUPLE_GAP` — the smallest relationship gap; spouses read as one family unit.
 - `SIBLING_GAP` — normal spacing between siblings in the same family.
@@ -44,14 +56,14 @@ The current prototype grandparent generation is laid out as a single generation 
 
 ## Person plaques
 
-Person plaques are rigid physical objects, not curved decals. Their lower-center hinge remains attached to the sphere while the plaque tilts toward the camera enough to keep portraits readable. The artwork is always rendered at a uniform scale, so the oval portrait frame and photograph keep their intended proportions instead of stretching with sphere curvature.
+Person plaques are rigid physical objects, not curved decals. Their lower-center hinge remains attached to the sphere while the plaque tilts toward the camera enough to keep portraits readable. Artwork is rendered at a uniform scale, so oval portrait frames and photographs retain their intended proportions instead of stretching with sphere curvature.
 
-The current label treatment is dark wood with brass end caps and lighter engraved-style lettering. This replaced the unsuccessful parchment-scroll treatment.
+The current label treatment is dark wood with brass end caps and lighter engraved-style lettering. Portrait/plaque dimensions have been increased from the first WebGL pass to move back toward the approved reference, where faces and names remain recognizable in the normal home view.
 
 ## Current interaction
 
 - Drag the atlas surface to rotate the globe.
-- Map, people, and family lines rotate together because they use the same sphere transform.
+- Map, people, and family lines rotate together because they share the same runtime sphere transform.
 - Wheel or trackpad movement changes camera distance.
 - Click a person to rotate that branch into focus.
 - Use `Return to Tod` or Home to restore the current prototype home person.
@@ -60,7 +72,7 @@ The current label treatment is dark wood with brass end caps and lighter engrave
 - Person Details includes the profile image, named relationship to the home person, GEDCOM ID, saved-record/source section, photo-gallery entry point, and chronological notes.
 - The canonical app version is shown directly beside the app title and derives from `src/version.js`.
 
-Requested wider zoom limits, slower movement, and a roughly 25% larger sphere are tracked in `FUTURE_ENHANCEMENTS.md` for a separate tuning pass after the new renderer is visually verified.
+Wider zoom limits and slower movement remain queued in `FUTURE_ENHANCEMENTS.md` for a later interaction-tuning pass.
 
 ## Family relationships
 
@@ -74,13 +86,17 @@ The current Supabase import is explicitly a prototype subset. It does **not** co
 
 The complete raw GEDCOM is intentionally not committed to this public repository. GEDCOM identifiers remain stable external identifiers.
 
+## Media direction
+
+The globe renderer accepts a person's current `photo` as a display source, but future user-managed media will not depend on editing the GEDCOM. The planned media model gives each stable person record one profile/frame image plus a separately managed gallery whose images can be uploaded, captioned, dated, annotated, removed, or promoted to profile status over time. The detailed requirements are tracked in `FUTURE_ENHANCEMENTS.md`.
+
 ## Architecture
 
 - `src/geometry.js` owns spherical placement, camera projection, visible-horizon tests, anchored plaque frames, and capacity math.
 - `src/layout.js` owns family layout and the canonical gap hierarchy.
-- `src/globe-webgl.js` owns the GPU UV sphere, texture upload, antique color treatment, perspective-correct map rendering, and hidden-surface handling.
-- `src/atlas-map.js` owns the canonical atlas-texture URL and provenance metadata.
-- `src/scene.js` owns interaction, shared sphere rotation/camera state, evidence-based genealogy connectors, and the 2D person overlay.
+- `src/globe-webgl.js` owns the GPU UV sphere, Upper Peninsula atlas alignment, layered textures, generated cartographic labels, antique color treatment, and hidden-surface handling.
+- `src/atlas-map.js` owns atlas asset URLs, provenance metadata, and the canonical home geographic anchor.
+- `src/scene.js` owns interaction, shared runtime sphere rotation/camera state, evidence-based genealogy connectors, physical globe radius, and the 2D person overlay.
 - `src/plaque.js` owns the old-glass portrait medallion and wood nameplate with brass end caps.
 - `src/plaque-projection.js` owns rigid aspect-preserving placement of a plaque at its sphere attachment point.
 - `src/relationships.js` derives human-readable kinship labels from recorded relationship data.
@@ -108,7 +124,7 @@ node tests/relationships.test.mjs
 node tests/gedcom.test.mjs
 ```
 
-The WebGL mesh test guards sphere geometry and UV orientation. The atlas-map test guards the high-detail source URL, provenance, credit, and recorded checksum. The layout test guards the semantic gap hierarchy and equal generation spacing. Geometry, plaque, relationship, and GEDCOM tests protect the other deterministic renderer and data rules.
+The WebGL mesh test guards unit-sphere geometry, local compass orientation, and the Upper Peninsula atlas anchor. The atlas-map test guards the layered source URLs, provenance, and anchor bounds. The layout test guards the semantic gap hierarchy and equal generation spacing. Geometry, plaque, relationship, and GEDCOM tests protect the other deterministic renderer and data rules.
 
 ## Hosting
 

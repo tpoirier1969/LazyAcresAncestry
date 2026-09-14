@@ -477,6 +477,7 @@ function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
   const planar = new Map();
   const levels = [...blocksByLevel.keys()].sort((a, b) => b - a);
   const generationGap = generationGapForPopulation(peopleCount);
+  const useLineageOrdering = peopleCount > 44;
 
   const placeLevel = (level, neighborDirection) => {
     const blocks = blocksByLevel.get(level);
@@ -485,10 +486,9 @@ function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
       const xs = [...ids]
         .map(id => planar.get(id)?.x)
         .filter(Number.isFinite);
-      const lineageTarget = block.lineagePosition * LINEAGE_SLOT_SPACING;
-      // Once a block has real parent/child neighbors, those recorded GEDCOM
-      // connections are the authoritative horizontal target. Lineage slots are
-      // only a deterministic seed/order for otherwise unanchored blocks.
+      const lineageTarget = useLineageOrdering
+        ? block.lineagePosition * LINEAGE_SLOT_SPACING
+        : null;
       block.desiredX = xs.length ? average(xs) : lineageTarget;
     });
 
@@ -497,7 +497,7 @@ function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
       const hasB = Number.isFinite(b.desiredX);
       if (hasA && hasB && a.desiredX !== b.desiredX) return a.desiredX - b.desiredX;
       if (hasA !== hasB) return hasA ? -1 : 1;
-      return compareSeed(a, b);
+      return useLineageOrdering ? compareLineageSeed(a, b) : compareSeed(a, b);
     });
 
     const centers = packedCenters(blocks);
@@ -565,8 +565,12 @@ function blockSeparation(a, b) {
   return a.span / 2 + b.span / 2 + LAYOUT_GAPS.BETWEEN_FAMILY_GAP;
 }
 
-function compareSeed(a, b) {
+function compareLineageSeed(a, b) {
   if (a.lineagePosition !== b.lineagePosition) return a.lineagePosition - b.lineagePosition;
+  return compareSeed(a, b);
+}
+
+function compareSeed(a, b) {
   const branchA = BRANCH_ORDER[a.branch] ?? 3;
   const branchB = BRANCH_ORDER[b.branch] ?? 3;
   if (branchA !== branchB) return branchA - branchB;

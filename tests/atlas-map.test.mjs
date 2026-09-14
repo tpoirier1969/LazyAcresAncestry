@@ -1,35 +1,62 @@
 import assert from 'node:assert/strict';
 import {
+  ATLAS_DETAIL_CREDIT,
+  ATLAS_DETAIL_FADE_MS,
+  ATLAS_DETAIL_LEVELS,
+  ATLAS_DETAIL_SOURCE_PAGE,
   ATLAS_HOME_ANCHOR,
-  ATLAS_REGIONAL_DETAIL_BOUNDS,
-  ATLAS_REGIONAL_DETAIL_CREDIT,
-  ATLAS_REGIONAL_DETAIL_SOURCE_PAGE,
-  ATLAS_REGIONAL_DETAIL_URL,
   ATLAS_RELIEF_TEXTURE_FALLBACK_URL,
   ATLAS_RELIEF_TEXTURE_URL,
   ATLAS_TEXTURE_CREDIT,
   ATLAS_TEXTURE_SHA1,
   ATLAS_TEXTURE_SOURCE_PAGE,
   ATLAS_TEXTURE_URL,
+  atlasDetailBounds,
+  atlasDetailKey,
+  atlasDetailLevel,
+  atlasDetailStrength,
+  atlasDetailUrl,
 } from '../src/atlas-map.js';
 
 assert.match(ATLAS_TEXTURE_URL, /^https:\/\/upload\.wikimedia\.org\//, 'atlas must use the detailed Wikimedia base image');
 assert(ATLAS_TEXTURE_URL.endsWith('/Equirectangular-projection-topographic-world.jpg'), 'atlas base must remain equirectangular');
 assert.match(ATLAS_RELIEF_TEXTURE_URL, /Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'global detail source should remain a true 8K equirectangular image');
 assert.match(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, /3840px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'limited GPUs need a 4K-class global detail fallback');
-assert.match(ATLAS_REGIONAL_DETAIL_URL, /^https:\/\/gibs\.earthdata\.nasa\.gov\/wms\/epsg4326\/best\/wms\.cgi\?/, 'Great Lakes detail must come from NASA GIBS WMS');
-assert(ATLAS_REGIONAL_DETAIL_URL.includes('width=4096'), 'regional LOD should request enough source pixels to improve the close view');
-assert(ATLAS_REGIONAL_DETAIL_URL.includes('layers=BlueMarble_NextGeneration'), 'regional LOD must use the intended Blue Marble layer');
-assert.equal(ATLAS_REGIONAL_DETAIL_BOUNDS.west, -105);
-assert.equal(ATLAS_REGIONAL_DETAIL_BOUNDS.east, -70);
-assert.equal(ATLAS_REGIONAL_DETAIL_BOUNDS.south, 35);
-assert.equal(ATLAS_REGIONAL_DETAIL_BOUNDS.north, 55);
-assert.match(ATLAS_REGIONAL_DETAIL_SOURCE_PAGE, /^https:\/\/science\.nasa\.gov\//, 'regional NASA provenance page must remain recorded');
-assert(ATLAS_REGIONAL_DETAIL_CREDIT.includes('NASA'), 'regional detail credit must remain explicit');
+assert.equal(ATLAS_DETAIL_LEVELS.length, 4, 'progressive atlas should expose four regional detail levels');
+assert.deepEqual(ATLAS_DETAIL_LEVELS.map(level => level.id), ['local', 'subregional', 'regional', 'continental']);
+assert.ok(ATLAS_DETAIL_LEVELS[0].longitudeSpan < ATLAS_DETAIL_LEVELS[1].longitudeSpan);
+assert.ok(ATLAS_DETAIL_LEVELS[1].longitudeSpan < ATLAS_DETAIL_LEVELS[2].longitudeSpan);
+assert.ok(ATLAS_DETAIL_LEVELS[2].longitudeSpan < ATLAS_DETAIL_LEVELS[3].longitudeSpan);
+assert.ok(ATLAS_DETAIL_FADE_MS >= 350 && ATLAS_DETAIL_FADE_MS <= 800, 'LOD changes should cross-fade rather than snap');
+
+assert.equal(atlasDetailLevel(7)?.id, 'local');
+assert.equal(atlasDetailLevel(20)?.id, 'subregional');
+assert.equal(atlasDetailLevel(50)?.id, 'regional');
+assert.equal(atlasDetailLevel(100)?.id, 'continental');
+assert.equal(atlasDetailLevel(180), null, 'far globe overview should rely on the global texture');
+assert.equal(atlasDetailStrength(100), 1);
+assert.ok(atlasDetailStrength(140) > 0 && atlasDetailStrength(140) < 1, 'regional layer should fade away smoothly beyond its far LOD');
+assert.equal(atlasDetailStrength(155), 0);
+
+const local = atlasDetailLevel(7);
+const homeBounds = atlasDetailBounds(ATLAS_HOME_ANCHOR, local);
+assert(homeBounds, 'home view should receive a regional detail rectangle');
+assert.ok(ATLAS_HOME_ANCHOR.longitude > homeBounds.west && ATLAS_HOME_ANCHOR.longitude < homeBounds.east);
+assert.ok(ATLAS_HOME_ANCHOR.latitude > homeBounds.south && ATLAS_HOME_ANCHOR.latitude < homeBounds.north);
+const homeUrl = new URL(atlasDetailUrl(homeBounds, local));
+assert.equal(homeUrl.hostname, 'gibs.earthdata.nasa.gov');
+assert.equal(homeUrl.searchParams.get('layers'), 'BlueMarble_NextGeneration');
+assert.equal(homeUrl.searchParams.get('width'), '4096', 'closest map view should request a 4K regional image');
+assert.ok(Number(homeUrl.searchParams.get('height')) >= 768);
+assert.match(atlasDetailKey(homeBounds, local), /^local:/);
+assert.equal(atlasDetailBounds({ longitude: 179, latitude: 0 }, local), null, 'single regional WMS requests must fall back to global detail at the antimeridian');
+
+assert.match(ATLAS_DETAIL_SOURCE_PAGE, /^https:\/\/science\.nasa\.gov\//, 'NASA detail provenance page must remain recorded');
+assert(ATLAS_DETAIL_CREDIT.includes('NASA'), 'NASA detail credit must remain explicit');
 assert.match(ATLAS_TEXTURE_SOURCE_PAGE, /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/, 'atlas provenance page must remain recorded');
 assert(ATLAS_TEXTURE_CREDIT.includes('CC BY-SA 4.0'), 'atlas licensing credit must remain explicit');
 assert.match(ATLAS_TEXTURE_SHA1, /^[0-9a-f]{40}$/, 'atlas source checksum must remain recorded for provenance');
 assert.ok(ATLAS_HOME_ANCHOR.latitude > 45 && ATLAS_HOME_ANCHOR.latitude < 48, 'home anchor should remain in Michigan Upper Peninsula latitude');
 assert.ok(ATLAS_HOME_ANCHOR.longitude < -84 && ATLAS_HOME_ANCHOR.longitude > -91, 'home anchor should remain in Michigan Upper Peninsula longitude');
 
-console.log('regional-LOD antique atlas assets and Upper Peninsula anchor ok');
+console.log('progressive cross-faded regional atlas LOD and Upper Peninsula anchor ok');

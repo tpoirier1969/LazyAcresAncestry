@@ -20,14 +20,15 @@ import {
 
 assert.match(ATLAS_TEXTURE_URL, /^https:\/\/upload\.wikimedia\.org\//, 'atlas must use the detailed Wikimedia base image');
 assert(ATLAS_TEXTURE_URL.endsWith('/Equirectangular-projection-topographic-world.jpg'), 'atlas base must remain equirectangular');
-assert.match(ATLAS_RELIEF_TEXTURE_URL, /Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'global detail source should remain a true 8K equirectangular image');
-assert.match(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, /3840px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'limited GPUs need a 4K-class global detail fallback');
+assert.match(ATLAS_RELIEF_TEXTURE_URL, /3840px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'global relief should use a bounded 4K-class texture');
+assert.equal(ATLAS_RELIEF_TEXTURE_URL, ATLAS_RELIEF_TEXTURE_FALLBACK_URL, 'all GPUs should share the bounded global relief texture budget');
 assert.equal(ATLAS_DETAIL_LEVELS.length, 4, 'progressive atlas should expose four regional detail levels');
 assert.deepEqual(ATLAS_DETAIL_LEVELS.map(level => level.id), ['local', 'subregional', 'regional', 'continental']);
 assert.ok(ATLAS_DETAIL_LEVELS[0].longitudeSpan < ATLAS_DETAIL_LEVELS[1].longitudeSpan);
 assert.ok(ATLAS_DETAIL_LEVELS[1].longitudeSpan < ATLAS_DETAIL_LEVELS[2].longitudeSpan);
 assert.ok(ATLAS_DETAIL_LEVELS[2].longitudeSpan < ATLAS_DETAIL_LEVELS[3].longitudeSpan);
-assert.ok(ATLAS_DETAIL_FADE_MS >= 350 && ATLAS_DETAIL_FADE_MS <= 800, 'LOD changes should cross-fade rather than snap');
+assert.ok(Math.max(...ATLAS_DETAIL_LEVELS.map(level => level.width)) <= 2560, 'regional detail textures must remain within the GPU memory budget');
+assert.ok(ATLAS_DETAIL_FADE_MS >= 250 && ATLAS_DETAIL_FADE_MS <= 600, 'LOD changes should cross-fade without keeping duplicate textures alive unnecessarily long');
 
 assert.equal(atlasDetailLevel(7)?.id, 'local');
 assert.equal(atlasDetailLevel(20)?.id, 'subregional');
@@ -46,7 +47,7 @@ assert.ok(ATLAS_HOME_ANCHOR.latitude > homeBounds.south && ATLAS_HOME_ANCHOR.lat
 const homeUrl = new URL(atlasDetailUrl(homeBounds, local));
 assert.equal(homeUrl.hostname, 'gibs.earthdata.nasa.gov');
 assert.equal(homeUrl.searchParams.get('layers'), 'BlueMarble_NextGeneration');
-assert.equal(homeUrl.searchParams.get('width'), '4096', 'closest map view should request a 4K regional image');
+assert.equal(homeUrl.searchParams.get('width'), '2560', 'closest map view should request a sharp but bounded regional image');
 assert.ok(Number(homeUrl.searchParams.get('height')) >= 768);
 assert.match(atlasDetailKey(homeBounds, local), /^local:/);
 assert.equal(atlasDetailBounds({ longitude: 179, latitude: 0 }, local), null, 'single regional WMS requests must fall back to global detail at the antimeridian');
@@ -59,4 +60,4 @@ assert.match(ATLAS_TEXTURE_SHA1, /^[0-9a-f]{40}$/, 'atlas source checksum must r
 assert.ok(ATLAS_HOME_ANCHOR.latitude > 45 && ATLAS_HOME_ANCHOR.latitude < 48, 'home anchor should remain in Michigan Upper Peninsula latitude');
 assert.ok(ATLAS_HOME_ANCHOR.longitude < -84 && ATLAS_HOME_ANCHOR.longitude > -91, 'home anchor should remain in Michigan Upper Peninsula longitude');
 
-console.log('progressive cross-faded regional atlas LOD and Upper Peninsula anchor ok');
+console.log('progressive cross-faded regional atlas LOD uses a bounded GPU texture budget');

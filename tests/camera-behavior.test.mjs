@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { cameraBehavior, cameraCenterY, normalizedLogZoom } from '../src/camera-behavior.js';
+import { blendOverviewCenter, cameraBehavior, cameraCenterY, normalizedLogZoom } from '../src/camera-behavior.js';
 
 const MIN_GAP = 3.8;
 const DEFAULT_GAP = 7.2;
-const MAX_GAP = 120;
+const MAX_GAP = 180;
 
 assert.equal(normalizedLogZoom(MIN_GAP, MIN_GAP, MAX_GAP), 0);
 assert.equal(normalizedLogZoom(MAX_GAP, MIN_GAP, MAX_GAP), 1);
@@ -24,21 +24,19 @@ const tiltSteps = sampledTilts.slice(1).map((value, index) => value - sampledTil
 assert.ok(tiltSteps.every(step => step > 0), 'zoom-to-angle curve must never reverse direction');
 assert.ok(Math.max(...tiltSteps) < 0.055, 'zoom-to-angle curve must not contain a perceptible jump');
 
-assert.ok(close.targetYRatio > normal.targetYRatio && normal.targetYRatio > medium.targetYRatio && medium.targetYRatio > far.targetYRatio, 'focused family should move progressively higher as the view widens');
-assert.ok(far.targetYRatio <= 0.26, 'wide overview must reserve enough viewport for the sphere instead of leaving excessive empty sky');
+assert.equal(close.overviewT, 0, 'close inspection must not use overview framing');
+assert.equal(far.overviewT, 1, 'maximum distance must fully use overview framing');
+assert.ok(medium.overviewT < 0.05, 'overview framing should wait until the user is genuinely pulling back');
+assert.ok(close.targetYRatio > far.targetYRatio, 'natural focus framing may rise slightly without shoving the family to the top');
+assert.ok(far.targetYRatio >= 0.50, 'wide framing must not use the old aggressive 25-percent focus target');
 
 assert.ok(close.dragSensitivity < normal.dragSensitivity && normal.dragSensitivity < medium.dragSensitivity && medium.dragSensitivity < far.dragSensitivity, 'panning should remain zoom-dependent and slowest during close inspection');
-assert.ok(normal.dragSensitivity < 0.00025, 'normal-view panning should be substantially slower than v0.4.5');
+assert.ok(normal.dragSensitivity < 0.00025, 'normal-view panning should remain substantially slower than v0.4.5');
 assert.ok(far.dragSensitivity <= 0.00058, 'even the far overview should stay restrained');
-
-assert.equal(close.plaqueFacing, 0);
-assert.equal(normal.plaqueFacing, 0);
-assert.equal(medium.plaqueFacing, 0);
-assert.equal(far.plaqueFacing, 0, 'person plaques must stay tangent to the globe instead of hinging toward the camera');
 
 const height = 900;
 const focal = 936;
-const radius = 150;
+const radius = 225;
 const normalCenterZ = radius + DEFAULT_GAP;
 const normalCy = cameraCenterY({
   height,
@@ -51,17 +49,10 @@ const normalCy = cameraCenterY({
 const normalFocusWorldY = radius * Math.sin(normal.viewTilt);
 const normalFocusWorldZ = -radius * Math.cos(normal.viewTilt);
 const normalFocusScreenY = normalCy - normalFocusWorldY * focal / (normalCenterZ + normalFocusWorldZ);
-assert.ok(Math.abs(normalFocusScreenY - height * normal.targetYRatio) < 1e-9, 'camera framing must keep the selected person at the intended screen height while the angle changes');
+assert.ok(Math.abs(normalFocusScreenY - height * normal.targetYRatio) < 1e-9, 'natural focus framing must remain mathematically stable while camera angle changes');
 
-const farCenterZ = radius + MAX_GAP;
-const farCy = cameraCenterY({
-  height,
-  focal,
-  centerZ: farCenterZ,
-  radius,
-  viewTilt: far.viewTilt,
-  targetYRatio: far.targetYRatio,
-});
-assert.ok(farCy < height * 0.65, 'wide overview must keep the globe center high enough to show most of the sphere');
+const projectedFarRadius = 625.3913060750731;
+const farBaseCenter = blendOverviewCenter(790, projectedFarRadius, far.overviewT, 14);
+assert.ok(Math.abs((farBaseCenter - projectedFarRadius) - 14) < 1e-9, 'canonical far overview should place the sphere top just below the viewport edge');
 
-console.log('gradual zoom camera, wide framing, restrained panning, and flat plaques ok');
+console.log('gradual camera angle, delayed overview framing, and restrained panning ok');

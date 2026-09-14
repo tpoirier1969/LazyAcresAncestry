@@ -18,13 +18,15 @@ const ROLE_LEVEL = Object.freeze({
   spouse: 0,
   sibling: 0,
 });
-const LINEAGE_SLOT_SPACING = 12;
+const DIRECT_ROLES = new Set(['root', 'parent', 'grandparent', 'great-grandparent']);
+const MIN_LINEAGE_SLOT_SPACING = 12;
+const LINEAGE_QUANTUM = 0.5;
 
 export function generationGapForPopulation(count) {
   const population = Math.max(1, Number(count) || 1);
   if (population <= 44) return LAYOUT_GAPS.GENERATION_GAP;
-  const extra = Math.log2(population / 44) * 1.45;
-  return Math.min(9, LAYOUT_GAPS.GENERATION_GAP + extra);
+  const extra = Math.log2(population / 44) * 4.5;
+  return Math.min(24, LAYOUT_GAPS.GENERATION_GAP + extra);
 }
 
 export function layoutSample(people, radius, relationships = []) {
@@ -40,13 +42,7 @@ export function layoutSample(people, radius, relationships = []) {
   const parentsByChild = collectParents(parentLinks);
   const spouseAdjacency = collectSpouses(spouseLinks);
   const distances = graphDistances(root.id, people, parentLinks, spouseLinks);
-  const lineagePositions = buildLineagePositions(
-    people,
-    root.id,
-    parentsByChild,
-    parentLinks,
-    spouseAdjacency,
-  );
+  const lineagePositions = buildLineagePositions(people, root.id, parentsByChild, parentLinks, spouseAdjacency);
   const { unitsByLevel, unitByPerson } = buildGenerationUnits(
     people,
     levels,
@@ -56,22 +52,15 @@ export function layoutSample(people, radius, relationships = []) {
     lineagePositions,
     root.id,
   );
-
-  connectFamilyUnits(unitsByLevel, unitByPerson, parentsByChild);
-  const { blocksByLevel, blockByPerson } = buildFamilyBlocks(unitsByLevel);
-  connectBlockNeighbors(parentLinks, blockByPerson);
-  const planar = placeFamilyBlocks(blocksByLevel, root.id, people.length);
+  assignUnitFamilies(unitsByLevel, unitByPerson, parentsByChild);
+  const planar = placeUnits(unitsByLevel, root.id, people.length);
   const rootPoint = planar.get(root.id) || { x: 0, y: 0 };
 
   for (const person of people) {
     const point = planar.get(person.id);
     if (!point) continue;
-    positions.set(
-      person.id,
-      tangentPoint(point.x - rootPoint.x, point.y - rootPoint.y, radius),
-    );
+    positions.set(person.id, tangentPoint(point.x - rootPoint.x, point.y - rootPoint.y, radius));
   }
-
   return positions;
 }
 
@@ -96,14 +85,12 @@ function assignGenerations(people, rootId, parentLinks, spouseLinks) {
 
   seed(rootId, 0);
   propagateLevels(adjacency, levels, queue);
-
   people.forEach(person => {
     if (!levels.has(person.id) && ROLE_LEVEL[person.role] != null) {
       seed(person.id, ROLE_LEVEL[person.role]);
     }
   });
   propagateLevels(adjacency, levels, queue);
-
   people.forEach(person => {
     if (!levels.has(person.id)) levels.set(person.id, 0);
   });
@@ -193,25 +180,21 @@ function buildLineagePositions(people, rootId, parentsByChild, parentLinks, spou
   ));
   const sum = new Map();
   const count = new Map();
-  const blood = new Set();
-
   const add = (id, slot) => {
-    if (!byId.has(id)) return false;
+    if (!byId.has(id)) return;
     sum.set(id, (sum.get(id) || 0) + slot);
     count.set(id, (count.get(id) || 0) + 1);
-    blood.add(id);
-    return true;
   };
 
   grandparentBranches.forEach((grandparentId, index) => {
     const slot = slotValues[index];
-    const branchSeeds = new Set([grandparentId]);
+    const seeds = new Set([grandparentId]);
     for (const greatGrandparent of parentsByChild.get(grandparentId) || []) {
       add(greatGrandparent, slot);
-      for (const sibling of childrenByParent.get(greatGrandparent) || []) branchSeeds.add(sibling);
+      for (const sibling of childrenByParent.get(greatGrandparent) || []) seeds.add(sibling);
     }
 
-    const queue = [...branchSeeds];
+    const queue = [...seeds];
     const visited = new Set();
     while (queue.length) {
       const id = queue.shift();
@@ -223,15 +206,15 @@ function buildLineagePositions(people, rootId, parentsByChild, parentLinks, spou
   });
 
   const positions = new Map();
-  for (const person of people) {
+  people.forEach(person => {
     if (count.has(person.id)) {
       positions.set(person.id, sum.get(person.id) / count.get(person.id));
     }
-  }
+  });
 
   for (let pass = 0; pass < 2; pass += 1) {
     for (const person of people) {
-      if (positions.has(person.id) || blood.has(person.id)) continue;
+      if (positions.has(person.id)) continue;
       const partnerPositions = [...(spouseAdjacency.get(person.id) || [])]
         .map(id => positions.get(id))
         .filter(Number.isFinite);
@@ -239,11 +222,11 @@ function buildLineagePositions(people, rootId, parentsByChild, parentLinks, spou
     }
   }
 
-  for (const person of people) {
-    if (positions.has(person.id)) continue;
+  people.forEach(person => {
+    if (positions.has(person.id)) return;
     const branch = BRANCH_ORDER[person.branch];
     positions.set(person.id, branch == null ? 0 : branch - 1);
-  }
+  });
   return positions;
 }
 
@@ -280,7 +263,6 @@ function buildGenerationUnits(
 
   const unitsByLevel = new Map();
   const unitByPerson = new Map();
-
   for (const [level, ids] of peopleByLevel) {
     const levelSet = new Set(ids);
     const visited = new Set();
@@ -302,36 +284,24 @@ function buildGenerationUnits(
         }
       }
 
-      const members = orderUnitMembers(
-        component,
-        rootId,
-        byId,
-        spouseAdjacency,
-        parentsByChild,
-        distances,
-      );
-      const distance = Math.min(...members.map(member => distances.get(member) ?? 1e9));
-      const anchorMember = [...members].sort((a, b) => (
-        (distances.get(a) ?? 1e9) - (distances.get(b) ?? 1e9)
-        || memberSeed(a, b, byId, rootId)
-      ))[0];
-      const branches = members.map(member => byId.get(member)?.branch).filter(Boolean);
-      const birthYears = members.map(member => birthYear(byId.get(member))).filter(Number.isFinite);
-      const labels = members.map(member => byId.get(member)?.name || member).sort();
+      const members = orderUnitMembers(component, rootId, byId, parentsByChild, distances);
+      const anchorMember = [...members]
+        .sort((a, b) => memberPriority(a, b, byId, distances, rootId))[0];
+      const directDepths = members.map(id => directDepth(byId.get(id))).filter(Number.isFinite);
       const lineageValues = members.map(member => lineagePositions.get(member)).filter(Number.isFinite);
+      const birthYears = members.map(member => birthYear(byId.get(member))).filter(Number.isFinite);
       const unit = {
         id: `${level}:${units.length}`,
         level,
         members,
         anchorMember,
-        distance,
-        parentUnits: new Set(),
-        layoutParentUnits: new Set(),
-        childUnits: new Set(),
-        branch: mostCommon(branches),
+        distance: Math.min(...members.map(member => distances.get(member) ?? 1e9)),
+        directDepth: directDepths.length ? Math.min(...directDepths) : null,
         lineagePosition: lineageValues.length ? average(lineageValues) : 0,
+        branch: mostCommon(members.map(member => byId.get(member)?.branch).filter(Boolean)),
         birthYear: birthYears.length ? Math.min(...birthYears) : 9999,
-        label: labels[0] || '',
+        label: members.map(member => byId.get(member)?.name || member).sort()[0] || '',
+        familyKey: '',
       };
       units.push(unit);
       members.forEach(member => unitByPerson.set(member, unit));
@@ -339,8 +309,38 @@ function buildGenerationUnits(
 
     unitsByLevel.set(level, units);
   }
-
   return { unitsByLevel, unitByPerson };
+}
+
+function directDepth(person) {
+  if (Number.isFinite(person?.directAncestorDepth)) return person.directAncestorDepth;
+  return DIRECT_ROLES.has(person?.role) ? (ROLE_LEVEL[person.role] ?? 0) : null;
+}
+
+function memberPriority(a, b, byId, distances, rootId) {
+  if (a === rootId) return -1;
+  if (b === rootId) return 1;
+  const da = directDepth(byId.get(a));
+  const db = directDepth(byId.get(b));
+  if (Number.isFinite(da) !== Number.isFinite(db)) return Number.isFinite(da) ? -1 : 1;
+  const distanceA = distances.get(a) ?? 1e9;
+  const distanceB = distances.get(b) ?? 1e9;
+  if (distanceA !== distanceB) return distanceA - distanceB;
+  return memberSeed(a, b, byId, rootId);
+}
+
+function orderUnitMembers(component, rootId, byId, parentsByChild, distances) {
+  const members = [...component].sort((a, b) => memberPriority(a, b, byId, distances, rootId));
+  if (members.length <= 2) return members;
+
+  const anchor = members[0];
+  const others = members.slice(1).sort((a, b) => {
+    const lineageA = parentsByChild.get(a)?.size ? 0 : 1;
+    const lineageB = parentsByChild.get(b)?.size ? 0 : 1;
+    return lineageA - lineageB || memberSeed(a, b, byId, rootId);
+  });
+  const leftCount = Math.floor(others.length / 2);
+  return [...others.slice(0, leftCount), anchor, ...others.slice(leftCount)];
 }
 
 function memberSeed(a, b, byId, rootId) {
@@ -352,176 +352,84 @@ function memberSeed(a, b, byId, rootId) {
   return String(byId.get(a)?.name || a).localeCompare(String(byId.get(b)?.name || b));
 }
 
-function orderUnitMembers(component, rootId, byId, spouseAdjacency, parentsByChild, distances) {
-  const members = [...component];
-  const baseSort = (a, b) => {
-    if (a === rootId) return -1;
-    if (b === rootId) return 1;
-    const distanceA = distances.get(a) ?? 1e9;
-    const distanceB = distances.get(b) ?? 1e9;
-    if (distanceA !== distanceB) return distanceA - distanceB;
-    const lineageA = parentsByChild.get(a)?.size ? 0 : 1;
-    const lineageB = parentsByChild.get(b)?.size ? 0 : 1;
-    if (lineageA !== lineageB) return lineageA - lineageB;
-    return memberSeed(a, b, byId, rootId);
-  };
+function assignUnitFamilies(unitsByLevel, unitByPerson, parentsByChild) {
+  for (const units of unitsByLevel.values()) {
+    for (const unit of units) {
+      unit.parentUnitIds = new Set();
+      unit.childUnitIds = new Set();
+    }
+  }
 
-  members.sort(baseSort);
-  if (members.length <= 2) return members;
-
-  const memberSet = new Set(members);
-  const degree = id => [...(spouseAdjacency.get(id) || [])]
-    .filter(spouse => memberSet.has(spouse)).length;
-  const hub = [...members].sort((a, b) => degree(b) - degree(a) || baseSort(a, b))[0];
-  const others = members.filter(id => id !== hub).sort(baseSort);
-  const leftCount = Math.ceil(others.length / 2);
-  return [...others.slice(0, leftCount), hub, ...others.slice(leftCount)];
-}
-
-function connectFamilyUnits(unitsByLevel, unitByPerson, parentsByChild) {
   for (const units of unitsByLevel.values()) {
     for (const unit of units) {
       for (const member of unit.members) {
         for (const parent of parentsByChild.get(member) || []) {
           const parentUnit = unitByPerson.get(parent);
-          if (parentUnit && parentUnit.level === unit.level + 1) {
-            unit.parentUnits.add(parentUnit.id);
-            parentUnit.childUnits.add(unit.id);
-          }
+          if (!parentUnit || parentUnit === unit) continue;
+          if (parentUnit.level !== unit.level + 1) continue;
+          unit.parentUnitIds.add(parentUnit.id);
+          parentUnit.childUnitIds.add(unit.id);
         }
       }
 
+      const anchorParents = new Set();
       for (const parent of parentsByChild.get(unit.anchorMember) || []) {
         const parentUnit = unitByPerson.get(parent);
-        if (parentUnit && parentUnit.level === unit.level + 1) {
-          unit.layoutParentUnits.add(parentUnit.id);
+        if (parentUnit && parentUnit !== unit && parentUnit.level === unit.level + 1) {
+          anchorParents.add(parentUnit.id);
         }
       }
-      if (!unit.layoutParentUnits.size) {
-        unit.parentUnits.forEach(id => unit.layoutParentUnits.add(id));
-      }
+      unit.familyKey = [...(anchorParents.size ? anchorParents : unit.parentUnitIds)]
+        .sort()
+        .join('|') || `origin:${unit.id}`;
     }
   }
 }
 
-function buildFamilyBlocks(unitsByLevel) {
-  const blocksByLevel = new Map();
-  const blockByPerson = new Map();
-
-  for (const [level, units] of unitsByLevel) {
-    const groups = new Map();
-    for (const unit of units) {
-      const parentKey = [...unit.layoutParentUnits].sort().join('|');
-      const key = parentKey ? `family:${parentKey}` : `unit:${unit.id}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(unit);
-    }
-
-    const blocks = [...groups.entries()].map(([key, groupUnits]) => {
-      groupUnits.sort(compareSeed);
-      const placements = blockPlacements(groupUnits);
-      const branches = groupUnits.map(unit => unit.branch).filter(Boolean);
-      const lineageValues = groupUnits.map(unit => unit.lineagePosition).filter(Number.isFinite);
-      const block = {
-        id: `${level}:${key}`,
-        level,
-        units: groupUnits,
-        branch: mostCommon(branches),
-        lineagePosition: lineageValues.length ? average(lineageValues) : 0,
-        birthYear: Math.min(...groupUnits.map(unit => unit.birthYear)),
-        label: groupUnits.map(unit => unit.label).sort()[0] || '',
-        placements,
-        span: placements.span,
-        upNeighborIds: new Set(),
-        downNeighborIds: new Set(),
-      };
-      placements.entries.forEach(entry => blockByPerson.set(entry.personId, block));
-      return block;
-    });
-
-    blocksByLevel.set(level, blocks);
-  }
-
-  return { blocksByLevel, blockByPerson };
-}
-
-function connectBlockNeighbors(parentLinks, blockByPerson) {
-  for (const link of parentLinks) {
-    const parentBlock = blockByPerson.get(link.from);
-    const childBlock = blockByPerson.get(link.to);
-    if (!parentBlock || !childBlock || parentBlock === childBlock) continue;
-    parentBlock.downNeighborIds.add(link.to);
-    childBlock.upNeighborIds.add(link.from);
-  }
-}
-
-function blockPlacements(units) {
-  const entries = [];
-  let x = 0;
-  let started = false;
-
-  for (const unit of units) {
-    if (started) x += LAYOUT_GAPS.SIBLING_GAP;
-    unit.members.forEach((personId, index) => {
-      if (index > 0) x += LAYOUT_GAPS.COUPLE_GAP;
-      entries.push({ personId, unitId: unit.id, x });
-      started = true;
-    });
-  }
-
-  if (!entries.length) return { entries, span: 0 };
-  const anchorUnit = [...units].sort((a, b) => a.distance - b.distance || compareSeed(a, b))[0];
-  const anchorEntries = entries.filter(entry => entry.unitId === anchorUnit.id);
-  const anchorMidpoint = anchorEntries.length
-    ? (anchorEntries[0].x + anchorEntries[anchorEntries.length - 1].x) / 2
-    : (entries[0].x + entries[entries.length - 1].x) / 2;
-  entries.forEach(entry => { entry.offset = entry.x - anchorMidpoint; });
-  const extent = Math.max(...entries.map(entry => Math.abs(entry.offset)), 0);
-  return { entries, span: extent * 2 };
-}
-
-function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
-  const planar = new Map();
-  const levels = [...blocksByLevel.keys()].sort((a, b) => b - a);
+function placeUnits(unitsByLevel, rootId, peopleCount) {
   const generationGap = generationGapForPopulation(peopleCount);
-  const useLineageOrdering = peopleCount > 44;
+  const rootLevel = findRootLevel(unitsByLevel, rootId);
+  const unitCenters = new Map();
+  const planar = new Map();
+  const lineageSpacing = placeRootLevel(
+    unitsByLevel.get(rootLevel) || [],
+    rootLevel,
+    generationGap,
+    unitCenters,
+    planar,
+  );
 
-  const placeLevel = (level, neighborDirection) => {
-    const blocks = blocksByLevel.get(level);
-    blocks.forEach(block => {
-      const ids = neighborDirection === 'up' ? block.upNeighborIds : block.downNeighborIds;
-      const xs = [...ids]
-        .map(id => planar.get(id)?.x)
-        .filter(Number.isFinite);
-      const lineageTarget = useLineageOrdering
-        ? block.lineagePosition * LINEAGE_SLOT_SPACING
-        : null;
-      block.desiredX = xs.length ? average(xs) : lineageTarget;
-    });
+  const levels = [...unitsByLevel.keys()].sort((a, b) => a - b);
+  const minLevel = levels[0] ?? rootLevel;
+  const maxLevel = levels[levels.length - 1] ?? rootLevel;
 
-    blocks.sort((a, b) => {
-      const hasA = Number.isFinite(a.desiredX);
-      const hasB = Number.isFinite(b.desiredX);
-      if (hasA && hasB && a.desiredX !== b.desiredX) return a.desiredX - b.desiredX;
-      if (hasA !== hasB) return hasA ? -1 : 1;
-      return useLineageOrdering ? compareLineageSeed(a, b) : compareSeed(a, b);
-    });
+  // Descendants inherit the horizontal neighborhood of their recorded parent
+  // unit, rather than snapping back to the center of a broad generation row.
+  for (let level = rootLevel - 1; level >= minLevel; level -= 1) {
+    placeConnectedLevel(
+      unitsByLevel.get(level) || [],
+      'parentUnitIds',
+      level,
+      generationGap,
+      lineageSpacing,
+      unitCenters,
+      planar,
+    );
+  }
 
-    const centers = packedCenters(blocks);
-    const y = level * generationGap;
-    blocks.forEach((block, index) => {
-      const center = centers[index];
-      for (const entry of block.placements.entries) {
-        planar.set(entry.personId, { x: center + entry.offset, y });
-      }
-    });
-  };
-
-  for (const level of levels) placeLevel(level, 'up');
-
-  for (let pass = 0; pass < 5; pass += 1) {
-    for (const level of [...levels].reverse()) placeLevel(level, 'down');
-    for (const level of levels) placeLevel(level, 'up');
+  // Ancestors and collateral ancestor siblings are centered over the recorded
+  // children already beneath them. Each spouse/nuclear unit remains its own
+  // block so a direct ancestor cannot be dragged sideways by a huge sibling row.
+  for (let level = rootLevel + 1; level <= maxLevel; level += 1) {
+    placeConnectedLevel(
+      unitsByLevel.get(level) || [],
+      'childUnitIds',
+      level,
+      generationGap,
+      lineageSpacing,
+      unitCenters,
+      planar,
+    );
   }
 
   const root = planar.get(rootId);
@@ -536,53 +444,215 @@ function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
   return planar;
 }
 
-function packedCenters(blocks) {
-  if (!blocks.length) return [];
-  const desired = [];
-  let cursor = 0;
+function findRootLevel(unitsByLevel, rootId) {
+  for (const [level, units] of unitsByLevel) {
+    if (units.some(unit => unit.members.includes(rootId))) return level;
+  }
+  return 0;
+}
 
-  blocks.forEach((block, index) => {
-    if (Number.isFinite(block.desiredX)) cursor = block.desiredX;
-    else if (index === 0) cursor = 0;
-    else cursor = desired[index - 1] + blockSeparation(blocks[index - 1], block);
-    desired.push(cursor);
+function placeRootLevel(units, level, generationGap, unitCenters, planar) {
+  const buckets = new Map();
+  for (const unit of units) {
+    const lane = quantizeLineage(unit.lineagePosition);
+    if (!buckets.has(lane)) buckets.set(lane, []);
+    buckets.get(lane).push(unit);
+  }
+
+  const laneLayouts = new Map();
+  for (const [lane, laneUnits] of buckets) {
+    laneLayouts.set(lane, packLaneUnits(laneUnits));
+  }
+  const lineageSpacing = requiredLineageSpacing(new Map([[level, laneLayouts]]));
+
+  for (const [lane, layout] of laneLayouts) {
+    const laneCenter = lane * lineageSpacing;
+    for (const placed of layout.units) {
+      const center = laneCenter + placed.offset;
+      unitCenters.set(placed.unit.id, center);
+      placeUnitMembers(planar, placed.unit, center, level * generationGap);
+    }
+  }
+  return lineageSpacing;
+}
+
+function placeConnectedLevel(
+  units,
+  neighborField,
+  level,
+  generationGap,
+  lineageSpacing,
+  unitCenters,
+  planar,
+) {
+  if (!units.length) return;
+  const ordered = [...units];
+  ordered.forEach(unit => {
+    const connected = [...(unit[neighborField] || [])]
+      .map(id => unitCenters.get(id))
+      .filter(Number.isFinite);
+    unit.desiredX = connected.length
+      ? average(connected)
+      : quantizeLineage(unit.lineagePosition) * lineageSpacing;
   });
 
-  const forward = [desired[0]];
-  for (let index = 1; index < blocks.length; index += 1) {
+  ordered.sort((a, b) => {
+    if (a.desiredX !== b.desiredX) return a.desiredX - b.desiredX;
+    const directOrder = anchorPriorityShallow(a, b);
+    if (directOrder) return directOrder;
+    return compareUnitSeed(a, b);
+  });
+
+  const centers = packedDesiredCenters(ordered);
+  ordered.forEach((unit, index) => {
+    const center = centers[index];
+    unitCenters.set(unit.id, center);
+    placeUnitMembers(planar, unit, center, level * generationGap);
+  });
+}
+
+function packedDesiredCenters(units) {
+  if (!units.length) return [];
+  const forward = new Array(units.length);
+  forward[0] = units[0].desiredX;
+  for (let index = 1; index < units.length; index += 1) {
     forward[index] = Math.max(
-      desired[index],
-      forward[index - 1] + blockSeparation(blocks[index - 1], blocks[index]),
+      units[index].desiredX,
+      forward[index - 1] + unitSeparation(units[index - 1], units[index]),
     );
   }
 
-  const backward = new Array(blocks.length);
-  backward[blocks.length - 1] = desired[blocks.length - 1];
-  for (let index = blocks.length - 2; index >= 0; index -= 1) {
+  const backward = new Array(units.length);
+  backward[units.length - 1] = units[units.length - 1].desiredX;
+  for (let index = units.length - 2; index >= 0; index -= 1) {
     backward[index] = Math.min(
-      desired[index],
-      backward[index + 1] - blockSeparation(blocks[index], blocks[index + 1]),
+      units[index].desiredX,
+      backward[index + 1] - unitSeparation(units[index], units[index + 1]),
     );
   }
 
-  return forward.map((value, index) => (value + backward[index]) / 2);
+  return units.map((unit, index) => {
+    const compromise = (forward[index] + backward[index]) / 2;
+    if (Number.isFinite(unit.directDepth)) {
+      return unit.desiredX * 0.72 + compromise * 0.28;
+    }
+    return compromise;
+  });
 }
 
-function blockSeparation(a, b) {
-  return a.span / 2 + b.span / 2 + LAYOUT_GAPS.BETWEEN_FAMILY_GAP;
+function packLaneUnits(units) {
+  const ordered = [...units].sort(compareUnitSeed);
+  if (!ordered.length) return { units: [], min: 0, max: 0 };
+  const anchorIndex = findLaneAnchorIndex(ordered);
+  const placements = new Map([[ordered[anchorIndex].id, 0]]);
+
+  let leftEdge = -unitHalfWidth(ordered[anchorIndex]);
+  for (let index = anchorIndex - 1; index >= 0; index -= 1) {
+    const unit = ordered[index];
+    const rightNeighbor = ordered[index + 1];
+    const gap = sameFamily(unit, rightNeighbor)
+      ? LAYOUT_GAPS.SIBLING_GAP
+      : LAYOUT_GAPS.BETWEEN_FAMILY_GAP;
+    const center = leftEdge - gap - unitHalfWidth(unit);
+    placements.set(unit.id, center);
+    leftEdge = center - unitHalfWidth(unit);
+  }
+
+  let rightEdge = unitHalfWidth(ordered[anchorIndex]);
+  for (let index = anchorIndex + 1; index < ordered.length; index += 1) {
+    const unit = ordered[index];
+    const leftNeighbor = ordered[index - 1];
+    const gap = sameFamily(unit, leftNeighbor)
+      ? LAYOUT_GAPS.SIBLING_GAP
+      : LAYOUT_GAPS.BETWEEN_FAMILY_GAP;
+    const center = rightEdge + gap + unitHalfWidth(unit);
+    placements.set(unit.id, center);
+    rightEdge = center + unitHalfWidth(unit);
+  }
+
+  return {
+    units: ordered.map(unit => ({ unit, offset: placements.get(unit.id) })),
+    min: leftEdge,
+    max: rightEdge,
+  };
 }
 
-function compareLineageSeed(a, b) {
-  if (a.lineagePosition !== b.lineagePosition) return a.lineagePosition - b.lineagePosition;
-  return compareSeed(a, b);
+function findLaneAnchorIndex(units) {
+  let best = 0;
+  for (let index = 1; index < units.length; index += 1) {
+    if (anchorPriority(units[index], units[best]) < 0) best = index;
+  }
+  return best;
 }
 
-function compareSeed(a, b) {
-  const branchA = BRANCH_ORDER[a.branch] ?? 3;
-  const branchB = BRANCH_ORDER[b.branch] ?? 3;
-  if (branchA !== branchB) return branchA - branchB;
+function anchorPriority(a, b) {
+  const directA = Number.isFinite(a.directDepth);
+  const directB = Number.isFinite(b.directDepth);
+  if (directA !== directB) return directA ? -1 : 1;
+  if (directA && a.directDepth !== b.directDepth) return a.directDepth - b.directDepth;
+  if (a.distance !== b.distance) return a.distance - b.distance;
+  return compareUnitSeed(a, b);
+}
+
+function compareUnitSeed(a, b) {
+  if (a.familyKey !== b.familyKey) return a.familyKey.localeCompare(b.familyKey);
+  const directOrder = anchorPriorityShallow(a, b);
+  if (directOrder) return directOrder;
   if (a.birthYear !== b.birthYear) return a.birthYear - b.birthYear;
   return a.label.localeCompare(b.label);
+}
+
+function anchorPriorityShallow(a, b) {
+  const directA = Number.isFinite(a.directDepth);
+  const directB = Number.isFinite(b.directDepth);
+  if (directA !== directB) return directA ? -1 : 1;
+  if (directA && a.directDepth !== b.directDepth) return a.directDepth - b.directDepth;
+  if (a.distance !== b.distance) return a.distance - b.distance;
+  return 0;
+}
+
+function sameFamily(a, b) {
+  return a?.familyKey && b?.familyKey && a.familyKey === b.familyKey;
+}
+
+function unitHalfWidth(unit) {
+  return ((Math.max(1, unit.members.length) - 1) * LAYOUT_GAPS.COUPLE_GAP) / 2;
+}
+
+function unitSeparation(a, b) {
+  const gap = sameFamily(a, b) ? LAYOUT_GAPS.SIBLING_GAP : LAYOUT_GAPS.BETWEEN_FAMILY_GAP;
+  return unitHalfWidth(a) + unitHalfWidth(b) + gap;
+}
+
+function placeUnitMembers(planar, unit, centerX, y) {
+  const memberCount = Math.max(1, unit.members.length);
+  const start = centerX - ((memberCount - 1) * LAYOUT_GAPS.COUPLE_GAP) / 2;
+  unit.members.forEach((personId, index) => {
+    planar.set(personId, { x: start + index * LAYOUT_GAPS.COUPLE_GAP, y });
+  });
+}
+
+function requiredLineageSpacing(levelLayouts) {
+  let spacing = MIN_LINEAGE_SLOT_SPACING;
+  for (const laneLayouts of levelLayouts.values()) {
+    const lanes = [...laneLayouts.keys()].sort((a, b) => a - b);
+    for (let index = 0; index < lanes.length - 1; index += 1) {
+      const leftLane = lanes[index];
+      const rightLane = lanes[index + 1];
+      const delta = rightLane - leftLane;
+      if (delta <= 0) continue;
+      const left = laneLayouts.get(leftLane);
+      const right = laneLayouts.get(rightLane);
+      const required = (left.max - right.min + LAYOUT_GAPS.BETWEEN_FAMILY_GAP) / delta;
+      if (required > spacing) spacing = required;
+    }
+  }
+  return spacing;
+}
+
+function quantizeLineage(value) {
+  const numeric = Number.isFinite(value) ? value : 0;
+  return Math.round(numeric / LINEAGE_QUANTUM) * LINEAGE_QUANTUM;
 }
 
 function birthYear(person) {

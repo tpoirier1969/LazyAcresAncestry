@@ -11,8 +11,8 @@ import {
 import { plaqueTexture } from './plaque.js';
 import { rigidPlaquePlacement } from './plaque-projection.js';
 import { layoutSample } from './layout.js';
-import { getAtlasTexture } from './atlas-map.js';
-import { atlasUnitFromUv, drawTexturedTriangle } from './sphere-texture.js';
+import { ATLAS_TEXTURE_URL } from './atlas-map.js';
+import { GlobeWebGLRenderer } from './globe-webgl.js';
 
 const POPULATION = 9099;
 const PLAQUE = { width: 0.90, height: 0.82 };
@@ -27,6 +27,10 @@ export class GlobeScene {
   constructor(canvas, onSelect) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this.mapCanvas = document.getElementById('mapCanvas');
+    this.globeRenderer = this.mapCanvas
+      ? new GlobeWebGLRenderer(this.mapCanvas, ATLAS_TEXTURE_URL, () => this.requestDraw())
+      : null;
     this.onSelect = onSelect;
     this.people = [];
     this.relationships = [];
@@ -43,7 +47,6 @@ export class GlobeScene {
     this.motionFrame = null;
     this.focusFrame = null;
     this.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.atlasTexture = getAtlasTexture(() => this.requestDraw());
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
     window.addEventListener('ancestry-photo-loaded', () => this.requestDraw());
@@ -67,6 +70,7 @@ export class GlobeScene {
     this.canvas.width = Math.max(1, Math.round(rect.width * dpr));
     this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
     this.canvas.dataset.dpr = String(dpr);
+    this.globeRenderer?.resize(rect.width, rect.height, dpr);
     this.requestDraw();
   }
 
@@ -205,70 +209,12 @@ export class GlobeScene {
     const w = this.canvas.width / dpr;
     const h = this.canvas.height / dpr;
     ctx.clearRect(0, 0, w, h);
-    drawBackdrop(ctx, w, h);
-    drawSphereBase(ctx, camera, RADIUS);
-    this.drawMapTexture(camera);
+
+    const globeDrawn = this.globeRenderer?.render(camera, this.yaw, this.pitch, RADIUS);
+    if (!globeDrawn) drawSphereBase(ctx, camera, RADIUS);
     drawSphereShade(ctx, camera, RADIUS);
     this.drawRelationships(camera);
     this.drawPeople(camera);
-  }
-
-  drawMapTexture(camera) {
-    const image = this.atlasTexture;
-    if (!image?.complete || !image.naturalWidth) return;
-    const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
-    const columns = moving ? 34 : 64;
-    const rows = moving ? 17 : 32;
-    const iw = image.naturalWidth;
-    const ih = image.naturalHeight;
-    const ctx = this.ctx;
-    const pr = apparentSphereRadius(camera, RADIUS);
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(camera.cx, camera.cy, pr - 0.5, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.globalAlpha = 0.97;
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-
-    for (let row = 0; row < rows; row += 1) {
-      const v0 = row / rows;
-      const v1 = (row + 1) / rows;
-      const sy0 = v0 * ih;
-      const sy1 = v1 * ih;
-      for (let col = 0; col < columns; col += 1) {
-        const u0 = col / columns;
-        const u1 = (col + 1) / columns;
-        const sx0 = u0 * iw;
-        const sx1 = u1 * iw;
-        const centerUnit = rotatePoint(atlasUnitFromUv((u0 + u1) / 2, (v0 + v1) / 2), this.yaw, this.pitch);
-        const centerProjected = projectSpherePoint(centerUnit, camera, RADIUS);
-        if (!isVisible(centerUnit, centerProjected)) continue;
-
-        const p00 = this.projectAtlasUv(u0, v0, camera);
-        const p10 = this.projectAtlasUv(u1, v0, camera);
-        const p11 = this.projectAtlasUv(u1, v1, camera);
-        const p01 = this.projectAtlasUv(u0, v1, camera);
-        if (!p00 || !p10 || !p11 || !p01) continue;
-
-        const sourceBounds = { sx: sx0, sy: sy0, sw: sx1 - sx0, sh: sy1 - sy0 };
-        drawTexturedTriangle(ctx, image,
-          [{ x: sx0, y: sy0 }, { x: sx1, y: sy0 }, { x: sx1, y: sy1 }],
-          [p00, p10, p11], sourceBounds);
-        drawTexturedTriangle(ctx, image,
-          [{ x: sx0, y: sy0 }, { x: sx1, y: sy1 }, { x: sx0, y: sy1 }],
-          [p00, p11, p01], sourceBounds);
-      }
-    }
-    ctx.restore();
-  }
-
-  projectAtlasUv(u, v, camera) {
-    const unit = rotatePoint(atlasUnitFromUv(u, v), this.yaw, this.pitch);
-    const projected = projectSpherePoint(unit, camera, RADIUS);
-    return projected || null;
   }
 
   drawRelationships(camera) {
@@ -430,15 +376,6 @@ export function buildRelationshipGroups(relationships, knownIds = null) {
   };
 }
 
-function drawBackdrop(ctx, w, h) {
-  const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, '#cdb586');
-  g.addColorStop(0.34, '#a8875d');
-  g.addColorStop(1, '#5c4631');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, w, h);
-}
-
 function drawSphereBase(ctx, camera, radius) {
   const pr = apparentSphereRadius(camera, radius);
   ctx.save();
@@ -454,10 +391,10 @@ function drawSphereBase(ctx, camera, radius) {
 function drawSphereShade(ctx, camera, radius) {
   const pr = apparentSphereRadius(camera, radius);
   const g = ctx.createRadialGradient(camera.cx - pr * 0.10, camera.cy - pr * 0.28, pr * 0.10, camera.cx, camera.cy, pr);
-  g.addColorStop(0, 'rgba(255,244,207,.15)');
-  g.addColorStop(0.60, 'rgba(106,71,39,.035)');
-  g.addColorStop(0.84, 'rgba(78,49,28,.22)');
-  g.addColorStop(1, 'rgba(41,27,18,.64)');
+  g.addColorStop(0, 'rgba(255,244,207,.07)');
+  g.addColorStop(0.64, 'rgba(106,71,39,.02)');
+  g.addColorStop(0.86, 'rgba(78,49,28,.12)');
+  g.addColorStop(1, 'rgba(41,27,18,.38)');
   ctx.save();
   ctx.fillStyle = g;
   ctx.beginPath();

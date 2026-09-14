@@ -89,11 +89,6 @@ export function scopeFamilyGraph(people, relationships, ancestorDepth = DEFAULT_
     }
   }
 
-  // Each branch starts at the oldest direct ancestor that is actually available
-  // in the imported graph. Descending only through recorded parent-child links
-  // includes the direct ancestor, their children/siblings on the home lineage,
-  // and the descendants of those sibling branches without wandering up an
-  // in-law spouse's unrelated ancestry.
   const frontier = new Set();
   for (const [id, depth] of directAncestors) {
     if (depth === 0) continue;
@@ -114,10 +109,6 @@ export function scopeFamilyGraph(people, relationships, ancestorDepth = DEFAULT_
     }
   }
 
-  // Explicitly include any discoverable direct siblings of the selected
-  // ancestor chain and their descendants. Most are already descendants of a
-  // frontier ancestor; keeping this step explicit documents and protects the
-  // intended product rule when a branch is only partially imported.
   const siblingSeeds = new Set();
   for (const ancestor of directAncestors.keys()) {
     for (const parent of parentsByChild.get(ancestor) || []) {
@@ -137,18 +128,20 @@ export function scopeFamilyGraph(people, relationships, ancestorDepth = DEFAULT_
     }
   }
 
-  // A spouse/co-parent may be shown to make a family unit intelligible, but
-  // inclusion stops there. Their parents, siblings and unrelated branches do
-  // not hitchhike onto the displayed tree.
+  // Keep spouses/co-parents needed to understand a displayed family, but do
+  // not cross upward into their unrelated ancestry. A parent is added here
+  // only when another recorded parent of that same displayed child is already
+  // part of the selected blood-line scope.
   const included = new Set(blood);
   spouseLinks.forEach(link => {
     if (blood.has(link.from)) included.add(link.to);
     if (blood.has(link.to)) included.add(link.from);
   });
-  parentLinks.forEach(link => {
-    if (!blood.has(link.to)) return;
-    for (const parent of parentsByChild.get(link.to) || []) included.add(parent);
-  });
+  for (const child of blood) {
+    const parents = [...(parentsByChild.get(child) || [])];
+    if (!parents.some(parent => blood.has(parent))) continue;
+    parents.forEach(parent => included.add(parent));
+  }
 
   const scopedPeople = people
     .filter(person => included.has(person.id))

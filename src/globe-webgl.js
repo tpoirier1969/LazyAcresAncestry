@@ -1,3 +1,5 @@
+export const ATLAS_FLIP_Y = false;
+
 export function buildSphereMesh(longitudeSegments = 128, latitudeSegments = 64) {
   const vertices = [];
   const indices = [];
@@ -134,7 +136,10 @@ export class GlobeWebGLRenderer {
       if (!this.available) return;
       const gl = this.gl;
       gl.bindTexture(gl.TEXTURE_2D, this.texture);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      // The mesh intentionally uses atlas/image coordinates: v=0 is north/top
+      // and v=1 is south/bottom. DOM images already arrive top-first, so
+      // flipping the upload here inverted the antique map on the globe.
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, ATLAS_FLIP_Y);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);

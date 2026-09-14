@@ -15,7 +15,7 @@ The world map is rendered as a genuine GPU-textured sphere rather than as Canvas
 - `src/globe-webgl.js` builds a latitude/longitude sphere mesh with perspective-correct UV mapping.
 - `src/atlas-map.js` owns the canonical atlas texture URLs, geographic home anchor, and provenance metadata.
 - The base texture is a 4,424 × 2,214 equirectangular physical world map from Wikimedia Commons.
-- A separate **8K elevation/bathymetry layer** restores fine terrain detail for close inspection. GPUs that cannot accept 8192-pixel textures use a 3840-pixel fallback.
+- A separate **8192 × 4096 terrain layer** restores fine geographic detail for close inspection. GPUs that cannot accept 8192-pixel textures use a 3840-pixel fallback.
 - A vector-derived monochrome political map is sampled for crisp country/coastline boundaries without replacing the shaded physical geography underneath it.
 - A transparent cartographic label layer adds restrained serif place names for the Great Lakes/North America and the principal European regions represented in the family history.
 - The fragment shader converts the combined geography into a parchment/sepia atlas palette, adds a subdued graticule and paper grain, and retains enough relief to read as a detailed historical wall map rather than a blank decorative globe.
@@ -34,7 +34,7 @@ This geographic home anchor is only a visual reference for the family tree. Othe
 
 Base source: `Equirectangular-projection-topographic-world.jpg` on Wikimedia Commons, created by Gundan / mapswire.com and distributed under CC BY-SA 4.0. Its observed Wikimedia SHA-1 is recorded in `src/atlas-map.js`.
 
-Fine relief: `World elevation map.png`, created by Avsa from NASA Blue Marble topography/bathymetry material and distributed under CC BY-SA 4.0. The app requests an 8192px Wikimedia derivative where supported rather than the 21,600px original.
+Fine terrain detail: `Solarsystemscope texture 8k earth daymap.jpg`, an 8192 × 4096 equirectangular world texture by Solar System Scope, distributed under CC BY 4.0 and based on NASA elevation and imagery data. The app uses the original 8K image on capable GPUs and a 3840-pixel Wikimedia derivative as fallback.
 
 Political boundaries: `World location map mono.svg`, released to the public domain by its contributors. The app uses a Wikimedia raster derivative and extracts its edges in the shader.
 
@@ -50,7 +50,7 @@ Visible family layout uses named physical spacing rules rather than cluster-spec
 - `BETWEEN_FAMILY_GAP` — extra breathing room when one family grouping ends and another begins.
 - `GENERATION_GAP` — one consistent surface distance between generations.
 
-These constants live in `src/layout.js` as the canonical owner of family spacing. `BETWEEN_FAMILY_GAP` is intentionally larger than `SIBLING_GAP`, but not large enough to visually disconnect adjacent families.
+These constants live in `src/layout.js` as the canonical owner of family spacing. `BETWEEN_FAMILY_GAP` is intentionally larger than `SIBLING_GAP`, but not large enough to visually disconnect adjacent families. The gaps were opened slightly when person plaques were enlarged so the approved portrait/name scale does not reintroduce crowding.
 
 The current prototype grandparent generation is laid out as a single generation band rather than compressed mini-clusters. Within a family the sibling gap is consistent; direct grandparent couples use the couple gap; distinct nearby family groups use the between-family gap.
 

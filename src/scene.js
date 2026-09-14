@@ -15,8 +15,8 @@ import { ATLAS_TEXTURE_URL } from './atlas-map.js';
 import { GlobeWebGLRenderer } from './globe-webgl.js';
 
 const POPULATION = 9099;
-const PLAQUE = { width: 0.90, height: 0.82 };
-const RADIUS = Math.max(120, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
+const PLAQUE = { width: 1.20, height: 1.08 };
+const RADIUS = Math.max(150, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
 const HOME_PITCH = 0.14;
 const DEFAULT_GAP = 7.2;
 const MIN_GAP = 4.8;

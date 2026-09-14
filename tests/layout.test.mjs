@@ -5,6 +5,7 @@ const people = [
   { id: 'root', name: 'Root', role: 'root', branch: 'center', birth: { date: '1969' } },
   { id: 'spouse', name: 'Spouse', role: 'spouse', branch: 'center', birth: { date: '1970' } },
   { id: 'sib', name: 'Sibling', role: 'sibling', branch: 'center', birth: { date: '1972' } },
+  { id: 'sibchild', name: 'Sibling Child', role: 'extended-family', branch: 'center', birth: { date: '1999' } },
   { id: 'dad', name: 'Dad', role: 'parent', branch: 'paternal', birth: { date: '1940' } },
   { id: 'mom', name: 'Mom', role: 'parent', branch: 'maternal', birth: { date: '1942' } },
   { id: 'pgf', name: 'Paternal Grandfather', role: 'grandparent', branch: 'paternal', birth: { date: '1910' } },
@@ -28,6 +29,7 @@ const relationships = [
   { type: 'parent', from: 'mom', to: 'root' },
   { type: 'parent', from: 'dad', to: 'sib' },
   { type: 'parent', from: 'mom', to: 'sib' },
+  { type: 'parent', from: 'sib', to: 'sibchild' },
   { type: 'parent', from: 'pgf', to: 'dad' },
   { type: 'parent', from: 'pgm', to: 'dad' },
   { type: 'parent', from: 'mgf', to: 'mom' },
@@ -63,16 +65,25 @@ close(xy('pggf').y - xy('pgf').y, LAYOUT_GAPS.GENERATION_GAP, 'grandparent-to-gr
 close(xy('cousinParent').y, xy('pgf').y, 'grandparent siblings must share a generation');
 close(xy('cousin').y, xy('dad').y, 'descendant of grandparent sibling must align with parent generation');
 close(xy('cousin2').y, xy('root').y, 'next cousin generation must align with root generation');
+close(xy('sibchild').y, -LAYOUT_GAPS.GENERATION_GAP, 'a sibling child must sit one generation below the root');
 close(xGap('root', 'spouse'), LAYOUT_GAPS.COUPLE_GAP, 'couple members must remain adjacent');
 assert.ok(xGap('root', 'sib') <= LAYOUT_GAPS.COUPLE_GAP + LAYOUT_GAPS.SIBLING_GAP + 0.05, 'siblings should remain in the same local family block');
+assert.ok(Math.abs(xy('sibchild').x - xy('sib').x) < LAYOUT_GAPS.BETWEEN_FAMILY_GAP, 'a child must stay beneath its actual parent rather than a generation-wide rail');
+
+const parentMidpoint = (xy('dad').x + xy('mom').x) / 2;
+const siblingMidpoint = (xy('root').x + xy('sib').x) / 2;
+assert.ok(Math.abs(parentMidpoint - siblingMidpoint) < LAYOUT_GAPS.BETWEEN_FAMILY_GAP, 'parents should remain centered above their recorded sibling family');
+assert.ok(Math.abs(((xy('pgf').x + xy('pgm').x) / 2) - xy('dad').x) < LAYOUT_GAPS.BETWEEN_FAMILY_GAP, 'paternal grandparents should stay over the paternal parent');
+assert.ok(Math.abs(((xy('mgf').x + xy('mgm').x) / 2) - xy('mom').x) < LAYOUT_GAPS.BETWEEN_FAMILY_GAP, 'maternal grandparents should stay over the maternal parent');
 
 assert.ok(LAYOUT_GAPS.COUPLE_GAP >= LAYOUT_GAPS.MIN_PERSON_CLEARANCE);
 assert.ok(LAYOUT_GAPS.SIBLING_GAP > LAYOUT_GAPS.COUPLE_GAP);
 assert.ok(LAYOUT_GAPS.BETWEEN_FAMILY_GAP > LAYOUT_GAPS.SIBLING_GAP);
+assert.ok(LAYOUT_GAPS.GENERATION_GAP > LAYOUT_GAPS.BETWEEN_FAMILY_GAP, 'generation separation must read more strongly than within-row family spacing');
 
 for (const person of people) {
   const point = xy(person.id);
   assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y), `${person.id} must receive a finite layout position`);
 }
 
-console.log('relationship-driven multi-generation family layout ok');
+console.log('GEDCOM family-block multi-generation layout ok');

@@ -18,7 +18,12 @@ import { GlobeWebGLRenderer } from './globe-webgl.js';
 
 const POPULATION = 9099;
 const PLAQUE = { width: 1.20, height: 1.08 };
-const RADIUS = Math.max(225, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
+const RADIUS = Math.max(225, requiredSphereRadius({
+  count: POPULATION,
+  plaqueWidth: 1,
+  plaqueHeight: 0.75,
+  spacingFactor: 1.8,
+}));
 const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
 const OVERVIEW_GAP = 155;
@@ -47,6 +52,8 @@ export class GlobeScene {
     this.relationships = [];
     this.positions = new Map();
     this.hitAreas = [];
+    this.homeId = null;
+    this.focusedId = null;
     this.yaw = 0;
     this.pitch = 0;
     this.cameraGap = DEFAULT_GAP;
@@ -54,8 +61,8 @@ export class GlobeScene {
     this.targetPitch = this.pitch;
     this.targetCameraGap = this.cameraGap;
     this.cameraOffset = { x: 0, y: 0 };
-    this.focusedId = null;
     this.zoomAnchor = null;
+    this.homeRecentering = false;
     this.drag = null;
     this.needsDraw = false;
     this.motionFrame = null;
@@ -71,7 +78,8 @@ export class GlobeScene {
   setFamily(people, relationships = []) {
     this.people = people;
     this.relationships = relationships;
-    this.positions = layoutSample(people, RADIUS);
+    this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
+    this.positions = layoutSample(people, RADIUS, relationships);
     this.requestDraw();
   }
 
@@ -121,7 +129,13 @@ export class GlobeScene {
       this.cancelFocus();
       this.stopMotion();
       this.canvas.setPointerCapture(event.pointerId);
-      this.drag = { x: event.clientX, y: event.clientY, yaw: this.yaw, pitch: this.pitch, moved: false };
+      this.drag = {
+        x: event.clientX,
+        y: event.clientY,
+        yaw: this.yaw,
+        pitch: this.pitch,
+        moved: false,
+      };
     });
 
     this.canvas.addEventListener('pointermove', event => {
@@ -151,22 +165,53 @@ export class GlobeScene {
       event.preventDefault();
       const direction = Math.sign(event.deltaY);
       if (!direction) return;
-      if (!this.zoomAnchor) this.captureZoomAnchor();
+
+      if (direction > 0 && !this.zoomAnchor) this.captureZoomAnchor();
       const zoomLimit = direction > 0 ? this.zoomOutLimit() : ABSOLUTE_MAX_GAP;
-      this.targetCameraGap = clamp(
+      const nextGap = clamp(
         this.targetCameraGap * Math.exp(direction * 0.13),
         MIN_GAP,
         zoomLimit,
       );
+      const returningToClosestHome = direction < 0
+        && this.focusedId === this.homeId
+        && nextGap <= MIN_GAP + 1e-6;
+
+      if (returningToClosestHome) {
+        this.beginClosestHomePose();
+      } else {
+        if (!this.zoomAnchor) this.captureZoomAnchor();
+        this.homeRecentering = false;
+        this.targetCameraGap = nextGap;
+      }
+
       if (this.reduceMotion) {
         this.cameraGap = this.targetCameraGap;
-        this.applyZoomAnchor();
+        if (this.homeRecentering) {
+          this.yaw = this.targetYaw;
+          this.pitch = this.targetPitch;
+          this.cameraOffset = { x: 0, y: 0 };
+          this.homeRecentering = false;
+        } else {
+          this.applyZoomAnchor();
+        }
         this.zoomAnchor = null;
         this.requestDraw();
       } else {
         this.requestMotion();
       }
     }, { passive: false });
+  }
+
+  beginClosestHomePose() {
+    const home = this.positions.get(this.homeId);
+    if (!home) return;
+    const target = yawPitchToFront(home);
+    this.zoomAnchor = null;
+    this.homeRecentering = true;
+    this.targetCameraGap = MIN_GAP;
+    this.targetYaw = target.yaw;
+    this.targetPitch = target.pitch;
   }
 
   requestMotion() {
@@ -176,23 +221,39 @@ export class GlobeScene {
       const pitchDelta = this.targetPitch - this.pitch;
       const gapDelta = this.targetCameraGap - this.cameraGap;
       const behavior = cameraBehavior(this.cameraGap, MIN_GAP, OVERVIEW_GAP);
+
       this.yaw += yawDelta * behavior.motionEase;
       this.pitch += pitchDelta * behavior.motionEase;
       this.cameraGap += gapDelta * 0.14;
-      if (this.zoomAnchor) this.applyZoomAnchor();
+
+      if (this.homeRecentering) {
+        const recenterEase = Math.max(0.10, behavior.motionEase);
+        this.cameraOffset.x += -this.cameraOffset.x * recenterEase;
+        this.cameraOffset.y += -this.cameraOffset.y * recenterEase;
+      } else if (this.zoomAnchor) {
+        this.applyZoomAnchor();
+      }
+
+      const offsetSettled = !this.homeRecentering
+        || (Math.abs(this.cameraOffset.x) < 0.15 && Math.abs(this.cameraOffset.y) < 0.15);
       const settled = Math.abs(yawDelta) < 0.00028
         && Math.abs(pitchDelta) < 0.00028
-        && Math.abs(gapDelta) < 0.007;
+        && Math.abs(gapDelta) < 0.007
+        && offsetSettled;
+
       if (settled) {
         this.yaw = this.targetYaw;
         this.pitch = this.targetPitch;
         this.cameraGap = this.targetCameraGap;
-        if (this.zoomAnchor) this.applyZoomAnchor();
+        if (this.homeRecentering) this.cameraOffset = { x: 0, y: 0 };
+        else if (this.zoomAnchor) this.applyZoomAnchor();
+        this.homeRecentering = false;
         this.zoomAnchor = null;
         this.motionFrame = null;
         this.requestDraw();
         return;
       }
+
       this.requestDraw();
       this.motionFrame = requestAnimationFrame(tick);
     };
@@ -206,6 +267,7 @@ export class GlobeScene {
     this.targetPitch = this.pitch;
     this.targetCameraGap = this.cameraGap;
     this.zoomAnchor = null;
+    this.homeRecentering = false;
   }
 
   cancelFocus() {
@@ -219,26 +281,22 @@ export class GlobeScene {
     this.stopMotion();
     this.cancelFocus();
     this.focusedId = id;
-    if (resetZoom) {
-      this.cameraGap = DEFAULT_GAP;
-      this.targetCameraGap = DEFAULT_GAP;
-    }
 
     const target = yawPitchToFront(local);
+    const targetGap = resetZoom ? DEFAULT_GAP : this.cameraGap;
     const behavior = cameraBehavior(this.cameraGap, MIN_GAP, OVERVIEW_GAP);
     const from = {
       yaw: this.yaw,
       pitch: this.pitch,
+      gap: this.cameraGap,
       offsetX: this.cameraOffset.x,
       offsetY: this.cameraOffset.y,
     };
 
-    // A newly selected person becomes the tree focus. The previous person's
-    // zoom-anchor offset is retired as part of the same transition so a click
-    // cannot intermittently fling the new focus beyond the viewport.
     if (this.reduceMotion) {
       this.yaw = this.targetYaw = target.yaw;
       this.pitch = this.targetPitch = target.pitch;
+      this.cameraGap = this.targetCameraGap = targetGap;
       this.cameraOffset = { x: 0, y: 0 };
       this.requestDraw();
       return;
@@ -250,16 +308,23 @@ export class GlobeScene {
       const eased = t * t * (3 - 2 * t);
       this.yaw = from.yaw + shortestAngle(from.yaw, target.yaw) * eased;
       this.pitch = from.pitch + (target.pitch - from.pitch) * eased;
+      this.cameraGap = from.gap + (targetGap - from.gap) * eased;
       this.cameraOffset.x = from.offsetX * (1 - eased);
       this.cameraOffset.y = from.offsetY * (1 - eased);
       this.targetYaw = this.yaw;
       this.targetPitch = this.pitch;
+      this.targetCameraGap = this.cameraGap;
       this.requestDraw();
+
       if (t < 1) {
         this.focusFrame = requestAnimationFrame(tick);
       } else {
+        this.yaw = this.targetYaw = target.yaw;
+        this.pitch = this.targetPitch = target.pitch;
+        this.cameraGap = this.targetCameraGap = targetGap;
         this.cameraOffset = { x: 0, y: 0 };
         this.focusFrame = null;
+        this.requestDraw();
       }
     };
     this.focusFrame = requestAnimationFrame(tick);
@@ -299,10 +364,6 @@ export class GlobeScene {
       return bounds?.top ?? -Infinity;
     };
 
-    // The ordinary wide view is tuned to put the sphere apex just under the
-    // viewport top. If the focused person has been panned upward, preserve that
-    // person's screen position and increase camera distance only as much as is
-    // needed to recover the same top margin.
     if (topAt(OVERVIEW_GAP) >= SPHERE_TOP_INSET) {
       return Math.max(this.cameraGap, OVERVIEW_GAP);
     }
@@ -492,21 +553,17 @@ export class GlobeScene {
   }
 
   drawPlaque({ person, unit, projected }, camera) {
-    const frame = projectedTangentFrame(
-      unit,
-      camera,
-      RADIUS,
-      PLAQUE.width,
-      PLAQUE.height,
-    );
+    const frame = projectedTangentFrame(unit, camera, RADIUS, PLAQUE.width, PLAQUE.height);
     if (!frame) return;
 
-    const tex = plaqueTexture(person);
+    const apparentWidth = Math.hypot(frame.xAxis.x, frame.xAxis.y) * 2;
+    const apparentHeight = Math.hypot(frame.yAxis.x, frame.yAxis.y) * 2;
+    if (apparentWidth < 8 || apparentHeight < 3) return;
+
+    const textureSize = apparentWidth < 26 ? 260 : 520;
+    const tex = plaqueTexture(person, textureSize);
     const placement = rigidPlaquePlacement(frame, tex.width, tex.height);
     if (!placement) return;
-    const apparentWidth = placement.width;
-    const apparentHeight = placement.height;
-    if (apparentWidth < 8 || apparentHeight < 3) return;
 
     const ctx = this.ctx;
     ctx.save();
@@ -561,9 +618,13 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
     groupedChildren.get(key).children.push(childId);
   });
 
+  // Cluster rails are only a fallback for old prototype people whose actual
+  // parents are absent. Once the GEDCOM parent graph is present, drawing both
+  // would duplicate and visually contradict the real family connectors.
+  const peopleWithParents = new Set(parentLinks.map(link => link.to));
   const clusters = new Map();
   people.forEach(person => {
-    if (!isKnown(person.id) || !person.cluster) return;
+    if (!isKnown(person.id) || !person.cluster || peopleWithParents.has(person.id)) return;
     if (!['grandparent', 'grandparent-sibling'].includes(person.role)) return;
     if (!clusters.has(person.cluster)) clusters.set(person.cluster, []);
     clusters.get(person.cluster).push(person.id);

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { atlasUnitFromUv, triangleAffine } from '../src/sphere-texture.js';
+import { ATLAS_POLAR_EPSILON, atlasUnitFromUv, triangleAffine } from '../src/sphere-texture.js';
 
 const front = atlasUnitFromUv(0.5, 0.5);
 assert.ok(Math.abs(front.x) < 1e-10);
@@ -11,7 +11,15 @@ assert.ok(east.x > 0.99);
 assert.ok(Math.abs(east.z) < 1e-10);
 
 const north = atlasUnitFromUv(0.5, 0);
-assert.ok(north.y > 0.99);
+assert.ok(north.y > 0.999, 'polar clamp must remain visually negligible');
+assert.ok(ATLAS_POLAR_EPSILON > 0 && ATLAS_POLAR_EPSILON < 0.01);
+
+// The old exact-pole mapping collapsed every longitude to one destination
+// point, producing giant texture fans. Longitudes must remain distinct at the
+// clamped polar ring.
+const northWest = atlasUnitFromUv(0.25, 0);
+const northEast = atlasUnitFromUv(0.75, 0);
+assert.ok(Math.hypot(northWest.x - northEast.x, northWest.z - northEast.z) > 0.005, 'polar texture row must not collapse to a single point');
 
 const source = [{x:0,y:0},{x:1,y:0},{x:0,y:1}];
 const destination = [{x:10,y:20},{x:30,y:20},{x:10,y:50}];

@@ -97,10 +97,6 @@ function assignGenerations(people, rootId, parentLinks, spouseLinks) {
   seed(rootId, 0);
   propagateLevels(adjacency, levels, queue);
 
-  // The bundled prototype intentionally lacks some older parents. Role levels
-  // keep those people on a sensible generation only when the relationship
-  // graph cannot reach them. The expanded GEDCOM graph derives its levels from
-  // recorded relationships.
   people.forEach(person => {
     if (!levels.has(person.id) && ROLE_LEVEL[person.role] != null) {
       seed(person.id, ROLE_LEVEL[person.role]);
@@ -233,8 +229,6 @@ function buildLineagePositions(people, rootId, parentsByChild, parentLinks, spou
     }
   }
 
-  // Partners inherit the horizontal family neighborhood of the blood-line
-  // person they are attached to, but partner ancestry is never propagated.
   for (let pass = 0; pass < 2; pass += 1) {
     for (const person of people) {
       if (positions.has(person.id) || blood.has(person.id)) continue;
@@ -245,7 +239,6 @@ function buildLineagePositions(people, rootId, parentsByChild, parentLinks, spou
     }
   }
 
-  // Fallback ordering keeps incomplete prototype records deterministic.
   for (const person of people) {
     if (positions.has(person.id)) continue;
     const branch = BRANCH_ORDER[person.branch];
@@ -396,10 +389,6 @@ function connectFamilyUnits(unitsByLevel, unitByPerson, parentsByChild) {
         }
       }
 
-      // A spouse component can connect two otherwise separate ancestral lines.
-      // Use the member closest to the selected home lineage as the grouping
-      // anchor, but keep every recorded parent/child relationship for the
-      // barycentric placement sweeps below.
       for (const parent of parentsByChild.get(unit.anchorMember) || []) {
         const parentUnit = unitByPerson.get(parent);
         if (parentUnit && parentUnit.level === unit.level + 1) {
@@ -497,11 +486,10 @@ function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
         .map(id => planar.get(id)?.x)
         .filter(Number.isFinite);
       const lineageTarget = block.lineagePosition * LINEAGE_SLOT_SPACING;
-      if (xs.length) {
-        block.desiredX = average(xs) * 0.84 + lineageTarget * 0.16;
-      } else {
-        block.desiredX = lineageTarget;
-      }
+      // Once a block has real parent/child neighbors, those recorded GEDCOM
+      // connections are the authoritative horizontal target. Lineage slots are
+      // only a deterministic seed/order for otherwise unanchored blocks.
+      block.desiredX = xs.length ? average(xs) : lineageTarget;
     });
 
     blocks.sort((a, b) => {
@@ -522,13 +510,8 @@ function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
     });
   };
 
-  // Seed from the oldest visible generation and walk toward descendants.
   for (const level of levels) placeLevel(level, 'up');
 
-  // Alternate upward/downward barycentric sweeps. Families remain compact and
-  // the four root-lineage neighborhoods keep a stable left-to-right order, so
-  // collateral descendants stay under the actual ancestor branch they came
-  // from instead of becoming unrelated generation-wide ribbons.
   for (let pass = 0; pass < 5; pass += 1) {
     for (const level of [...levels].reverse()) placeLevel(level, 'down');
     for (const level of levels) placeLevel(level, 'up');

@@ -8,17 +8,25 @@ The app uses a spherical family-atlas view with fixed physical person plaques an
 
 ## Globe renderer
 
-The antique world map is now rendered as a genuine GPU-textured sphere rather than as hundreds of Canvas 2D affine triangles.
+The world map is rendered as a genuine GPU-textured sphere rather than as Canvas 2D affine triangles.
 
 - `src/globe-webgl.js` builds a normal latitude/longitude sphere mesh with UV coordinates.
-- `assets/antique-atlas-texture.svg` is loaded as an ordinary 2:1 equirectangular texture.
-- WebGL performs perspective-correct texture interpolation, hidden-surface removal, horizon clipping, and rotation.
+- `src/atlas-map.js` owns the canonical atlas texture URL and provenance metadata.
+- The source texture is a 4,424 × 2,214 equirectangular physical world map from Wikimedia Commons. It supplies real coastlines, islands, mountain relief, drainage, and ocean-depth detail instead of the former hand-drawn placeholder polygons.
+- The fragment shader converts that modern physical map into a restrained sepia/antique-atlas palette while preserving the underlying geographic relief. It adds only a faint 15-degree graticule and subtle paper grain.
+- WebGL performs perspective-correct texture interpolation, hidden-surface removal, horizon clipping, mipmapping where supported, and anisotropic filtering where available.
 - The WebGL projection intentionally uses the same yaw, pitch, focal length, sphere radius, and camera distance as the genealogy overlay so the map, people, and family lines remain locked to one sphere.
 - `src/scene.js` keeps the interactive genealogy overlay on the existing 2D canvas and renders the map sphere on a WebGL canvas directly beneath it.
 
-The obsolete hand-built `sphere-texture.js` affine mapper has been removed rather than left as a fallback or repair layer.
+The obsolete hand-built `sphere-texture.js` affine mapper and the crude local pseudo-map texture have been removed rather than retained as repair layers.
 
 The map is decorative cartography. A person's position on the family globe does not claim to represent birthplace or residence.
+
+### Atlas texture provenance
+
+Current source: `Equirectangular-projection-topographic-world.jpg` on Wikimedia Commons, created by Gundan / mapswire.com and distributed under CC BY-SA 4.0. The observed Wikimedia SHA-1 is recorded in `src/atlas-map.js` alongside the source page and credit string.
+
+The application requests the original high-resolution image directly from Wikimedia with anonymous CORS. If the remote texture cannot be loaded, WebGL retains its neutral parchment placeholder rather than falling back to the rejected low-detail map. This external dependency is deliberate for the prototype because the connected GitHub writer can update text source but cannot place the 1.66 MB binary image into the repository. A controlled local/R2 copy should replace the remote dependency before production.
 
 ## Family spacing model
 
@@ -70,9 +78,8 @@ The complete raw GEDCOM is intentionally not committed to this public repository
 
 - `src/geometry.js` owns spherical placement, camera projection, visible-horizon tests, anchored plaque frames, and capacity math.
 - `src/layout.js` owns family layout and the canonical gap hierarchy.
-- `src/globe-webgl.js` owns the actual GPU UV sphere, texture upload, perspective-correct map rendering, and hidden-surface handling.
-- `src/atlas-map.js` owns the canonical atlas-texture asset URL.
-- `assets/antique-atlas-texture.svg` is the high-resolution antique world-map texture.
+- `src/globe-webgl.js` owns the GPU UV sphere, texture upload, antique color treatment, perspective-correct map rendering, and hidden-surface handling.
+- `src/atlas-map.js` owns the canonical atlas-texture URL and provenance metadata.
 - `src/scene.js` owns interaction, shared sphere rotation/camera state, evidence-based genealogy connectors, and the 2D person overlay.
 - `src/plaque.js` owns the old-glass portrait medallion and wood nameplate with brass end caps.
 - `src/plaque-projection.js` owns rigid aspect-preserving placement of a plaque at its sphere attachment point.
@@ -101,7 +108,7 @@ node tests/relationships.test.mjs
 node tests/gedcom.test.mjs
 ```
 
-The WebGL mesh test guards sphere geometry and UV coverage. The layout test guards the semantic gap hierarchy and equal generation spacing. Geometry, plaque, relationship, and GEDCOM tests protect the other deterministic renderer and data rules.
+The WebGL mesh test guards sphere geometry and UV orientation. The atlas-map test guards the high-detail source URL, provenance, credit, and recorded checksum. The layout test guards the semantic gap hierarchy and equal generation spacing. Geometry, plaque, relationship, and GEDCOM tests protect the other deterministic renderer and data rules.
 
 ## Hosting
 

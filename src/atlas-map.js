@@ -32,6 +32,18 @@ export function atlasDetailLevel(cameraGap) {
   return ATLAS_DETAIL_LEVELS.find(level => gap <= level.maxGap) || null;
 }
 
+export function atlasDetailStrength(cameraGap) {
+  const gap = Number(cameraGap);
+  if (!Number.isFinite(gap)) return 0;
+  const fullDetailGap = ATLAS_DETAIL_LEVELS[ATLAS_DETAIL_LEVELS.length - 1].maxGap;
+  const noDetailGap = fullDetailGap + 25;
+  if (gap <= fullDetailGap) return 1;
+  if (gap >= noDetailGap) return 0;
+  const t = (gap - fullDetailGap) / (noDetailGap - fullDetailGap);
+  const smooth = t * t * (3 - 2 * t);
+  return 1 - smooth;
+}
+
 export function quantizeAtlasDetailCenter(center, level) {
   if (!center || !level) return null;
   const longitudeStep = Math.max(1, level.longitudeSpan * 0.12);

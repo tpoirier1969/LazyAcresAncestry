@@ -4,61 +4,78 @@ Interactive genealogy atlas built from the supplied Ancestry data.
 
 ## Current prototype
 
-The app uses a spherical family-atlas view with fixed physical person plaques anchored to the same globe as the map and family connectors. The globe is intentionally larger than the minimum 9,099-person capacity calculation so the visible family neighborhood reads flatter while the edge of the sphere remains visible on the horizon.
+The app uses a spherical family-atlas view with fixed physical person plaques anchored to the same globe as the family connectors. The current Supabase sample contains 44 people: Tod, Donna, Amy, Tod's parents, grandparents, and grandparent sibling groups. The renderer remains scalable to the full genealogy without one DOM element per person.
 
-The current Supabase sample contains 44 people: Tod, Donna, Amy, Tod's parents, grandparents, and grandparent sibling groups. The renderer remains single-canvas and is intended to scale to the full genealogy without one DOM element per person.
+## Globe renderer
 
-## Unified sphere renderer
+The antique world map is now rendered as a genuine GPU-textured sphere rather than as hundreds of Canvas 2D affine triangles.
 
-The map, family connectors, and person attachment points share one spherical coordinate system and one yaw/pitch rotation around the exact globe center. Nothing pans independently as a screen-space layer.
+- `src/globe-webgl.js` builds a normal latitude/longitude sphere mesh with UV coordinates.
+- `assets/antique-atlas-texture.svg` is loaded as an ordinary 2:1 equirectangular texture.
+- WebGL performs perspective-correct texture interpolation, hidden-surface removal, horizon clipping, and rotation.
+- The WebGL projection intentionally uses the same yaw, pitch, focal length, sphere radius, and camera distance as the genealogy overlay so the map, people, and family lines remain locked to one sphere.
+- `src/scene.js` keeps the interactive genealogy overlay on the existing 2D canvas and renders the map sphere on a WebGL canvas directly beneath it.
 
-Person plaques are rigid physical objects, not curved decals. Their lower-center hinge remains attached to the sphere while the plaque tilts toward the camera enough to keep portraits readable. The artwork is always rendered at a uniform scale, so the oval portrait frame and photograph keep their intended proportions instead of stretching with sphere curvature. Person plaques do not cast ground/drop shadows.
+The obsolete hand-built `sphere-texture.js` affine mapper has been removed rather than left as a fallback or repair layer.
 
-## Atlas surface
+The map is decorative cartography. A person's position on the family globe does not claim to represent birthplace or residence.
 
-The globe uses a bundled 4096×2048 antique world-atlas texture (`assets/antique-atlas-texture.svg`). It contains recognizable world coastlines and landmasses rather than invented pseudo-map polygons, plus parchment coloring, graticule, subdued rhumb lines, ocean labels, and a restrained compass rose.
+## Family spacing model
 
-The complete 2:1 texture is divided into a latitude/longitude mesh and projected over the entire sphere. It uses the same globe rotation as the people and genealogy lines, so the atlas is physically locked to the sphere during drag, focus rotation, and zoom. Sphere projection clips back-facing texture vertices at the horizon so hidden map cells cannot stretch across the visible globe as large triangular artifacts.
+Visible family layout now uses named physical spacing rules rather than cluster-specific magic numbers:
 
-The map is decorative cartography. It does not claim that a person's position on the family globe is a geographic birthplace or residence.
+- `COUPLE_GAP` — the smallest relationship gap; spouses read as one family unit.
+- `SIBLING_GAP` — normal spacing between siblings in the same family.
+- `MIN_PERSON_CLEARANCE` — hard minimum center-to-center clearance for any two people.
+- `BETWEEN_FAMILY_GAP` — extra breathing room when one family grouping ends and another begins.
+- `GENERATION_GAP` — one consistent surface distance between generations.
+
+These constants live in `src/layout.js` as the canonical owner of family spacing. `BETWEEN_FAMILY_GAP` is intentionally larger than `SIBLING_GAP`, but not large enough to visually disconnect adjacent families.
+
+The current prototype grandparent generation is laid out as a single generation band rather than compressed mini-clusters. Within a family the sibling gap is consistent; direct grandparent couples use the couple gap; distinct nearby family groups use the between-family gap.
+
+## Person plaques
+
+Person plaques are rigid physical objects, not curved decals. Their lower-center hinge remains attached to the sphere while the plaque tilts toward the camera enough to keep portraits readable. The artwork is always rendered at a uniform scale, so the oval portrait frame and photograph keep their intended proportions instead of stretching with sphere curvature.
+
+The current label treatment is dark wood with brass end caps and lighter engraved-style lettering. This replaced the unsuccessful parchment-scroll treatment.
 
 ## Current interaction
 
-- Drag the atlas surface to rotate the entire globe around its center.
-- Map, people, and family lines rotate together because they share the same sphere transform.
-- Dragging and wheel movement use interpolated motion rather than snapping to every pointer event.
-- Use the mouse wheel or trackpad to move closer or farther away from the same fixed globe center.
+- Drag the atlas surface to rotate the globe.
+- Map, people, and family lines rotate together because they use the same sphere transform.
+- Wheel or trackpad movement changes camera distance.
 - Click a person to rotate that branch into focus.
 - Use `Return to Tod` or Home to restore the current prototype home person.
 - Search the current sample by name.
 - Open People for filters by family side, century, relationship distance, and name.
 - Person Details includes the profile image, named relationship to the home person, GEDCOM ID, saved-record/source section, photo-gallery entry point, and chronological notes.
-- The canonical app version is shown directly beside the app title and is derived from `src/version.js`.
+- The canonical app version is shown directly beside the app title and derives from `src/version.js`.
 
-## Family layout and relationships
+Requested wider zoom limits, slower movement, and a roughly 25% larger sphere are tracked in `FUTURE_ENHANCEMENTS.md` for a separate tuning pass after the new renderer is visually verified.
 
-Generations use explicit vertical bands. The root-to-parent distance remains the approved visual baseline. Older generation bands receive perspective compensation so they do not appear to collapse toward one another as they recede across the curved atlas. Wrapped grandparent-sibling cohorts use one consistent peer gap horizontally and vertically rather than tighter spacing in later rows.
+## Family relationships
 
-Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, sibling rail, and child stems. Connectors remain evidence-based. A layout cluster may influence where a prototype person is placed, but it can never create a genealogical relationship. Parent, spouse, and shared-parent sibling lines are drawn only from recorded relationship data.
+Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, sibling rail, and child stems. Connectors remain evidence-based. A layout grouping may influence where a prototype person is placed, but it can never create a genealogical relationship. Parent, spouse, and shared-parent sibling lines are drawn only from recorded relationship data.
 
-The currently imported Supabase subset contains only 12 relationship records. All recorded relationships are rendered, but missing family relationships are not fabricated to make the prototype look fuller.
+The currently imported Supabase subset contains only a small relationship sample. Missing family relationships are not fabricated to make the prototype look fuller.
 
 ## GEDCOM and population coverage
 
-The current Supabase import is explicitly a 44-person prototype subset. It does **not** contain Donna's ancestral generations, the requested descendant branches, the complete parent/spouse graph, or the source/citation structures from the full GEDCOM. Re-importing the complete GEDCOM is therefore required both for saved records and for the requested expanded-family stress test.
+The current Supabase import is explicitly a prototype subset. It does **not** contain Donna's ancestral generations, the requested descendant branches, the complete parent/spouse graph, or all source/citation structures from the full GEDCOM. Re-importing the complete GEDCOM is required both for saved records and for the requested expanded-family stress test.
 
-The missing relatives will not be fabricated. Once the complete GEDCOM is restored, the requested density test is: siblings for visible family groups, Donna's ancestry to the same depth, one additional ancestral generation with siblings, and descendants for displayed families.
+The complete raw GEDCOM is intentionally not committed to this public repository. GEDCOM identifiers remain stable external identifiers.
 
 ## Architecture
 
-- `src/geometry.js` owns spherical placement, camera projection, visible-horizon clipping, anchored plaque frames, and capacity math.
-- `src/layout.js` maps the current sample into compact, generation-aware family bands.
+- `src/geometry.js` owns spherical placement, camera projection, visible-horizon tests, anchored plaque frames, and capacity math.
+- `src/layout.js` owns family layout and the canonical gap hierarchy.
+- `src/globe-webgl.js` owns the actual GPU UV sphere, texture upload, perspective-correct map rendering, and hidden-surface handling.
+- `src/atlas-map.js` owns the canonical atlas-texture asset URL.
+- `assets/antique-atlas-texture.svg` is the high-resolution antique world-map texture.
+- `src/scene.js` owns interaction, shared sphere rotation/camera state, evidence-based genealogy connectors, and the 2D person overlay.
 - `src/plaque.js` owns the old-glass portrait medallion and wood nameplate with brass end caps.
 - `src/plaque-projection.js` owns rigid aspect-preserving placement of a plaque at its sphere attachment point.
-- `src/atlas-map.js` owns loading the bundled atlas texture.
-- `src/sphere-texture.js` owns equirectangular UV mapping and triangle-affine texture projection onto the sphere.
-- `assets/antique-atlas-texture.svg` is the high-resolution antique world-map texture.
-- `src/scene.js` owns the single-canvas globe renderer, horizon, unified sphere rotation, atlas mesh projection, evidence-based genealogy connectors, rigid anchored plaques, and smooth direct manipulation.
 - `src/relationships.js` derives human-readable kinship labels from recorded relationship data.
 - `src/gedcom.js` normalizes preserved alternate names and saved source/citation records for Person Details.
 - `src/data.js` owns the Supabase/bundled-sample boundary.
@@ -70,25 +87,21 @@ The test app reads the shared personal Supabase project using project-specific o
 
 Prototype family notes currently remain in browser local storage. Data-quality notes remain separate from family notes.
 
-The complete GEDCOM is intentionally not committed to this public repository. The intended permanent image archive remains Cloudflare R2.
-
-## Future work
-
-Requested future enhancements are tracked in `FUTURE_ENHANCEMENTS.md`. The first queued interaction is a **Make home person** action. Restoring the full GEDCOM is a data prerequisite rather than an invitation to invent missing relatives.
+The intended permanent image archive remains Cloudflare R2.
 
 ## Test
 
 ```bash
 node tests/geometry.test.mjs
 node tests/atlas-map.test.mjs
-node tests/sphere-texture.test.mjs
+node tests/globe-webgl.test.mjs
 node tests/layout.test.mjs
 node tests/plaque-projection.test.mjs
 node tests/relationships.test.mjs
 node tests/gedcom.test.mjs
 ```
 
-The atlas and sphere tests guard full-sphere map coverage, texture projection, and horizon clipping. The plaque test guards against portrait/icon distortion by requiring a fixed aspect ratio and an exact lower-center sphere attachment point. The layout test guards generation-band separation. Relationship and GEDCOM tests guard named kinship labels and saved-record parsing.
+The WebGL mesh test guards sphere geometry and UV coverage. The layout test guards the semantic gap hierarchy and equal generation spacing. Geometry, plaque, relationship, and GEDCOM tests protect the other deterministic renderer and data rules.
 
 ## Hosting
 

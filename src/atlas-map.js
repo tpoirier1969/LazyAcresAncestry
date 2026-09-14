@@ -10,21 +10,116 @@ export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'https://thumb.wikimedia.org/wi
 export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_daymap.jpg';
 export const ATLAS_RELIEF_CREDIT = 'Solar System Scope, CC BY 4.0; based on NASA elevation and imagery data';
 
-// The normal home view spends most of its time over the Great Lakes. Rather
-// than stretching the global bitmap farther, request a high-resolution regional
-// Level-of-Detail image from NASA GIBS. It is blended into the same sphere UVs
-// only inside these geographic bounds, with feathered edges. The WMS service is
-// intended for map-image requests and avoids decoding a 20K+ global JPEG in the
-// browser merely to sharpen one visible region.
-export const ATLAS_REGIONAL_DETAIL_BOUNDS = Object.freeze({
-  west: -105,
-  south: 35,
-  east: -70,
-  north: 55,
-});
-export const ATLAS_REGIONAL_DETAIL_URL = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?version=1.1.1&service=WMS&request=GetMap&format=image/jpeg&styles=&srs=EPSG:4326&bbox=-105,35,-70,55&height=2340&width=4096&layers=BlueMarble_NextGeneration';
-export const ATLAS_REGIONAL_DETAIL_SOURCE_PAGE = 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/';
-export const ATLAS_REGIONAL_DETAIL_CREDIT = 'NASA Earth Observatory Blue Marble: Next Generation, served by NASA GIBS';
+// Close atlas views use progressively smaller geographic windows rather than
+// stretching one world bitmap beyond its useful resolution. The renderer asks
+// NASA GIBS for only the region facing the camera and cross-fades between
+// successive requests. Each narrower level therefore carries more source pixels
+// per degree without decoding a gigantic whole-world image in the browser.
+export const ATLAS_DETAIL_LEVELS = Object.freeze([
+  Object.freeze({ id: 'local', maxGap: 12, longitudeSpan: 30, latitudeSpan: 20, width: 4096 }),
+  Object.freeze({ id: 'subregional', maxGap: 30, longitudeSpan: 48, latitudeSpan: 30, width: 4096 }),
+  Object.freeze({ id: 'regional', maxGap: 70, longitudeSpan: 78, latitudeSpan: 46, width: 3584 }),
+  Object.freeze({ id: 'continental', maxGap: 130, longitudeSpan: 120, latitudeSpan: 70, width: 3072 }),
+]);
+export const ATLAS_DETAIL_FADE_MS = 520;
+export const ATLAS_DETAIL_SOURCE_PAGE = 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/';
+export const ATLAS_DETAIL_CREDIT = 'NASA Earth Observatory Blue Marble: Next Generation, served by NASA GIBS';
+const ATLAS_DETAIL_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi';
+
+export function atlasDetailLevel(cameraGap) {
+  const gap = Number(cameraGap);
+  if (!Number.isFinite(gap)) return null;
+  return ATLAS_DETAIL_LEVELS.find(level => gap <= level.maxGap) || null;
+}
+
+export function quantizeAtlasDetailCenter(center, level) {
+  if (!center || !level) return null;
+  const longitudeStep = Math.max(1, level.longitudeSpan * 0.12);
+  const latitudeStep = Math.max(1, level.latitudeSpan * 0.12);
+  return {
+    longitude: normalizeLongitude(Math.round(center.longitude / longitudeStep) * longitudeStep),
+    latitude: clamp(Math.round(center.latitude / latitudeStep) * latitudeStep, -78, 78),
+  };
+}
+
+export function atlasDetailBounds(center, level) {
+  if (!center || !level) return null;
+  const quantized = quantizeAtlasDetailCenter(center, level);
+  if (!quantized) return null;
+
+  const latitudeSpan = level.latitudeSpan;
+  const cosine = Math.max(0.62, Math.cos(quantized.latitude * Math.PI / 180));
+  const longitudeSpan = Math.min(160, level.longitudeSpan / cosine);
+  let south = quantized.latitude - latitudeSpan / 2;
+  let north = quantized.latitude + latitudeSpan / 2;
+  if (south < -85) {
+    north += -85 - south;
+    south = -85;
+  }
+  if (north > 85) {
+    south -= north - 85;
+    north = 85;
+  }
+
+  const west = quantized.longitude - longitudeSpan / 2;
+  const east = quantized.longitude + longitudeSpan / 2;
+  // A single WMS rectangle cannot wrap through the antimeridian. The 8K global
+  // layer remains the deliberate fallback in that narrow circumstance.
+  if (west < -180 || east > 180) return null;
+
+  return {
+    west,
+    south,
+    east,
+    north,
+    center: quantized,
+    levelId: level.id,
+  };
+}
+
+export function atlasDetailUrl(bounds, level) {
+  if (!bounds || !level) return null;
+  const longitudeSpan = bounds.east - bounds.west;
+  const latitudeSpan = bounds.north - bounds.south;
+  const width = clamp(Math.round(level.width), 1024, 4096);
+  const height = clamp(Math.round(width * latitudeSpan / longitudeSpan), 768, 4096);
+  const params = new URLSearchParams({
+    version: '1.1.1',
+    service: 'WMS',
+    request: 'GetMap',
+    format: 'image/jpeg',
+    styles: '',
+    srs: 'EPSG:4326',
+    bbox: `${round(bounds.west)},${round(bounds.south)},${round(bounds.east)},${round(bounds.north)}`,
+    height: String(height),
+    width: String(width),
+    layers: 'BlueMarble_NextGeneration',
+  });
+  return `${ATLAS_DETAIL_WMS}?${params.toString()}`;
+}
+
+export function atlasDetailKey(bounds, level) {
+  if (!bounds || !level) return 'global';
+  return [
+    level.id,
+    round(bounds.west),
+    round(bounds.south),
+    round(bounds.east),
+    round(bounds.north),
+  ].join(':');
+}
+
+function normalizeLongitude(value) {
+  return ((value + 180) % 360 + 360) % 360 - 180;
+}
+
+function round(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
 
 // The home person is geographically anchored in the central Upper Peninsula.
 // This is a visual home reference, not a claim that genealogy layout positions

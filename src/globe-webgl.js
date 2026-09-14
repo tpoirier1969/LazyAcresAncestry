@@ -1,5 +1,4 @@
 import {
-  ATLAS_BOUNDARY_TEXTURE_URL,
   ATLAS_HOME_ANCHOR,
   ATLAS_RELIEF_TEXTURE_FALLBACK_URL,
   ATLAS_RELIEF_TEXTURE_URL,
@@ -33,7 +32,7 @@ export function atlasPointToLocal(longitudeDeg, latitudeDeg, anchor = ATLAS_HOME
   };
 }
 
-export function buildSphereMesh(longitudeSegments = 192, latitudeSegments = 96) {
+export function buildSphereMesh(longitudeSegments = 256, latitudeSegments = 128) {
   const vertices = [];
   const indices = [];
 
@@ -86,14 +85,15 @@ export class GlobeWebGLRenderer {
     });
     this.available = Boolean(this.gl);
     this.ready = false;
-    this.boundarySize = { width: 3840, height: 1920 };
+    this.atlasSize = { width: 4424, height: 2214 };
+    this.reliefSize = { width: 8192, height: 4096 };
 
     if (!this.available) return;
 
     try {
       this.initialize();
       this.loadTexture();
-      this.loadDetailTextures();
+      this.loadDetailTexture();
     } catch (error) {
       console.error('WebGL globe initialization failed', error);
       this.available = false;
@@ -118,9 +118,9 @@ export class GlobeWebGLRenderer {
       farDepth: gl.getUniformLocation(this.program, 'uFarDepth'),
       atlas: gl.getUniformLocation(this.program, 'uAtlas'),
       relief: gl.getUniformLocation(this.program, 'uRelief'),
-      boundary: gl.getUniformLocation(this.program, 'uBoundary'),
       labels: gl.getUniformLocation(this.program, 'uLabels'),
-      boundaryTexel: gl.getUniformLocation(this.program, 'uBoundaryTexel'),
+      atlasTexel: gl.getUniformLocation(this.program, 'uAtlasTexel'),
+      reliefTexel: gl.getUniformLocation(this.program, 'uReliefTexel'),
     };
 
     const mesh = buildSphereMesh();
@@ -136,29 +136,27 @@ export class GlobeWebGLRenderer {
 
     this.texture = createSolidTexture(gl, [222, 196, 141, 255]);
     this.reliefTexture = createSolidTexture(gl, [128, 128, 128, 255]);
-    this.boundaryTexture = createSolidTexture(gl, [255, 255, 255, 255]);
     this.labelTexture = createLabelTexture(gl);
 
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
-    // This application camera looks down +Z. Outward-facing sphere triangles
-    // therefore appear clockwise in window coordinates.
     gl.frontFace(gl.CW);
   }
 
   loadTexture() {
     this.loadImageIntoTexture(this.texture, this.textureUrl, {
       name: 'Atlas base texture',
-      onLoad: () => {
+      onLoad: image => {
+        this.atlasSize = imageSize(image, this.atlasSize);
         this.ready = true;
         this.onReady?.();
       },
     });
   }
 
-  loadDetailTextures() {
+  loadDetailTexture() {
     const gl = this.gl;
     const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096;
     const reliefUrl = maxTextureSize >= 8192
@@ -166,17 +164,9 @@ export class GlobeWebGLRenderer {
       : ATLAS_RELIEF_TEXTURE_FALLBACK_URL;
 
     this.loadImageIntoTexture(this.reliefTexture, reliefUrl, {
-      name: 'Atlas high-resolution relief texture',
-      onLoad: () => this.onReady?.(),
-    });
-
-    this.loadImageIntoTexture(this.boundaryTexture, ATLAS_BOUNDARY_TEXTURE_URL, {
-      name: 'Atlas political boundary texture',
+      name: 'Atlas high-resolution detail texture',
       onLoad: image => {
-        this.boundarySize = {
-          width: image.naturalWidth || image.width || 3840,
-          height: image.naturalHeight || image.height || 1920,
-        };
+        this.reliefSize = imageSize(image, this.reliefSize);
         this.onReady?.();
       },
     });
@@ -248,19 +238,30 @@ export class GlobeWebGLRenderer {
     gl.uniform1f(this.locations.nearDepth, nearDepth);
     gl.uniform1f(this.locations.farDepth, farDepth);
     gl.uniform2f(
-      this.locations.boundaryTexel,
-      1 / Math.max(1, this.boundarySize.width),
-      1 / Math.max(1, this.boundarySize.height),
+      this.locations.atlasTexel,
+      1 / Math.max(1, this.atlasSize.width),
+      1 / Math.max(1, this.atlasSize.height),
+    );
+    gl.uniform2f(
+      this.locations.reliefTexel,
+      1 / Math.max(1, this.reliefSize.width),
+      1 / Math.max(1, this.reliefSize.height),
     );
 
     bindTexture(gl, this.texture, 0, this.locations.atlas);
     bindTexture(gl, this.reliefTexture, 1, this.locations.relief);
-    bindTexture(gl, this.boundaryTexture, 2, this.locations.boundary);
-    bindTexture(gl, this.labelTexture, 3, this.locations.labels);
+    bindTexture(gl, this.labelTexture, 2, this.locations.labels);
 
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
     return this.ready;
   }
+}
+
+function imageSize(image, fallback) {
+  return {
+    width: image.naturalWidth || image.width || fallback.width,
+    height: image.naturalHeight || image.height || fallback.height,
+  };
 }
 
 function createSolidTexture(gl, rgba) {
@@ -302,34 +303,22 @@ function createAtlasLabelCanvas(width = 4096, height = 2048) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
+  // Labels are deliberately sparse and quiet. They should feel hand-lettered
+  // into the parchment, not behave like a modern political-map overlay.
   const labels = [
-    ['CANADA', -108, 59, 58, false],
-    ['UNITED STATES', -103, 38, 48, false],
-    ['ONTARIO', -83.5, 50.5, 31, false],
-    ['QUEBEC', -71.5, 52.5, 30, false],
-    ['MICHIGAN', -85.5, 44.5, 28, false],
-    ['LAKE SUPERIOR', -87.5, 48.1, 25, true],
-    ['ACADIA', -64.5, 46.2, 24, true],
-    ['ATLANTIC OCEAN', -35, 34, 44, true],
-    ['IRELAND', -8, 53.2, 25, false],
-    ['ENGLAND', -2, 52.5, 24, false],
-    ['FRANCE', 2.2, 46.4, 28, false],
-    ['SPAIN', -3.8, 40.1, 27, false],
-    ['ITALY', 12.5, 42.2, 25, false],
-    ['GERMANY', 10.2, 51.2, 25, false],
-    ['SWEDEN', 15.5, 62.2, 24, false],
-    ['FINLAND', 26, 64.2, 24, false],
-    ['RUSSIA', 68, 59, 54, false],
+    ['Mare Atlanticum', -35, 30, 30],
+    ['Mare Pacificum', -148, 8, 27],
+    ['Mare Indicum', 78, -23, 25],
+    ['Lacus Superior', -87.5, 48.0, 18],
+    ['Occidens', -118, 3, 21],
+    ['Oriens', 108, 5, 21],
   ];
 
-  labels.forEach(([text, longitude, latitude, size, italic]) => {
+  labels.forEach(([text, longitude, latitude, size]) => {
     const x = ((longitude + 180) / 360) * width;
     const y = ((90 - latitude) / 180) * height;
-    ctx.font = `${italic ? 'italic ' : ''}600 ${size}px Georgia, 'Times New Roman', serif`;
-    ctx.lineWidth = Math.max(1.5, size * 0.045);
-    ctx.strokeStyle = 'rgba(229,207,158,.42)';
-    ctx.fillStyle = italic ? 'rgba(70,49,31,.66)' : 'rgba(63,43,27,.72)';
-    ctx.strokeText(text, x, y);
+    ctx.font = `italic 500 ${size}px "Segoe Script", "Lucida Handwriting", "Brush Script MT", cursive`;
+    ctx.fillStyle = 'rgba(62,42,28,.42)';
     ctx.fillText(text, x, y);
   });
 
@@ -363,7 +352,7 @@ function configureTextureQuality(gl, image) {
     || gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic');
   if (anisotropy) {
     const maximum = gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1;
-    gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(12, maximum));
+    gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, maximum));
   }
 }
 
@@ -453,11 +442,15 @@ precision highp float;
 
 uniform sampler2D uAtlas;
 uniform sampler2D uRelief;
-uniform sampler2D uBoundary;
 uniform sampler2D uLabels;
-uniform vec2 uBoundaryTexel;
+uniform vec2 uAtlasTexel;
+uniform vec2 uReliefTexel;
 varying vec2 vUv;
 varying vec3 vNormal;
+
+float luminance(vec3 color) {
+  return dot(color, vec3(0.299, 0.587, 0.114));
+}
 
 float paperNoise(vec2 p) {
   return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
@@ -466,65 +459,71 @@ float paperNoise(vec2 p) {
 float gridLine(float coordinate, float divisions) {
   float cell = fract(coordinate * divisions);
   float distanceToLine = min(cell, 1.0 - cell);
-  return 1.0 - smoothstep(0.0, 0.005, distanceToLine);
-}
-
-float boundaryLuma(vec2 uv) {
-  vec3 color = texture2D(uBoundary, uv).rgb;
-  return dot(color, vec3(0.299, 0.587, 0.114));
+  return 1.0 - smoothstep(0.0, 0.0035, distanceToLine);
 }
 
 void main() {
   vec4 source = texture2D(uAtlas, vUv);
-  float sourceLuma = dot(source.rgb, vec3(0.299, 0.587, 0.114));
-  float blueLead = source.b - max(source.r, source.g);
-  float water = smoothstep(0.015, 0.17, blueLead);
+  vec3 detail = texture2D(uRelief, vUv).rgb;
+  float sourceLuma = luminance(source.rgb);
+  float detailLuma = luminance(detail);
 
-  vec3 landPaper = vec3(0.80, 0.69, 0.49);
-  vec3 seaPaper = vec3(0.72, 0.65, 0.53);
+  float sourceBlue = source.b - max(source.r, source.g);
+  float detailBlue = detail.b - max(detail.r, detail.g);
+  float water = max(
+    smoothstep(0.005, 0.13, sourceBlue),
+    smoothstep(0.015, 0.15, detailBlue) * 0.92
+  );
+
+  // Antique parchment land with a restrained slate-blue water wash. Oceans
+  // and inland lakes use the same family so the sphere reads as one map.
+  vec3 landPaper = vec3(0.82, 0.71, 0.52);
+  vec3 seaPaper = vec3(0.56, 0.66, 0.68);
   vec3 antique = mix(landPaper, seaPaper, water);
 
-  float sourceContrast = (sourceLuma - 0.50) * 0.72;
-  antique += sourceContrast * mix(vec3(0.53, 0.43, 0.28), vec3(0.31, 0.29, 0.25), water);
+  float broadRelief = (sourceLuma - 0.50) * 0.58 + (detailLuma - 0.50) * 0.24;
+  antique += broadRelief * mix(vec3(0.50, 0.41, 0.28), vec3(0.26, 0.31, 0.32), water);
 
-  // The separate 8K relief/bathymetry layer supplies the fine structure that
-  // was missing from the first antique pass when the user zoomed toward the
-  // globe. It is deliberately subtle so this remains a historical atlas, not
-  // a satellite globe.
-  float relief = texture2D(uRelief, vUv).r;
-  float reliefDetail = (relief - 0.50) * 0.24;
-  antique += reliefDetail * mix(vec3(0.58, 0.48, 0.32), vec3(0.33, 0.31, 0.27), water);
-
-  vec3 sepiaSource = vec3(
-    dot(source.rgb, vec3(0.393, 0.769, 0.189)),
-    dot(source.rgb, vec3(0.349, 0.686, 0.168)),
-    dot(source.rgb, vec3(0.272, 0.534, 0.131))
+  // Recover the fine linework that disappears when a detailed map is merely
+  // sepia-toned. This is an unsharp pass over the actual source textures, not
+  // an artificial coastline or political-border outline.
+  float sourceNeighbor = (
+    luminance(texture2D(uAtlas, vUv + vec2(uAtlasTexel.x, 0.0)).rgb)
+    + luminance(texture2D(uAtlas, vUv - vec2(uAtlasTexel.x, 0.0)).rgb)
+    + luminance(texture2D(uAtlas, vUv + vec2(0.0, uAtlasTexel.y)).rgb)
+    + luminance(texture2D(uAtlas, vUv - vec2(0.0, uAtlasTexel.y)).rgb)
+  ) * 0.25;
+  float detailNeighbor = (
+    luminance(texture2D(uRelief, vUv + vec2(uReliefTexel.x, 0.0)).rgb)
+    + luminance(texture2D(uRelief, vUv - vec2(uReliefTexel.x, 0.0)).rgb)
+    + luminance(texture2D(uRelief, vUv + vec2(0.0, uReliefTexel.y)).rgb)
+    + luminance(texture2D(uRelief, vUv - vec2(0.0, uReliefTexel.y)).rgb)
+  ) * 0.25;
+  float fineDetail = clamp(
+    (sourceLuma - sourceNeighbor) * 2.4 + (detailLuma - detailNeighbor) * 1.25,
+    -0.16,
+    0.16
   );
-  antique = mix(antique, sepiaSource, 0.12);
+  antique += fineDetail * mix(vec3(0.72, 0.59, 0.39), vec3(0.40, 0.50, 0.52), water);
 
-  // Extract political/coastline edges from the vector-derived monochrome map.
-  // This gives the sphere the crisp atlas structure seen in the visual target
-  // without replacing the shaded physical geography beneath it.
-  float centerBoundary = boundaryLuma(vUv);
-  float eastBoundary = boundaryLuma(vec2(min(1.0, vUv.x + uBoundaryTexel.x), vUv.y));
-  float southBoundary = boundaryLuma(vec2(vUv.x, min(1.0, vUv.y + uBoundaryTexel.y)));
-  float boundaryEdge = max(abs(centerBoundary - eastBoundary), abs(centerBoundary - southBoundary));
-  boundaryEdge = smoothstep(0.018, 0.11, boundaryEdge);
-  antique = mix(antique, vec3(0.29, 0.22, 0.14), boundaryEdge * 0.50);
+  // Retain a little native color so terrain and water have depth without
+  // slipping back into a modern satellite-globe appearance.
+  vec3 mutedDetail = mix(vec3(detailLuma), detail, 0.24);
+  antique = mix(antique, mutedDetail, 0.08);
 
-  float longitudeGrid = gridLine(vUv.x, 36.0);
-  float latitudeGrid = gridLine(vUv.y, 18.0);
-  float graticule = max(longitudeGrid, latitudeGrid) * 0.075;
-  antique = mix(antique, vec3(0.34, 0.27, 0.19), graticule);
+  float longitudeGrid = gridLine(vUv.x, 24.0);
+  float latitudeGrid = gridLine(vUv.y, 12.0);
+  float graticule = max(longitudeGrid, latitudeGrid) * 0.035;
+  antique = mix(antique, vec3(0.34, 0.28, 0.21), graticule);
 
   vec4 label = texture2D(uLabels, vUv);
-  antique = mix(antique, vec3(0.29, 0.22, 0.14), label.a * 0.70);
+  antique = mix(antique, vec3(0.27, 0.19, 0.13), label.a * 0.46);
 
-  float grain = paperNoise(vUv * vec2(6144.0, 3072.0));
-  antique *= 0.988 + grain * 0.022;
+  float grain = paperNoise(vUv * vec2(8192.0, 4096.0));
+  antique *= 0.994 + grain * 0.012;
 
   float facing = clamp(-vNormal.z, 0.0, 1.0);
-  float sphereShade = 0.76 + 0.24 * pow(facing, 0.42);
+  float sphereShade = 0.79 + 0.21 * pow(facing, 0.44);
   antique *= sphereShade;
 
   gl_FragColor = vec4(clamp(antique, 0.0, 1.0), source.a);

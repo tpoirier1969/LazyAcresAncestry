@@ -19,9 +19,15 @@ const PLAQUE = { width: 1.20, height: 1.08 };
 const RADIUS = Math.max(150, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
 const HOME_PITCH = 0.14;
 const DEFAULT_GAP = 7.2;
-const MIN_GAP = 4.8;
-const MAX_GAP = 27;
-const PLAQUE_CAMERA_FACING = 0.82;
+const MIN_GAP = 3.8;
+const MAX_GAP = 120;
+const RELATIONSHIP_COLORS = Object.freeze({
+  couple: 'rgba(119,55,47,.97)',
+  descent: 'rgba(132,62,52,.97)',
+  rail: 'rgba(143,70,58,.94)',
+  stem: 'rgba(151,78,64,.92)',
+  halo: 'rgba(247,225,190,.50)',
+});
 
 export class GlobeScene {
   constructor(canvas, onSelect) {
@@ -37,7 +43,7 @@ export class GlobeScene {
     this.positions = new Map();
     this.hitAreas = [];
     this.yaw = 0;
-    this.pitch = HOME_PITCH;
+    this.pitch = 0;
     this.cameraGap = DEFAULT_GAP;
     this.targetYaw = this.yaw;
     this.targetPitch = this.pitch;
@@ -81,8 +87,17 @@ export class GlobeScene {
     const focal = Math.min(w, h) * 1.04;
     const centerZ = RADIUS + this.cameraGap;
     const projectedRadius = focal * RADIUS / Math.sqrt(Math.max(1e-6, centerZ * centerZ - RADIUS * RADIUS));
-    const horizonY = Math.max(42, h * 0.06);
-    return { cx: w / 2, cy: projectedRadius + horizonY, focal, centerZ, near: 0.1, dpr };
+    const zoomT = smoothstep01(normalizedZoom(this.cameraGap));
+
+    // Close views look almost straight down at the focused family patch.
+    // As the camera pulls back, the view eases toward the horizon so more of
+    // the globe becomes visible instead of keeping the same grazing angle.
+    const closeCenterY = h * 0.56;
+    const horizonY = Math.max(40, h * 0.055);
+    const wideCenterY = projectedRadius + horizonY;
+    const cy = lerp(closeCenterY, wideCenterY, zoomT);
+
+    return { cx: w / 2, cy, focal, centerZ, near: 0.1, dpr, zoomT };
   }
 
   bind() {
@@ -97,8 +112,8 @@ export class GlobeScene {
       const dx = event.clientX - this.drag.x;
       const dy = event.clientY - this.drag.y;
       if (Math.hypot(dx, dy) > 3) this.drag.moved = true;
-      this.targetYaw = this.drag.yaw - dx * 0.00255;
-      this.targetPitch = clamp(this.drag.pitch - dy * 0.00255, -1.08, 1.08);
+      this.targetYaw = this.drag.yaw - dx * 0.00165;
+      this.targetPitch = clamp(this.drag.pitch - dy * 0.00165, -1.08, 1.08);
       if (this.reduceMotion) {
         this.yaw = this.targetYaw;
         this.pitch = this.targetPitch;
@@ -114,7 +129,13 @@ export class GlobeScene {
     this.canvas.addEventListener('pointercancel', () => { this.drag = null; });
     this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
-      this.targetCameraGap = clamp(this.targetCameraGap + Math.sign(event.deltaY) * 0.76, MIN_GAP, MAX_GAP);
+      const direction = Math.sign(event.deltaY);
+      if (!direction) return;
+      this.targetCameraGap = clamp(
+        this.targetCameraGap * Math.exp(direction * 0.13),
+        MIN_GAP,
+        MAX_GAP,
+      );
       if (this.reduceMotion) {
         this.cameraGap = this.targetCameraGap;
         this.requestDraw();
@@ -130,9 +151,9 @@ export class GlobeScene {
       const yawDelta = shortestAngle(this.yaw, this.targetYaw);
       const pitchDelta = this.targetPitch - this.pitch;
       const gapDelta = this.targetCameraGap - this.cameraGap;
-      this.yaw += yawDelta * 0.18;
-      this.pitch += pitchDelta * 0.18;
-      this.cameraGap += gapDelta * 0.16;
+      this.yaw += yawDelta * 0.13;
+      this.pitch += pitchDelta * 0.13;
+      this.cameraGap += gapDelta * 0.14;
       const settled = Math.abs(yawDelta) < 0.00028 && Math.abs(pitchDelta) < 0.00028 && Math.abs(gapDelta) < 0.007;
       if (settled) {
         this.yaw = this.targetYaw;
@@ -171,7 +192,7 @@ export class GlobeScene {
       this.targetCameraGap = DEFAULT_GAP;
     }
     const target = yawPitchToFront(local);
-    target.pitch += HOME_PITCH;
+    target.pitch += HOME_PITCH * smoothstep01(normalizedZoom(this.cameraGap));
     if (this.reduceMotion) {
       this.yaw = this.targetYaw = target.yaw;
       this.pitch = this.targetPitch = target.pitch;
@@ -181,7 +202,7 @@ export class GlobeScene {
     const from = { yaw: this.yaw, pitch: this.pitch };
     const start = performance.now();
     const tick = now => {
-      const t = Math.min(1, (now - start) / 760);
+      const t = Math.min(1, (now - start) / 1050);
       const eased = t * t * (3 - 2 * t);
       this.yaw = from.yaw + shortestAngle(from.yaw, target.yaw) * eased;
       this.pitch = from.pitch + (target.pitch - from.pitch) * eased;
@@ -232,7 +253,7 @@ export class GlobeScene {
     const b = this.surfaceXY(this.positions.get(bId));
     if (!a || !b) return;
     const y = (a.y + b.y) / 2;
-    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.65, 'rgba(63,39,22,.88)');
+    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.85, RELATIONSHIP_COLORS.couple);
   }
 
   drawDescent(parentIds, childId, camera) {
@@ -242,7 +263,12 @@ export class GlobeScene {
     if (!child || !parents.length) return;
     const source = averagePoint(parents);
     const bendY = source.y + (child.y - source.y) * 0.48;
-    this.drawSurfacePolyline([[source.x, source.y], [source.x, bendY], [child.x, bendY], [child.x, child.y]], camera, 1.78, 'rgba(63,39,22,.90)');
+    this.drawSurfacePolyline(
+      [[source.x, source.y], [source.x, bendY], [child.x, bendY], [child.x, child.y]],
+      camera,
+      1.95,
+      RELATIONSHIP_COLORS.descent,
+    );
   }
 
   drawSiblingGroup(parentIds, childIds, camera) {
@@ -254,9 +280,14 @@ export class GlobeScene {
     const railY = source.y + (averageChildY - source.y) * 0.48;
     const minX = Math.min(...children.map(point => point.x));
     const maxX = Math.max(...children.map(point => point.x));
-    this.drawSurfacePolyline([[source.x, source.y], [source.x, railY]], camera, 1.78, 'rgba(63,39,22,.90)');
-    this.drawSurfacePolyline([[minX, railY], [maxX, railY]], camera, 1.62, 'rgba(63,39,22,.86)');
-    children.forEach(child => this.drawSurfacePolyline([[child.x, railY], [child.x, child.y]], camera, 1.48, 'rgba(63,39,22,.82)'));
+    this.drawSurfacePolyline([[source.x, source.y], [source.x, railY]], camera, 1.95, RELATIONSHIP_COLORS.descent);
+    this.drawSurfacePolyline([[minX, railY], [maxX, railY]], camera, 1.80, RELATIONSHIP_COLORS.rail);
+    children.forEach(child => this.drawSurfacePolyline(
+      [[child.x, railY], [child.x, child.y]],
+      camera,
+      1.66,
+      RELATIONSHIP_COLORS.stem,
+    ));
   }
 
   drawSurfacePolyline(xyPoints, camera, width = 0.7, stroke = null) {
@@ -275,10 +306,13 @@ export class GlobeScene {
     }
     const ctx = this.ctx;
     ctx.save();
-    if (stroke) ctx.strokeStyle = stroke;
-    ctx.lineWidth = width;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.strokeStyle = RELATIONSHIP_COLORS.halo;
+    ctx.lineWidth = width + 1.35;
+    strokeSegments(ctx, sampled);
+    ctx.strokeStyle = stroke || RELATIONSHIP_COLORS.descent;
+    ctx.lineWidth = width;
     strokeSegments(ctx, sampled);
     ctx.restore();
   }
@@ -307,41 +341,45 @@ export class GlobeScene {
   }
 
   drawPlaque({ person, unit, projected }, camera) {
+    const cameraFacing = lerp(0.22, 0.38, camera.zoomT || 0);
     const frame = projectedRaisedFrame(
       unit,
       camera,
       RADIUS,
       PLAQUE.width,
       PLAQUE.height,
-      PLAQUE_CAMERA_FACING,
+      cameraFacing,
     );
     if (!frame) return;
 
     const tex = plaqueTexture(person);
-    const halfWidthPx = Math.hypot(frame.xAxis.x, frame.xAxis.y);
-    const apparentWidth = halfWidthPx * 2;
-    if (apparentWidth < 8) return;
-
     const placement = rigidPlaquePlacement(frame, tex.width, tex.height);
     if (!placement) return;
-    const { scale, angle, center, height: apparentHeight } = placement;
+    const apparentWidth = placement.width;
+    const apparentHeight = placement.height;
+    if (apparentWidth < 8 || apparentHeight < 3) return;
 
     const ctx = this.ctx;
     ctx.save();
     ctx.globalAlpha = clamp((apparentWidth - 6) / 34, 0.28, 1);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.translate(center.x, center.y);
-    ctx.rotate(angle);
-    ctx.scale(scale, scale);
+    ctx.transform(
+      placement.a,
+      placement.b,
+      placement.c,
+      placement.d,
+      placement.e,
+      placement.f,
+    );
     ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
     ctx.restore();
 
     this.hitAreas.push({
       id: person.id,
-      x: center.x,
-      y: center.y,
-      r: Math.max(13, Math.max(apparentWidth, apparentHeight) * 0.54),
+      x: placement.center.x,
+      y: placement.center.y,
+      r: Math.max(13, Math.max(apparentWidth, apparentHeight) * 0.56),
       z: projected.z,
     });
   }
@@ -391,17 +429,17 @@ function drawSphereBase(ctx, camera, radius) {
 function drawSphereShade(ctx, camera, radius) {
   const pr = apparentSphereRadius(camera, radius);
   const g = ctx.createRadialGradient(camera.cx - pr * 0.10, camera.cy - pr * 0.28, pr * 0.10, camera.cx, camera.cy, pr);
-  g.addColorStop(0, 'rgba(255,244,207,.07)');
-  g.addColorStop(0.64, 'rgba(106,71,39,.02)');
-  g.addColorStop(0.86, 'rgba(78,49,28,.12)');
-  g.addColorStop(1, 'rgba(41,27,18,.38)');
+  g.addColorStop(0, 'rgba(255,244,207,.06)');
+  g.addColorStop(0.64, 'rgba(106,71,39,.015)');
+  g.addColorStop(0.86, 'rgba(78,49,28,.10)');
+  g.addColorStop(1, 'rgba(41,27,18,.34)');
   ctx.save();
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(248,224,166,.72)';
-  ctx.lineWidth = 2.0;
+  ctx.strokeStyle = 'rgba(248,224,166,.70)';
+  ctx.lineWidth = 1.8;
   ctx.stroke();
   ctx.restore();
 }
@@ -434,6 +472,19 @@ function strokeSegments(ctx, points) {
     else ctx.lineTo(point.x, point.y);
   });
   ctx.stroke();
+}
+
+function normalizedZoom(gap) {
+  return clamp((gap - MIN_GAP) / (MAX_GAP - MIN_GAP), 0, 1);
+}
+
+function smoothstep01(value) {
+  const t = clamp(value, 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
 }
 
 function shortestAngle(from, to) {

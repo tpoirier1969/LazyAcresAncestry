@@ -1,12 +1,12 @@
-export const ATLAS_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/3/3e/Equirectangular-projection-topographic-world.jpg';
+export const ATLAS_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Equirectangular-projection-topographic-world.jpg/2560px-Equirectangular-projection-topographic-world.jpg';
 export const ATLAS_TEXTURE_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Equirectangular-projection-topographic-world.jpg';
 export const ATLAS_TEXTURE_CREDIT = 'Gundan / mapswire.com, CC BY-SA 4.0';
 export const ATLAS_TEXTURE_SHA1 = '2d069905a76447a5de0c11bb02628fb8d8323528';
 
-// The global relief layer is intentionally capped at 3840 px. Close views get
-// their sharpness from geographically narrow regional detail requests, so an 8K
-// whole-world texture only burns GPU memory and competes with other accelerated
-// browser content such as video playback.
+// The global layers are deliberately moderate resolution. Close views get
+// their sharpness from geographically narrow regional requests, so giant
+// whole-world textures only consume GPU memory and compete with other browser
+// hardware acceleration such as video playback.
 export const ATLAS_RELIEF_TEXTURE_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/3840px-Solarsystemscope_texture_8k_earth_daymap.jpg';
 export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = ATLAS_RELIEF_TEXTURE_URL;
 export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_daymap.jpg';
@@ -48,8 +48,11 @@ export function atlasDetailStrength(cameraGap) {
 
 export function quantizeAtlasDetailCenter(center, level) {
   if (!center || !level) return null;
-  const longitudeStep = Math.max(1, level.longitudeSpan * 0.12);
-  const latitudeStep = Math.max(1, level.latitudeSpan * 0.12);
+  // Keep the current regional image until the camera has moved a meaningful
+  // fraction of its coverage. This prevents pan/zoom from decoding and
+  // uploading another multi-megapixel texture every few degrees.
+  const longitudeStep = Math.max(1, level.longitudeSpan * 0.22);
+  const latitudeStep = Math.max(1, level.latitudeSpan * 0.22);
   return {
     longitude: normalizeLongitude(Math.round(center.longitude / longitudeStep) * longitudeStep),
     latitude: clamp(Math.round(center.latitude / latitudeStep) * latitudeStep, -78, 78),
@@ -95,8 +98,8 @@ export function atlasDetailUrl(bounds, level) {
   if (!bounds || !level) return null;
   const longitudeSpan = bounds.east - bounds.west;
   const latitudeSpan = bounds.north - bounds.south;
-  const width = clamp(Math.round(level.width), 1024, 3072);
-  const height = clamp(Math.round(width * latitudeSpan / longitudeSpan), 768, 3072);
+  const width = clamp(Math.round(level.width), 1024, 2560);
+  const height = clamp(Math.round(width * latitudeSpan / longitudeSpan), 768, 2560);
   const params = new URLSearchParams({
     version: '1.1.1',
     service: 'WMS',

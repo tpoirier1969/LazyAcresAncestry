@@ -68,11 +68,23 @@ export function projectLocalPoint(local, camera) {
 }
 
 export function projectSpherePoint(unit, camera, radius) {
-  return projectLocalPoint({
+  const projected = projectLocalPoint({
     x: radius * unit.x,
     y: radius * unit.y,
     z: radius * unit.z,
   }, camera);
+  if (!projected) return null;
+
+  // A sphere surface point on the far side has no legitimate screen-space
+  // projection for the visible atlas. Returning it used to let texture cells
+  // straddle the horizon and stretch into enormous triangular wedges.
+  const toCamera = {
+    x: -projected.world.x,
+    y: -projected.world.y,
+    z: -projected.world.z,
+  };
+  if (unit.x * toCamera.x + unit.y * toCamera.y + unit.z * toCamera.z <= 0) return null;
+  return projected;
 }
 
 export function isVisible(unit, projected) {

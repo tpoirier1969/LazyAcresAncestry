@@ -70,17 +70,25 @@ function drawGoldFrame(ctx, cx, cy, rx, ry, w) {
   gold.addColorStop(0.84, '#e1bc62');
   gold.addColorStop(1, '#513214');
   ctx.fillStyle = gold;
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx * 1.10, ry * 1.075, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 1.10, ry * 1.075, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.globalCompositeOperation = 'destination-out';
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.855, ry * 0.855, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 0.855, ry * 0.855, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
 
   ctx.strokeStyle = 'rgba(255,235,169,.86)';
   ctx.lineWidth = Math.max(1.8, w * 0.0045);
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx * 1.015, ry * 0.995, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 1.015, ry * 0.995, 0, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.strokeStyle = 'rgba(74,45,15,.72)';
   ctx.lineWidth = Math.max(1.2, w * 0.003);
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.90, ry * 0.90, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 0.90, ry * 0.90, 0, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
 
   drawOrnament(ctx, cx, cy - ry * 1.02, 0, w);
@@ -102,18 +110,31 @@ function drawOrnament(ctx, x, y, rotation, w) {
   ctx.bezierCurveTo(-w * 0.024, w * 0.018, -w * 0.014, w * 0.045, 0, w * 0.060);
   ctx.bezierCurveTo(w * 0.014, w * 0.045, w * 0.024, w * 0.018, w * 0.055, w * 0.025);
   ctx.bezierCurveTo(w * 0.038, w * 0.006, w * 0.018, -w * 0.010, 0, -w * 0.028);
-  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
   ctx.restore();
 }
 
 function drawFallbackPortrait(ctx, cx, cy, rx, ry, sex) {
   const paper = ctx.createRadialGradient(cx - rx * 0.35, cy - ry * 0.45, 4, cx, cy, rx * 1.25);
-  paper.addColorStop(0, '#ead8ae'); paper.addColorStop(0.62, '#9c805a'); paper.addColorStop(1, '#4d3e2e');
-  ctx.fillStyle = paper; ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
+  paper.addColorStop(0, '#ead8ae');
+  paper.addColorStop(0.62, '#9c805a');
+  paper.addColorStop(1, '#4d3e2e');
+  ctx.fillStyle = paper;
+  ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
   ctx.fillStyle = 'rgba(49,39,29,.82)';
-  ctx.beginPath(); ctx.ellipse(cx, cy - ry * 0.16, rx * 0.29, ry * 0.30, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(cx, cy + ry * 0.72, rx * 0.74, ry * 0.58, 0, Math.PI, Math.PI * 2); ctx.fill();
-  if (sex === 'F') { ctx.beginPath(); ctx.ellipse(cx, cy - ry * 0.2, rx * 0.42, ry * 0.39, 0, Math.PI, Math.PI * 2); ctx.fill(); }
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - ry * 0.16, rx * 0.29, ry * 0.30, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + ry * 0.72, rx * 0.74, ry * 0.58, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+  if (sex === 'F') {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - ry * 0.2, rx * 0.42, ry * 0.39, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawWoodPlaque(ctx, w, h) {
@@ -242,10 +263,21 @@ function drawText(ctx, w, h, person) {
   });
 
   const dates = `${person.birth?.date || '?'}${person.death?.date ? ` – ${person.death.date}` : ' –'}`;
-  const dateSize = fitSingleLine(ctx, dates, maxWidth, w * 0.052, w * 0.040, 600);
+  const dateLayout = fitWrappedText(ctx, dates, {
+    maxWidth,
+    maxLines: 2,
+    startSize: w * 0.057,
+    minSize: w * 0.043,
+    weight: 600,
+  });
   ctx.fillStyle = '#e4cc94';
-  ctx.font = `600 ${dateSize}px Georgia, serif`;
-  ctx.fillText(dates, w * 0.5, h * 0.858);
+  ctx.font = `600 ${dateLayout.fontSize}px Georgia, serif`;
+  const dateLineHeight = dateLayout.fontSize * 1.02;
+  const dateCenterY = h * 0.858;
+  const firstDateY = dateCenterY - ((dateLayout.lines.length - 1) * dateLineHeight) / 2;
+  dateLayout.lines.forEach((line, index) => {
+    ctx.fillText(line, w * 0.5, firstDateY + index * dateLineHeight);
+  });
 }
 
 function fitWrappedText(ctx, text, { maxWidth, maxLines, startSize, minSize, weight }) {
@@ -275,16 +307,6 @@ function fitWrappedText(ctx, text, { maxWidth, maxLines, startSize, minSize, wei
   return { lines, fontSize: fallbackSize };
 }
 
-function fitSingleLine(ctx, text, maxWidth, startSize, minSize, weight) {
-  let fontSize = startSize;
-  ctx.font = `${weight} ${fontSize}px Georgia, serif`;
-  while (ctx.measureText(text).width > maxWidth && fontSize > minSize) {
-    fontSize -= 1;
-    ctx.font = `${weight} ${fontSize}px Georgia, serif`;
-  }
-  return fontSize;
-}
-
 function wrapWords(ctx, text, maxWidth) {
   const words = String(text || '').trim().split(/\s+/).filter(Boolean);
   if (!words.length) return [''];
@@ -308,7 +330,10 @@ function loadImage(src) {
   if (IMAGES.has(src)) return IMAGES.get(src);
   const image = new Image();
   image.decoding = 'async';
-  image.onload = () => { CACHE.clear(); window.dispatchEvent(new Event('ancestry-photo-loaded')); };
+  image.onload = () => {
+    CACHE.clear();
+    window.dispatchEvent(new Event('ancestry-photo-loaded'));
+  };
   image.src = src;
   IMAGES.set(src, image);
   return image;
@@ -316,7 +341,8 @@ function loadImage(src) {
 
 function drawCover(ctx, image, x, y, w, h) {
   const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
-  const sw = w / scale, sh = h / scale;
+  const sw = w / scale;
+  const sh = h / scale;
   const sx = (image.naturalWidth - sw) / 2;
   const sy = Math.max(0, (image.naturalHeight - sh) * 0.25);
   ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);

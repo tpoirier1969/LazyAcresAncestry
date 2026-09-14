@@ -114,6 +114,7 @@ export class GlobeWebGLRenderer {
       radius: gl.getUniformLocation(this.program, 'uRadius'),
       yaw: gl.getUniformLocation(this.program, 'uYaw'),
       pitch: gl.getUniformLocation(this.program, 'uPitch'),
+      viewTilt: gl.getUniformLocation(this.program, 'uViewTilt'),
       focal: gl.getUniformLocation(this.program, 'uFocal'),
       centerZ: gl.getUniformLocation(this.program, 'uCenterZ'),
       cx: gl.getUniformLocation(this.program, 'uCx'),
@@ -252,6 +253,7 @@ export class GlobeWebGLRenderer {
     gl.uniform1f(this.locations.radius, radius);
     gl.uniform1f(this.locations.yaw, yaw);
     gl.uniform1f(this.locations.pitch, pitch);
+    gl.uniform1f(this.locations.viewTilt, camera.viewTilt || 0);
     gl.uniform1f(this.locations.focal, focal);
     gl.uniform1f(this.locations.centerZ, camera.centerZ);
     gl.uniform1f(this.locations.cx, cx);
@@ -439,6 +441,7 @@ attribute vec2 aUv;
 uniform float uRadius;
 uniform float uYaw;
 uniform float uPitch;
+uniform float uViewTilt;
 uniform float uFocal;
 uniform float uCenterZ;
 uniform float uCx;
@@ -465,18 +468,35 @@ vec3 rotateSphere(vec3 p) {
 }
 
 void main() {
-  vec3 normal = rotateSphere(aPosition);
-  vec3 world = normal * uRadius;
-  float depth = uCenterZ + world.z;
-  float screenX = uCx + world.x * uFocal / depth;
-  float screenY = uCy - world.y * uFocal / depth;
+  vec3 sphereNormal = rotateSphere(aPosition);
+  vec3 world = sphereNormal * uRadius;
+  world.z += uCenterZ;
+
+  float viewCos = cos(uViewTilt);
+  float viewSin = sin(uViewTilt);
+  float pivotZ = uCenterZ - uRadius;
+  float relativeZ = world.z - pivotZ;
+  vec3 pitchedWorld = vec3(
+    world.x,
+    viewCos * world.y - viewSin * relativeZ,
+    pivotZ + viewSin * world.y + viewCos * relativeZ
+  );
+  vec3 pitchedNormal = vec3(
+    sphereNormal.x,
+    viewCos * sphereNormal.y - viewSin * sphereNormal.z,
+    viewSin * sphereNormal.y + viewCos * sphereNormal.z
+  );
+
+  float depth = pitchedWorld.z;
+  float screenX = uCx + pitchedWorld.x * uFocal / depth;
+  float screenY = uCy - pitchedWorld.y * uFocal / depth;
   float ndcX = screenX / (uViewport.x * 0.5) - 1.0;
   float ndcY = 1.0 - screenY / (uViewport.y * 0.5);
   float ndcZ = clamp((depth - uNearDepth) / (uFarDepth - uNearDepth), 0.0, 1.0) * 2.0 - 1.0;
 
   gl_Position = vec4(ndcX * depth, ndcY * depth, ndcZ * depth, depth);
   vUv = aUv;
-  vNormal = normal;
+  vNormal = pitchedNormal;
 }
 `;
 
@@ -524,8 +544,8 @@ void main() {
   float regionMix = regionalMask(vUv);
   vec2 regionalUv = clamp(
     (vUv - uRegionalBounds.xy) / max(uRegionalBounds.zw - uRegionalBounds.xy, vec2(0.000001)),
-    0.0,
-    1.0
+    vec2(0.0),
+    vec2(1.0)
   );
   vec3 regionalDetail = texture2D(uRegional, regionalUv).rgb;
   detail = mix(detail, regionalDetail, regionMix * 0.92);
@@ -553,16 +573,15 @@ void main() {
   float sourceSouth = luminance(texture2D(uAtlas, vUv - vec2(0.0, uAtlasTexel.y)).rgb);
   float sourceNeighbor = (sourceEast + sourceWest + sourceNorth + sourceSouth) * 0.25;
 
-  vec2 detailTexel = mix(uReliefTexel, uRegionalTexel / max(uRegionalBounds.zw - uRegionalBounds.xy, vec2(0.000001)), regionMix);
-  float detailEast = luminance(texture2D(uRelief, vUv + vec2(detailTexel.x, 0.0)).rgb);
-  float detailWest = luminance(texture2D(uRelief, vUv - vec2(detailTexel.x, 0.0)).rgb);
-  float detailNorth = luminance(texture2D(uRelief, vUv + vec2(0.0, detailTexel.y)).rgb);
-  float detailSouth = luminance(texture2D(uRelief, vUv - vec2(0.0, detailTexel.y)).rgb);
+  float detailEast = luminance(texture2D(uRelief, vUv + vec2(uReliefTexel.x, 0.0)).rgb);
+  float detailWest = luminance(texture2D(uRelief, vUv - vec2(uReliefTexel.x, 0.0)).rgb);
+  float detailNorth = luminance(texture2D(uRelief, vUv + vec2(0.0, uReliefTexel.y)).rgb);
+  float detailSouth = luminance(texture2D(uRelief, vUv - vec2(0.0, uReliefTexel.y)).rgb);
   if (regionMix > 0.01) {
-    vec2 rEast = clamp(regionalUv + vec2(uRegionalTexel.x, 0.0), 0.0, 1.0);
-    vec2 rWest = clamp(regionalUv - vec2(uRegionalTexel.x, 0.0), 0.0, 1.0);
-    vec2 rNorth = clamp(regionalUv + vec2(0.0, uRegionalTexel.y), 0.0, 1.0);
-    vec2 rSouth = clamp(regionalUv - vec2(0.0, uRegionalTexel.y), 0.0, 1.0);
+    vec2 rEast = clamp(regionalUv + vec2(uRegionalTexel.x, 0.0), vec2(0.0), vec2(1.0));
+    vec2 rWest = clamp(regionalUv - vec2(uRegionalTexel.x, 0.0), vec2(0.0), vec2(1.0));
+    vec2 rNorth = clamp(regionalUv + vec2(0.0, uRegionalTexel.y), vec2(0.0), vec2(1.0));
+    vec2 rSouth = clamp(regionalUv - vec2(0.0, uRegionalTexel.y), vec2(0.0), vec2(1.0));
     detailEast = mix(detailEast, luminance(texture2D(uRegional, rEast).rgb), regionMix);
     detailWest = mix(detailWest, luminance(texture2D(uRegional, rWest).rgb), regionMix);
     detailNorth = mix(detailNorth, luminance(texture2D(uRegional, rNorth).rgb), regionMix);

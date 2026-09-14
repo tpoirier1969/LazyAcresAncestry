@@ -1,7 +1,8 @@
 import {
   ATLAS_HOME_ANCHOR,
+  ATLAS_REGIONAL_DETAIL_BOUNDS,
+  ATLAS_REGIONAL_DETAIL_URL,
   ATLAS_RELIEF_TEXTURE_FALLBACK_URL,
-  ATLAS_RELIEF_TEXTURE_ULTRA_URL,
   ATLAS_RELIEF_TEXTURE_URL,
 } from './atlas-map.js';
 
@@ -86,8 +87,10 @@ export class GlobeWebGLRenderer {
     });
     this.available = Boolean(this.gl);
     this.ready = false;
+    this.regionalReady = false;
     this.atlasSize = { width: 4424, height: 2214 };
     this.reliefSize = { width: 8192, height: 4096 };
+    this.regionalSize = { width: 4096, height: 2340 };
 
     if (!this.available) return;
 
@@ -95,6 +98,7 @@ export class GlobeWebGLRenderer {
       this.initialize();
       this.loadTexture();
       this.loadDetailTexture();
+      this.loadRegionalDetailTexture();
     } catch (error) {
       console.error('WebGL globe initialization failed', error);
       this.available = false;
@@ -119,9 +123,13 @@ export class GlobeWebGLRenderer {
       farDepth: gl.getUniformLocation(this.program, 'uFarDepth'),
       atlas: gl.getUniformLocation(this.program, 'uAtlas'),
       relief: gl.getUniformLocation(this.program, 'uRelief'),
+      regional: gl.getUniformLocation(this.program, 'uRegional'),
       labels: gl.getUniformLocation(this.program, 'uLabels'),
       atlasTexel: gl.getUniformLocation(this.program, 'uAtlasTexel'),
       reliefTexel: gl.getUniformLocation(this.program, 'uReliefTexel'),
+      regionalTexel: gl.getUniformLocation(this.program, 'uRegionalTexel'),
+      regionalBounds: gl.getUniformLocation(this.program, 'uRegionalBounds'),
+      regionalReady: gl.getUniformLocation(this.program, 'uRegionalReady'),
     };
 
     const mesh = buildSphereMesh();
@@ -137,6 +145,7 @@ export class GlobeWebGLRenderer {
 
     this.texture = createSolidTexture(gl, [222, 196, 141, 255]);
     this.reliefTexture = createSolidTexture(gl, [128, 128, 128, 255]);
+    this.regionalTexture = createSolidTexture(gl, [128, 128, 128, 255]);
     this.labelTexture = createLabelTexture(gl);
 
     gl.enable(gl.DEPTH_TEST);
@@ -160,14 +169,12 @@ export class GlobeWebGLRenderer {
   loadDetailTexture() {
     const gl = this.gl;
     const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096;
-    const candidates = maxTextureSize >= 16384
-      ? [ATLAS_RELIEF_TEXTURE_ULTRA_URL, ATLAS_RELIEF_TEXTURE_URL, ATLAS_RELIEF_TEXTURE_FALLBACK_URL]
-      : maxTextureSize >= 8192
-        ? [ATLAS_RELIEF_TEXTURE_URL, ATLAS_RELIEF_TEXTURE_FALLBACK_URL]
-        : [ATLAS_RELIEF_TEXTURE_FALLBACK_URL];
+    const reliefUrl = maxTextureSize >= 8192
+      ? ATLAS_RELIEF_TEXTURE_URL
+      : ATLAS_RELIEF_TEXTURE_FALLBACK_URL;
 
-    this.loadFirstAvailableTexture(this.reliefTexture, candidates, {
-      name: 'Atlas high-resolution detail texture',
+    this.loadImageIntoTexture(this.reliefTexture, reliefUrl, {
+      name: 'Atlas global high-resolution detail texture',
       onLoad: image => {
         this.reliefSize = imageSize(image, this.reliefSize);
         this.onReady?.();
@@ -175,22 +182,18 @@ export class GlobeWebGLRenderer {
     });
   }
 
-  loadFirstAvailableTexture(texture, urls, options = {}) {
-    const [url, ...fallbacks] = urls;
-    if (!url) return;
-    this.loadImageIntoTexture(texture, url, {
-      ...options,
-      onError: () => {
-        if (fallbacks.length) {
-          this.loadFirstAvailableTexture(texture, fallbacks, options);
-        } else {
-          console.error(`${options.name || 'Atlas texture'} failed to load`, url);
-        }
+  loadRegionalDetailTexture() {
+    this.loadImageIntoTexture(this.regionalTexture, ATLAS_REGIONAL_DETAIL_URL, {
+      name: 'NASA Great Lakes regional detail texture',
+      onLoad: image => {
+        this.regionalSize = imageSize(image, this.regionalSize);
+        this.regionalReady = true;
+        this.onReady?.();
       },
     });
   }
 
-  loadImageIntoTexture(texture, url, { name = 'Atlas texture', onLoad = null, onError = null } = {}) {
+  loadImageIntoTexture(texture, url, { name = 'Atlas texture', onLoad = null } = {}) {
     const image = new Image();
     image.decoding = 'async';
     image.crossOrigin = 'anonymous';
@@ -204,8 +207,7 @@ export class GlobeWebGLRenderer {
       onLoad?.(image);
     }, { once: true });
     image.addEventListener('error', () => {
-      if (onError) onError();
-      else console.error(`${name} failed to load`, url);
+      console.error(`${name} failed to load`, url);
     }, { once: true });
     image.src = url;
   }
@@ -245,6 +247,7 @@ export class GlobeWebGLRenderer {
     const cy = camera.cy * dpr;
     const nearDepth = Math.max(0.05, camera.centerZ - radius - 0.5);
     const farDepth = camera.centerZ + radius + 0.5;
+    const regionalBounds = atlasUvBounds(ATLAS_REGIONAL_DETAIL_BOUNDS);
 
     gl.uniform1f(this.locations.radius, radius);
     gl.uniform1f(this.locations.yaw, yaw);
@@ -266,14 +269,37 @@ export class GlobeWebGLRenderer {
       1 / Math.max(1, this.reliefSize.width),
       1 / Math.max(1, this.reliefSize.height),
     );
+    gl.uniform2f(
+      this.locations.regionalTexel,
+      1 / Math.max(1, this.regionalSize.width),
+      1 / Math.max(1, this.regionalSize.height),
+    );
+    gl.uniform4f(
+      this.locations.regionalBounds,
+      regionalBounds.left,
+      regionalBounds.top,
+      regionalBounds.right,
+      regionalBounds.bottom,
+    );
+    gl.uniform1f(this.locations.regionalReady, this.regionalReady ? 1 : 0);
 
     bindTexture(gl, this.texture, 0, this.locations.atlas);
     bindTexture(gl, this.reliefTexture, 1, this.locations.relief);
     bindTexture(gl, this.labelTexture, 2, this.locations.labels);
+    bindTexture(gl, this.regionalTexture, 3, this.locations.regional);
 
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
     return this.ready;
   }
+}
+
+export function atlasUvBounds(bounds) {
+  return {
+    left: (bounds.west + 180) / 360,
+    top: (90 - bounds.north) / 180,
+    right: (bounds.east + 180) / 360,
+    bottom: (90 - bounds.south) / 180,
+  };
 }
 
 function imageSize(image, fallback) {
@@ -378,7 +404,7 @@ function isPowerOfTwo(value) {
 }
 
 function createShader(gl, type, source) {
-  const shader = gl.createShader(gl[type] ? gl[type] : type);
+  const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
@@ -459,9 +485,13 @@ precision highp float;
 
 uniform sampler2D uAtlas;
 uniform sampler2D uRelief;
+uniform sampler2D uRegional;
 uniform sampler2D uLabels;
 uniform vec2 uAtlasTexel;
 uniform vec2 uReliefTexel;
+uniform vec2 uRegionalTexel;
+uniform vec4 uRegionalBounds;
+uniform float uRegionalReady;
 varying vec2 vUv;
 varying vec3 vNormal;
 
@@ -479,9 +509,27 @@ float gridLine(float coordinate, float divisions) {
   return 1.0 - smoothstep(0.0, 0.0030, distanceToLine);
 }
 
+float regionalMask(vec2 uv) {
+  vec2 span = max(uRegionalBounds.zw - uRegionalBounds.xy, vec2(0.000001));
+  vec2 low = (uv - uRegionalBounds.xy) / span;
+  vec2 high = (uRegionalBounds.zw - uv) / span;
+  float edge = min(min(low.x, low.y), min(high.x, high.y));
+  float inside = step(0.0, low.x) * step(0.0, low.y) * step(0.0, high.x) * step(0.0, high.y);
+  return inside * smoothstep(0.0, 0.055, edge) * uRegionalReady;
+}
+
 void main() {
   vec4 source = texture2D(uAtlas, vUv);
   vec3 detail = texture2D(uRelief, vUv).rgb;
+  float regionMix = regionalMask(vUv);
+  vec2 regionalUv = clamp(
+    (vUv - uRegionalBounds.xy) / max(uRegionalBounds.zw - uRegionalBounds.xy, vec2(0.000001)),
+    0.0,
+    1.0
+  );
+  vec3 regionalDetail = texture2D(uRegional, regionalUv).rgb;
+  detail = mix(detail, regionalDetail, regionMix * 0.92);
+
   float sourceLuma = luminance(source.rgb);
   float detailLuma = luminance(detail);
 
@@ -505,14 +553,25 @@ void main() {
   float sourceSouth = luminance(texture2D(uAtlas, vUv - vec2(0.0, uAtlasTexel.y)).rgb);
   float sourceNeighbor = (sourceEast + sourceWest + sourceNorth + sourceSouth) * 0.25;
 
-  float detailEast = luminance(texture2D(uRelief, vUv + vec2(uReliefTexel.x, 0.0)).rgb);
-  float detailWest = luminance(texture2D(uRelief, vUv - vec2(uReliefTexel.x, 0.0)).rgb);
-  float detailNorth = luminance(texture2D(uRelief, vUv + vec2(0.0, uReliefTexel.y)).rgb);
-  float detailSouth = luminance(texture2D(uRelief, vUv - vec2(0.0, uReliefTexel.y)).rgb);
+  vec2 detailTexel = mix(uReliefTexel, uRegionalTexel / max(uRegionalBounds.zw - uRegionalBounds.xy, vec2(0.000001)), regionMix);
+  float detailEast = luminance(texture2D(uRelief, vUv + vec2(detailTexel.x, 0.0)).rgb);
+  float detailWest = luminance(texture2D(uRelief, vUv - vec2(detailTexel.x, 0.0)).rgb);
+  float detailNorth = luminance(texture2D(uRelief, vUv + vec2(0.0, detailTexel.y)).rgb);
+  float detailSouth = luminance(texture2D(uRelief, vUv - vec2(0.0, detailTexel.y)).rgb);
+  if (regionMix > 0.01) {
+    vec2 rEast = clamp(regionalUv + vec2(uRegionalTexel.x, 0.0), 0.0, 1.0);
+    vec2 rWest = clamp(regionalUv - vec2(uRegionalTexel.x, 0.0), 0.0, 1.0);
+    vec2 rNorth = clamp(regionalUv + vec2(0.0, uRegionalTexel.y), 0.0, 1.0);
+    vec2 rSouth = clamp(regionalUv - vec2(0.0, uRegionalTexel.y), 0.0, 1.0);
+    detailEast = mix(detailEast, luminance(texture2D(uRegional, rEast).rgb), regionMix);
+    detailWest = mix(detailWest, luminance(texture2D(uRegional, rWest).rgb), regionMix);
+    detailNorth = mix(detailNorth, luminance(texture2D(uRegional, rNorth).rgb), regionMix);
+    detailSouth = mix(detailSouth, luminance(texture2D(uRegional, rSouth).rgb), regionMix);
+  }
   float detailNeighbor = (detailEast + detailWest + detailNorth + detailSouth) * 0.25;
 
   float fineDetail = clamp(
-    (sourceLuma - sourceNeighbor) * 2.1 + (detailLuma - detailNeighbor) * 1.85,
+    (sourceLuma - sourceNeighbor) * 2.1 + (detailLuma - detailNeighbor) * 2.15,
     -0.20,
     0.20
   );
@@ -526,7 +585,7 @@ void main() {
     engraving * mix(0.075, 0.022, water)
   );
 
-  vec3 mutedDetail = mix(vec3(detailLuma), detail, 0.12);
+  vec3 mutedDetail = mix(vec3(detailLuma), detail, 0.10);
   antique = mix(antique, mutedDetail, 0.022);
 
   float longitudeGrid = gridLine(vUv.x, 24.0);

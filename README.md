@@ -18,7 +18,7 @@ Person plaques are rigid physical objects, not curved decals. Their lower-center
 
 The globe uses a bundled 4096×2048 antique world-atlas texture (`assets/antique-atlas-texture.svg`). It contains recognizable world coastlines and landmasses rather than invented pseudo-map polygons, plus parchment coloring, graticule, subdued rhumb lines, ocean labels, and a restrained compass rose.
 
-The complete 2:1 texture is divided into a latitude/longitude mesh and projected over the entire sphere. It uses the same globe rotation as the people and genealogy lines, so the atlas is physically locked to the sphere during drag, focus rotation, and zoom.
+The complete 2:1 texture is divided into a latitude/longitude mesh and projected over the entire sphere. It uses the same globe rotation as the people and genealogy lines, so the atlas is physically locked to the sphere during drag, focus rotation, and zoom. Sphere projection clips back-facing texture vertices at the horizon so hidden map cells cannot stretch across the visible globe as large triangular artifacts.
 
 The map is decorative cartography. It does not claim that a person's position on the family globe is a geographic birthplace or residence.
 
@@ -37,7 +37,7 @@ The map is decorative cartography. It does not claim that a person's position on
 
 ## Family layout and relationships
 
-Generations use explicit vertical bands. The spacing is deliberately moderate: tighter than the early sparse prototype but looser than the overpacked layout that made portrait groups collide. Large grandparent-sibling cohorts wrap within their own generation band and receive enough horizontal and row separation to remain individually readable.
+Generations use explicit vertical bands. The root-to-parent distance remains the approved visual baseline. Older generation bands receive perspective compensation so they do not appear to collapse toward one another as they recede across the curved atlas. Wrapped grandparent-sibling cohorts use one consistent peer gap horizontally and vertically rather than tighter spacing in later rows.
 
 Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, sibling rail, and child stems. Connectors remain evidence-based. A layout cluster may influence where a prototype person is placed, but it can never create a genealogical relationship. Parent, spouse, and shared-parent sibling lines are drawn only from recorded relationship data.
 
@@ -51,9 +51,9 @@ The missing relatives will not be fabricated. Once the complete GEDCOM is restor
 
 ## Architecture
 
-- `src/geometry.js` owns spherical placement, camera projection, anchored plaque frames, and capacity math.
+- `src/geometry.js` owns spherical placement, camera projection, visible-horizon clipping, anchored plaque frames, and capacity math.
 - `src/layout.js` maps the current sample into compact, generation-aware family bands.
-- `src/plaque.js` owns the old-glass portrait medallion and parchment-scroll artwork.
+- `src/plaque.js` owns the old-glass portrait medallion and wood nameplate with brass end caps.
 - `src/plaque-projection.js` owns rigid aspect-preserving placement of a plaque at its sphere attachment point.
 - `src/atlas-map.js` owns loading the bundled atlas texture.
 - `src/sphere-texture.js` owns equirectangular UV mapping and triangle-affine texture projection onto the sphere.
@@ -88,7 +88,7 @@ node tests/relationships.test.mjs
 node tests/gedcom.test.mjs
 ```
 
-The atlas and sphere tests guard full-sphere map coverage and texture projection. The plaque test guards against portrait/icon distortion by requiring a fixed aspect ratio and an exact lower-center sphere attachment point. The layout test guards generation-band separation. Relationship and GEDCOM tests guard named kinship labels and saved-record parsing.
+The atlas and sphere tests guard full-sphere map coverage, texture projection, and horizon clipping. The plaque test guards against portrait/icon distortion by requiring a fixed aspect ratio and an exact lower-center sphere attachment point. The layout test guards generation-band separation. Relationship and GEDCOM tests guard named kinship labels and saved-record parsing.
 
 ## Hosting
 

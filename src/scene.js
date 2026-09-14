@@ -8,7 +8,7 @@ import {
   tangentPoint,
   yawPitchToFront,
 } from './geometry.js';
-import { blendOverviewCenter, cameraBehavior, cameraCenterY } from './camera-behavior.js';
+import { cameraBehavior, cameraCenterY } from './camera-behavior.js';
 import { plaqueTexture } from './plaque.js';
 import { rigidPlaquePlacement } from './plaque-projection.js';
 import { layoutSample } from './layout.js';
@@ -21,7 +21,6 @@ const RADIUS = Math.max(225, requiredSphereRadius({ count: POPULATION, plaqueWid
 const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
 const MAX_GAP = 180;
-const OVERVIEW_TOP_INSET = 14;
 const RELATIONSHIP_COLORS = Object.freeze({
   couple: 'rgba(119,55,47,.97)',
   descent: 'rgba(132,62,52,.97)',
@@ -94,21 +93,10 @@ export class GlobeScene {
     const focal = Math.min(w, h) * 1.04;
     const centerZ = RADIUS + this.cameraGap;
     const behavior = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP);
-    const focusedCenterY = cameraCenterY({
+    const baseCenterY = cameraCenterY({
       height: h,
-      focal,
-      centerZ,
-      radius: RADIUS,
-      viewTilt: behavior.viewTilt,
       targetYRatio: behavior.targetYRatio,
     });
-    const sphereRadius = apparentSphereRadius({ focal, centerZ }, RADIUS);
-    const baseCenterY = blendOverviewCenter(
-      focusedCenterY,
-      sphereRadius,
-      behavior.overviewT,
-      OVERVIEW_TOP_INSET,
-    );
 
     return {
       cx: w / 2 + this.cameraOffset.x,
@@ -117,7 +105,6 @@ export class GlobeScene {
       centerZ,
       near: 0.1,
       dpr,
-      renderPitch: this.pitch + behavior.viewTilt,
       ...behavior,
     };
   }
@@ -251,7 +238,7 @@ export class GlobeScene {
   focusedScreenPoint(camera = this.camera()) {
     const local = this.positions.get(this.focusedId);
     if (!local) return null;
-    const unit = rotatePoint(local, this.yaw, camera.renderPitch);
+    const unit = rotatePoint(local, this.yaw, this.pitch);
     return projectSpherePoint(unit, camera, RADIUS);
   }
 
@@ -284,7 +271,7 @@ export class GlobeScene {
     const h = this.canvas.height / dpr;
     ctx.clearRect(0, 0, w, h);
 
-    const globeDrawn = this.globeRenderer?.render(camera, this.yaw, camera.renderPitch, RADIUS);
+    const globeDrawn = this.globeRenderer?.render(camera, this.yaw, this.pitch, RADIUS);
     if (!globeDrawn) drawSphereBase(ctx, camera, RADIUS);
     drawSphereShade(ctx, camera, RADIUS);
     this.drawRelationships(camera);
@@ -375,7 +362,7 @@ export class GlobeScene {
       for (let i = 0; i <= steps; i += 1) {
         const t = i / steps;
         const local = tangentPoint(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, RADIUS);
-        const unit = rotatePoint(local, this.yaw, camera.renderPitch);
+        const unit = rotatePoint(local, this.yaw, this.pitch);
         const q = projectSpherePoint(unit, camera, RADIUS + 0.012);
         sampled.push(isVisible(unit, q) ? q : null);
       }
@@ -411,7 +398,7 @@ export class GlobeScene {
     this.people.forEach(person => {
       const local = this.positions.get(person.id);
       if (!local) return;
-      const unit = rotatePoint(local, this.yaw, camera.renderPitch);
+      const unit = rotatePoint(local, this.yaw, this.pitch);
       const projected = projectSpherePoint(unit, camera, RADIUS);
       if (isVisible(unit, projected)) ordered.push({ person, unit, projected });
     });
@@ -510,21 +497,37 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
   };
 }
 
+function sphereScreenCenter(camera, radius) {
+  const tilt = camera.viewTilt || 0;
+  const cp = Math.cos(tilt);
+  const sp = Math.sin(tilt);
+  const pivotZ = camera.centerZ - radius;
+  const worldY = -sp * radius;
+  const worldZ = pivotZ + cp * radius;
+  const scale = camera.focal / Math.max(camera.near, worldZ);
+  return {
+    x: camera.cx,
+    y: camera.cy - worldY * scale,
+  };
+}
+
 function drawSphereBase(ctx, camera, radius) {
   const pr = apparentSphereRadius(camera, radius);
+  const center = sphereScreenCenter(camera, radius);
   ctx.save();
   ctx.shadowColor = 'rgba(45,29,18,.42)';
   ctx.shadowBlur = 46;
   ctx.fillStyle = '#dec48d';
   ctx.beginPath();
-  ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2);
+  ctx.arc(center.x, center.y, pr, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
 
 function drawSphereShade(ctx, camera, radius) {
   const pr = apparentSphereRadius(camera, radius);
-  const g = ctx.createRadialGradient(camera.cx - pr * 0.10, camera.cy - pr * 0.28, pr * 0.10, camera.cx, camera.cy, pr);
+  const center = sphereScreenCenter(camera, radius);
+  const g = ctx.createRadialGradient(center.x - pr * 0.10, center.y - pr * 0.28, pr * 0.10, center.x, center.y, pr);
   g.addColorStop(0, 'rgba(255,244,207,.06)');
   g.addColorStop(0.64, 'rgba(106,71,39,.015)');
   g.addColorStop(0.86, 'rgba(78,49,28,.10)');
@@ -532,7 +535,7 @@ function drawSphereShade(ctx, camera, radius) {
   ctx.save();
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.arc(camera.cx, camera.cy, pr, 0, Math.PI * 2);
+  ctx.arc(center.x, center.y, pr, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = 'rgba(248,224,166,.70)';
   ctx.lineWidth = 1.8;

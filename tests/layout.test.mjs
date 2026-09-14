@@ -18,8 +18,8 @@ const inverse = unit => {
 const root=inverse(positions.get('root'));
 const dad=inverse(positions.get('dad'));
 const gpa=inverse(positions.get('gpa'));
-assert.ok(dad.y > root.y + 2);
-assert.ok(gpa.y > dad.y + 2);
+assert.ok(Math.abs((dad.y-root.y)-2.48)<0.02, 'root-to-parent band keeps the approved spacing');
+assert.ok(gpa.y-dad.y > 2.9, 'grandparent band compensates for perspective compression');
 const siblingYs=Array.from({length:10},(_,i)=>inverse(positions.get(`s${i}`)).y);
-assert.ok(Math.max(...siblingYs)-Math.min(...siblingYs) < 1.5, 'same-generation sibling wraps stay in a narrow band');
+assert.ok(Math.max(...siblingYs)-Math.min(...siblingYs) <= 1.34, 'wrapped peers use the same spacing in each row');
 console.log('layout generation bands ok');

@@ -9,20 +9,17 @@ export function cameraBehavior(gap, minGap, maxGap) {
   const zoomT = normalizedLogZoom(gap, minGap, maxGap);
   const angleT = smootherstep(zoomT);
   const speedT = smoothstep(zoomT);
-  const overviewT = smoothRange(zoomT, 0.56, 1);
 
   return {
     zoomT,
     angleT,
-    overviewT,
-    // The close view is nearly perpendicular to the selected patch. The
-    // camera then leans progressively as distance increases, with no mode
-    // switch or early jump in angle.
-    viewTilt: lerp(0.01, 0.28, angleT),
-    // This is the natural focused-person framing before user-controlled zoom
-    // anchoring is applied. Wide-view sphere framing is handled separately so
-    // it does not masquerade as panning.
-    targetYRatio: lerp(0.58, 0.52, angleT),
+    // Camera pitch is applied around the front/focused surface point, not by
+    // rotating the globe underneath it. The person therefore stays put while
+    // the horizon and visible amount of sphere change continuously.
+    viewTilt: lerp(0.01, 0.24, angleT),
+    // Zoom itself must not masquerade as panning. The canonical focused point
+    // keeps one stable screen height throughout the zoom range.
+    targetYRatio: 0.58,
     // Rotation stays deliberately restrained at every zoom level. Wide views
     // are a little quicker than close inspection, but never become twitchy.
     dragSensitivity: lerp(0.00018, 0.00058, speedT),
@@ -31,16 +28,8 @@ export function cameraBehavior(gap, minGap, maxGap) {
   };
 }
 
-export function cameraCenterY({ height, focal, centerZ, radius, viewTilt, targetYRatio }) {
-  const focusWorldY = radius * Math.sin(viewTilt);
-  const focusWorldZ = -radius * Math.cos(viewTilt);
-  const depth = Math.max(1e-6, centerZ + focusWorldZ);
-  const projectedOffset = focusWorldY * focal / depth;
-  return height * targetYRatio + projectedOffset;
-}
-
-export function blendOverviewCenter(focusedCenterY, sphereRadius, overviewT, topInset = 14) {
-  return lerp(focusedCenterY, sphereRadius + topInset, clamp(overviewT, 0, 1));
+export function cameraCenterY({ height, targetYRatio }) {
+  return height * targetYRatio;
 }
 
 function smoothstep(t) {
@@ -51,11 +40,6 @@ function smoothstep(t) {
 function smootherstep(t) {
   const x = clamp(t, 0, 1);
   return x * x * x * (x * (x * 6 - 15) + 10);
-}
-
-function smoothRange(value, start, end) {
-  if (end <= start) return value >= end ? 1 : 0;
-  return smoothstep((value - start) / (end - start));
 }
 
 function lerp(a, b, t) {

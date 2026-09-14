@@ -104,7 +104,7 @@ export class GlobeWebGLRenderer {
 
     this.texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -132,24 +132,21 @@ export class GlobeWebGLRenderer {
   loadTexture() {
     const image = new Image();
     image.decoding = 'async';
+    image.crossOrigin = 'anonymous';
     image.addEventListener('load', () => {
       if (!this.available) return;
       const gl = this.gl;
       gl.bindTexture(gl.TEXTURE_2D, this.texture);
-      // The mesh intentionally uses atlas/image coordinates: v=0 is north/top
-      // and v=1 is south/bottom. DOM images already arrive top-first, so
-      // flipping the upload here inverted the antique map on the globe.
+      // The sphere UVs use ordinary atlas coordinates: v=0 is north/top and
+      // v=1 is south/bottom. DOM images already arrive in that orientation.
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, ATLAS_FLIP_Y);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      configureTextureQuality(gl, image);
       this.ready = true;
       this.onReady?.();
     }, { once: true });
     image.addEventListener('error', () => {
-      console.error('Antique atlas texture failed to load', this.textureUrl);
+      console.error('Atlas texture failed to load', this.textureUrl);
     }, { once: true });
     image.src = this.textureUrl;
     this.image = image;
@@ -209,6 +206,33 @@ export class GlobeWebGLRenderer {
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
     return this.ready;
   }
+}
+
+function configureTextureQuality(gl, image) {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  const webgl2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
+  const powerOfTwo = isPowerOfTwo(image.naturalWidth) && isPowerOfTwo(image.naturalHeight);
+  if (webgl2 || powerOfTwo) {
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  } else {
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  }
+
+  const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic')
+    || gl.getExtension('MOZ_EXT_texture_filter_anisotropic')
+    || gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic');
+  if (anisotropy) {
+    const maximum = gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 1;
+    gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, maximum));
+  }
+}
+
+function isPowerOfTwo(value) {
+  return value > 0 && (value & (value - 1)) === 0;
 }
 
 function createShader(gl, type, source) {
@@ -289,17 +313,60 @@ void main() {
 `;
 
 const FRAGMENT_SHADER = `
-precision mediump float;
+precision highp float;
 
 uniform sampler2D uAtlas;
 varying vec2 vUv;
 varying vec3 vNormal;
 
+float paperNoise(vec2 p) {
+  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+float gridLine(float coordinate, float divisions) {
+  float cell = fract(coordinate * divisions);
+  float distanceToLine = min(cell, 1.0 - cell);
+  return 1.0 - smoothstep(0.0, 0.006, distanceToLine);
+}
+
 void main() {
-  vec4 color = texture2D(uAtlas, vUv);
+  vec4 source = texture2D(uAtlas, vUv);
+  float luma = dot(source.rgb, vec3(0.299, 0.587, 0.114));
+  float blueLead = source.b - max(source.r, source.g);
+  float water = smoothstep(0.015, 0.17, blueLead);
+
+  // Build an old-atlas palette from the detailed physical map rather than
+  // drawing simplified continent polygons. Source luminance preserves relief,
+  // mountain ranges, drainage, islands and bathymetric detail.
+  vec3 landPaper = vec3(0.76, 0.64, 0.43);
+  vec3 seaPaper = vec3(0.69, 0.61, 0.47);
+  vec3 antique = mix(landPaper, seaPaper, water);
+  float relief = (luma - 0.52) * 0.56;
+  antique += relief * mix(vec3(0.60, 0.49, 0.31), vec3(0.38, 0.34, 0.28), water);
+
+  // Retain a small amount of source chroma so deserts, uplands, forests and
+  // ocean depth remain visible without looking like a modern satellite globe.
+  vec3 sepiaSource = vec3(
+    dot(source.rgb, vec3(0.393, 0.769, 0.189)),
+    dot(source.rgb, vec3(0.349, 0.686, 0.168)),
+    dot(source.rgb, vec3(0.272, 0.534, 0.131))
+  );
+  antique = mix(antique, sepiaSource, 0.16);
+
+  // Restrained 15-degree graticule. It should register as cartography, not as
+  // the dominant graphic element that the former placeholder texture used.
+  float longitudeGrid = gridLine(vUv.x, 24.0);
+  float latitudeGrid = gridLine(vUv.y, 12.0);
+  float graticule = max(longitudeGrid, latitudeGrid) * 0.12;
+  antique = mix(antique, vec3(0.34, 0.27, 0.19), graticule);
+
+  float grain = paperNoise(vUv * vec2(4096.0, 2048.0));
+  antique *= 0.985 + grain * 0.028;
+
   float facing = clamp(-vNormal.z, 0.0, 1.0);
-  float shade = 0.74 + 0.26 * pow(facing, 0.42);
-  color.rgb *= shade;
-  gl_FragColor = vec4(color.rgb, color.a);
+  float sphereShade = 0.73 + 0.27 * pow(facing, 0.42);
+  antique *= sphereShade;
+
+  gl_FragColor = vec4(clamp(antique, 0.0, 1.0), source.a);
 }
 `;

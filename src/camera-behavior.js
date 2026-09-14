@@ -7,22 +7,27 @@ export function normalizedLogZoom(gap, minGap, maxGap) {
 
 export function cameraBehavior(gap, minGap, maxGap) {
   const zoomT = normalizedLogZoom(gap, minGap, maxGap);
-  const angleT = Math.pow(zoomT, 0.46);
-  const speedT = Math.pow(zoomT, 0.72);
+  const angleT = smootherstep(zoomT);
+  const speedT = smoothstep(zoomT);
 
   return {
     zoomT,
     angleT,
-    // Close inspection is nearly perpendicular to the surface. Pulling back
-    // deliberately tilts the view toward the horizon so the globe reads as a
-    // sphere instead of merely shrinking under an unchanged camera.
-    viewTilt: lerp(0.035, 0.56, angleT),
-    // Fine work needs much slower angular motion than a broad overview.
-    dragSensitivity: lerp(0.00035, 0.00100, speedT),
-    motionEase: lerp(0.085, 0.115, speedT),
-    targetYRatio: lerp(0.58, 0.68, angleT),
-    plaqueFacing: lerp(0.16, 0.27, angleT),
-    focusDuration: lerp(1220, 1020, speedT),
+    // The close view is nearly perpendicular to the selected patch. The
+    // camera then leans progressively as distance increases, with no mode
+    // switch or early jump in angle.
+    viewTilt: lerp(0.01, 0.28, angleT),
+    // Keep the selected family higher in the viewport as the view widens so
+    // a much larger portion of the sphere remains visible.
+    targetYRatio: lerp(0.58, 0.25, angleT),
+    // Rotation stays deliberately restrained at every zoom level. Wide views
+    // are a little quicker than close inspection, but never become twitchy.
+    dragSensitivity: lerp(0.00018, 0.00058, speedT),
+    motionEase: lerp(0.070, 0.100, speedT),
+    // Plaques lie in the local tangent plane of the sphere. No camera-facing
+    // hinge lift is used, so people cannot turn back into standing badges.
+    plaqueFacing: 0,
+    focusDuration: lerp(1280, 1050, speedT),
   };
 }
 
@@ -32,6 +37,16 @@ export function cameraCenterY({ height, focal, centerZ, radius, viewTilt, target
   const depth = Math.max(1e-6, centerZ + focusWorldZ);
   const projectedOffset = focusWorldY * focal / depth;
   return height * targetYRatio + projectedOffset;
+}
+
+function smoothstep(t) {
+  const x = clamp(t, 0, 1);
+  return x * x * (3 - 2 * x);
+}
+
+function smootherstep(t) {
+  const x = clamp(t, 0, 1);
+  return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
 function lerp(a, b, t) {

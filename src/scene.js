@@ -8,6 +8,7 @@ import {
   tangentPoint,
   yawPitchToFront,
 } from './geometry.js';
+import { cameraBehavior, cameraCenterY } from './camera-behavior.js';
 import { plaqueTexture } from './plaque.js';
 import { rigidPlaquePlacement } from './plaque-projection.js';
 import { layoutSample } from './layout.js';
@@ -17,7 +18,6 @@ import { GlobeWebGLRenderer } from './globe-webgl.js';
 const POPULATION = 9099;
 const PLAQUE = { width: 1.20, height: 1.08 };
 const RADIUS = Math.max(150, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
-const HOME_PITCH = 0.14;
 const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
 const MAX_GAP = 120;
@@ -71,7 +71,7 @@ export class GlobeScene {
   get diameter() { return RADIUS * 2; }
 
   resize() {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const dpr = Math.min(devicePixelRatio || 1, 3);
     const rect = this.canvas.getBoundingClientRect();
     this.canvas.width = Math.max(1, Math.round(rect.width * dpr));
     this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
@@ -86,18 +86,26 @@ export class GlobeScene {
     const h = this.canvas.height / dpr;
     const focal = Math.min(w, h) * 1.04;
     const centerZ = RADIUS + this.cameraGap;
-    const projectedRadius = focal * RADIUS / Math.sqrt(Math.max(1e-6, centerZ * centerZ - RADIUS * RADIUS));
-    const zoomT = smoothstep01(normalizedZoom(this.cameraGap));
+    const behavior = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP);
+    const cy = cameraCenterY({
+      height: h,
+      focal,
+      centerZ,
+      radius: RADIUS,
+      viewTilt: behavior.viewTilt,
+      targetYRatio: behavior.targetYRatio,
+    });
 
-    // Close views look almost straight down at the focused family patch.
-    // As the camera pulls back, the view eases toward the horizon so more of
-    // the globe becomes visible instead of keeping the same grazing angle.
-    const closeCenterY = h * 0.56;
-    const horizonY = Math.max(40, h * 0.055);
-    const wideCenterY = projectedRadius + horizonY;
-    const cy = lerp(closeCenterY, wideCenterY, zoomT);
-
-    return { cx: w / 2, cy, focal, centerZ, near: 0.1, dpr, zoomT };
+    return {
+      cx: w / 2,
+      cy,
+      focal,
+      centerZ,
+      near: 0.1,
+      dpr,
+      renderPitch: this.pitch + behavior.viewTilt,
+      ...behavior,
+    };
   }
 
   bind() {
@@ -112,8 +120,9 @@ export class GlobeScene {
       const dx = event.clientX - this.drag.x;
       const dy = event.clientY - this.drag.y;
       if (Math.hypot(dx, dy) > 3) this.drag.moved = true;
-      this.targetYaw = this.drag.yaw - dx * 0.00165;
-      this.targetPitch = clamp(this.drag.pitch - dy * 0.00165, -1.08, 1.08);
+      const sensitivity = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP).dragSensitivity;
+      this.targetYaw = this.drag.yaw - dx * sensitivity;
+      this.targetPitch = clamp(this.drag.pitch - dy * sensitivity, -1.08, 1.08);
       if (this.reduceMotion) {
         this.yaw = this.targetYaw;
         this.pitch = this.targetPitch;
@@ -151,8 +160,9 @@ export class GlobeScene {
       const yawDelta = shortestAngle(this.yaw, this.targetYaw);
       const pitchDelta = this.targetPitch - this.pitch;
       const gapDelta = this.targetCameraGap - this.cameraGap;
-      this.yaw += yawDelta * 0.13;
-      this.pitch += pitchDelta * 0.13;
+      const behavior = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP);
+      this.yaw += yawDelta * behavior.motionEase;
+      this.pitch += pitchDelta * behavior.motionEase;
       this.cameraGap += gapDelta * 0.14;
       const settled = Math.abs(yawDelta) < 0.00028 && Math.abs(pitchDelta) < 0.00028 && Math.abs(gapDelta) < 0.007;
       if (settled) {
@@ -192,7 +202,7 @@ export class GlobeScene {
       this.targetCameraGap = DEFAULT_GAP;
     }
     const target = yawPitchToFront(local);
-    target.pitch += HOME_PITCH * smoothstep01(normalizedZoom(this.cameraGap));
+    const behavior = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP);
     if (this.reduceMotion) {
       this.yaw = this.targetYaw = target.yaw;
       this.pitch = this.targetPitch = target.pitch;
@@ -202,7 +212,7 @@ export class GlobeScene {
     const from = { yaw: this.yaw, pitch: this.pitch };
     const start = performance.now();
     const tick = now => {
-      const t = Math.min(1, (now - start) / 1050);
+      const t = Math.min(1, (now - start) / behavior.focusDuration);
       const eased = t * t * (3 - 2 * t);
       this.yaw = from.yaw + shortestAngle(from.yaw, target.yaw) * eased;
       this.pitch = from.pitch + (target.pitch - from.pitch) * eased;
@@ -231,7 +241,7 @@ export class GlobeScene {
     const h = this.canvas.height / dpr;
     ctx.clearRect(0, 0, w, h);
 
-    const globeDrawn = this.globeRenderer?.render(camera, this.yaw, this.pitch, RADIUS);
+    const globeDrawn = this.globeRenderer?.render(camera, this.yaw, camera.renderPitch, RADIUS);
     if (!globeDrawn) drawSphereBase(ctx, camera, RADIUS);
     drawSphereShade(ctx, camera, RADIUS);
     this.drawRelationships(camera);
@@ -299,7 +309,7 @@ export class GlobeScene {
       for (let i = 0; i <= steps; i += 1) {
         const t = i / steps;
         const local = tangentPoint(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, RADIUS);
-        const unit = rotatePoint(local, this.yaw, this.pitch);
+        const unit = rotatePoint(local, this.yaw, camera.renderPitch);
         const q = projectSpherePoint(unit, camera, RADIUS + 0.012);
         sampled.push(isVisible(unit, q) ? q : null);
       }
@@ -331,7 +341,7 @@ export class GlobeScene {
     this.people.forEach(person => {
       const local = this.positions.get(person.id);
       if (!local) return;
-      const unit = rotatePoint(local, this.yaw, this.pitch);
+      const unit = rotatePoint(local, this.yaw, camera.renderPitch);
       const projected = projectSpherePoint(unit, camera, RADIUS);
       if (isVisible(unit, projected)) ordered.push({ person, unit, projected });
     });
@@ -341,14 +351,13 @@ export class GlobeScene {
   }
 
   drawPlaque({ person, unit, projected }, camera) {
-    const cameraFacing = lerp(0.22, 0.38, camera.zoomT || 0);
     const frame = projectedRaisedFrame(
       unit,
       camera,
       RADIUS,
       PLAQUE.width,
       PLAQUE.height,
-      cameraFacing,
+      camera.plaqueFacing,
     );
     if (!frame) return;
 
@@ -472,19 +481,6 @@ function strokeSegments(ctx, points) {
     else ctx.lineTo(point.x, point.y);
   });
   ctx.stroke();
-}
-
-function normalizedZoom(gap) {
-  return clamp((gap - MIN_GAP) / (MAX_GAP - MIN_GAP), 0, 1);
-}
-
-function smoothstep01(value) {
-  const t = clamp(value, 0, 1);
-  return t * t * (3 - 2 * t);
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
 }
 
 function shortestAngle(from, to) {

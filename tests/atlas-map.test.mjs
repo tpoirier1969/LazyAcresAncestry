@@ -12,8 +12,8 @@ import {
 
 assert.match(ATLAS_TEXTURE_URL, /^https:\/\/upload\.wikimedia\.org\//, 'atlas must use the detailed Wikimedia base image');
 assert(ATLAS_TEXTURE_URL.endsWith('/Equirectangular-projection-topographic-world.jpg'), 'atlas base must remain equirectangular');
-assert.match(ATLAS_RELIEF_TEXTURE_URL, /8192px-World_elevation_map\.png$/, 'desktop relief layer should request the 8K equirectangular derivative');
-assert.match(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, /3840px-World_elevation_map\.png$/, 'limited GPUs need a 4K-class relief fallback');
+assert.match(ATLAS_RELIEF_TEXTURE_URL, /Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'desktop relief layer should use a true 8192×4096 equirectangular image');
+assert.match(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, /3840px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'limited GPUs need a 4K-class terrain fallback');
 assert.match(ATLAS_BOUNDARY_TEXTURE_URL, /World_location_map_mono\.svg\.png$/, 'atlas should use the vector-derived political boundary layer');
 assert.match(ATLAS_TEXTURE_SOURCE_PAGE, /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/, 'atlas provenance page must remain recorded');
 assert(ATLAS_TEXTURE_CREDIT.includes('CC BY-SA 4.0'), 'atlas licensing credit must remain explicit');

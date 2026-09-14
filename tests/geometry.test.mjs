@@ -82,6 +82,18 @@ assert.deepEqual(grouped.siblingClusters, [['G1', 'G2']], 'imported sibling-clus
 assert(!JSON.stringify(grouped).includes('MISSING'), 'relationships to people outside the rendered sample must not create stray lines');
 assert(!JSON.stringify(grouped).includes('UNRELATED'), 'people without evidence or sibling-cluster metadata must not gain fabricated connectors');
 
+const amyLike = buildRelationshipGroups(
+  [{ type: 'parent', from: 'AMY', to: 'MAIKEL' }],
+  new Set(['AMY', 'MAIKEL', 'OTHER1', 'OTHER2']),
+  [{ id: 'AMY' }, { id: 'MAIKEL' }, { id: 'OTHER1' }, { id: 'OTHER2' }],
+);
+assert.deepEqual(
+  amyLike.parentSets,
+  [{ parents: ['AMY'], children: ['MAIKEL'] }],
+  'a person with one recorded child must never acquire unrelated children from visual proximity',
+);
+assert(!JSON.stringify(amyLike).includes('OTHER1') && !JSON.stringify(amyLike).includes('OTHER2'), 'unrelated people must never enter a single-child connector group');
+
 const familySample = JSON.parse(readFileSync(new URL('../data/sample-family.json', import.meta.url), 'utf8'));
 const familyIds = new Set(familySample.people.map(person => person.gedcom_id));
 const normalizedPeople = familySample.people.map(person => ({
@@ -101,4 +113,4 @@ fullGroups.siblingClusters.forEach(ids => ids.forEach(id => connected.add(id)));
 const disconnected = [...familyIds].filter(id => !connected.has(id));
 assert.deepEqual(disconnected, [], `every current prototype person must connect to at least one other person; disconnected: ${disconnected.join(', ')}`);
 
-console.log(`geometry ok: capacity sphere diameter ${(radius * 2).toFixed(1)} plaque widths; unified sphere projection, tangent plaques, and complete sample connectivity ok`);
+console.log(`geometry ok: capacity sphere diameter ${(radius * 2).toFixed(1)} plaque widths; unified sphere projection, tangent plaques, and evidence-only connectors ok`);

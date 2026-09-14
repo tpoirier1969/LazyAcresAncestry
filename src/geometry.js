@@ -67,38 +67,80 @@ export function projectLocalPoint(local, camera) {
   };
 }
 
+// Apply the zoom-dependent camera pitch around the front surface point rather
+// than around the globe center. The focused point therefore stays at the same
+// screen coordinate while the sphere center/horizon moves naturally beneath it.
+export function viewTiltPoint(world, camera, radius) {
+  const tilt = camera.viewTilt || 0;
+  if (!tilt) return { ...world };
+  const pivotZ = camera.centerZ - radius;
+  const cp = Math.cos(tilt);
+  const sp = Math.sin(tilt);
+  const dz = world.z - pivotZ;
+  return {
+    x: world.x,
+    y: cp * world.y - sp * dz,
+    z: pivotZ + sp * world.y + cp * dz,
+  };
+}
+
+export function viewTiltVector(vector, camera) {
+  const tilt = camera.viewTilt || 0;
+  if (!tilt) return { ...vector };
+  const cp = Math.cos(tilt);
+  const sp = Math.sin(tilt);
+  return {
+    x: vector.x,
+    y: cp * vector.y - sp * vector.z,
+    z: sp * vector.y + cp * vector.z,
+  };
+}
+
 export function projectSpherePoint(unit, camera, radius) {
-  const projected = projectLocalPoint({
+  const unpitchedWorld = {
     x: radius * unit.x,
     y: radius * unit.y,
-    z: radius * unit.z,
-  }, camera);
-  if (!projected) return null;
+    z: camera.centerZ + radius * unit.z,
+  };
+  const world = viewTiltPoint(unpitchedWorld, camera, radius);
+  if (world.z <= camera.near) return null;
+  const scale = camera.focal / world.z;
+  const normal = viewTiltVector(unit, camera);
+  const projected = {
+    x: camera.cx + world.x * scale,
+    y: camera.cy - world.y * scale,
+    z: world.z,
+    scale,
+    world,
+    normal,
+  };
 
   // A sphere surface point on the far side has no legitimate screen-space
   // projection for the visible atlas. Returning it used to let texture cells
   // straddle the horizon and stretch into enormous triangular wedges.
   const toCamera = {
-    x: -projected.world.x,
-    y: -projected.world.y,
-    z: -projected.world.z,
+    x: -world.x,
+    y: -world.y,
+    z: -world.z,
   };
-  if (unit.x * toCamera.x + unit.y * toCamera.y + unit.z * toCamera.z <= 0) return null;
+  if (normal.x * toCamera.x + normal.y * toCamera.y + normal.z * toCamera.z <= 0) return null;
   return projected;
 }
 
 export function isVisible(unit, projected) {
   if (!projected) return false;
+  const normal = projected.normal || unit;
   const toCamera = {
     x: -projected.world.x,
     y: -projected.world.y,
     z: -projected.world.z,
   };
-  return unit.x * toCamera.x + unit.y * toCamera.y + unit.z * toCamera.z > 0;
+  return normal.x * toCamera.x + normal.y * toCamera.y + normal.z * toCamera.z > 0;
 }
 
 export function apparentSphereRadius(camera, radius) {
-  const d = camera.centerZ;
+  const center = viewTiltPoint({ x: 0, y: 0, z: camera.centerZ }, camera, radius);
+  const d = Math.hypot(center.x, center.y, center.z);
   return camera.focal * radius / Math.sqrt(Math.max(1e-6, d * d - radius * radius));
 }
 
@@ -134,10 +176,9 @@ export function projectedTangentFrame(unit, camera, radius, width, height) {
   };
 }
 
-// Models a fixed-size physical plaque hinged at its lower edge. The lower edge
-// stays attached to the sphere, while the plaque rotates around its horizontal
-// axis toward the camera. That keeps portraits legible away from the viewing
-// apex without turning the plaque into a screen-space overlay.
+// Legacy helper retained for compatibility with earlier prototype tests/tools.
+// Production person plaques now use projectedTangentFrame so they lie on the
+// globe rather than hinging upward toward the camera.
 export function projectedRaisedFrame(unit, camera, radius, width, height, cameraFacing = 0.88) {
   const { u } = tangentBasis(unit);
   const halfW = width / 2;
@@ -149,10 +190,6 @@ export function projectedRaisedFrame(unit, camera, radius, width, height, camera
     y: cameraPoint.y - anchor.y,
     z: cameraPoint.z - anchor.z,
   });
-
-  // Constrain the camera-facing normal to a hinge rotation around the plaque's
-  // horizontal tangent axis. Blending keeps a little of the globe's local
-  // orientation so distant plaques still feel planted on the atlas.
   const tangentNormal = unit;
   const viewDotU = toCamera.x * u.x + toCamera.y * u.y + toCamera.z * u.z;
   const hingedViewNormal = normalize({

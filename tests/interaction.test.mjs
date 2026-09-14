@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 const listeners = new Map();
 globalThis.document = { getElementById: () => null };
+globalThis.window = { addEventListener() {} };
 globalThis.matchMedia = () => ({ matches: true });
 globalThis.ResizeObserver = class { observe() {} };
 globalThis.requestAnimationFrame = () => 0;

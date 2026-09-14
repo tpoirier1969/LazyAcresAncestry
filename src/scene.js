@@ -9,7 +9,7 @@ import {
   tangentPoint,
   yawPitchToFront,
 } from './geometry.js';
-import { cameraBehavior, cameraCenterY } from './camera-behavior.js';
+import { cameraBehavior } from './camera-behavior.js';
 import { plaqueTexture } from './plaque.js';
 import { rigidPlaquePlacement } from './plaque-projection.js';
 import { layoutSample } from './layout.js';
@@ -28,7 +28,6 @@ const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
 const OVERVIEW_GAP = 155;
 const ABSOLUTE_MAX_GAP = 520;
-const SPHERE_TOP_INSET = 14;
 const RELATIONSHIP_COLORS = Object.freeze({
   couple: 'rgba(119,55,47,.97)',
   descent: 'rgba(132,62,52,.97)',
@@ -60,8 +59,6 @@ export class GlobeScene {
     this.targetYaw = this.yaw;
     this.targetPitch = this.pitch;
     this.targetCameraGap = this.cameraGap;
-    this.cameraOffset = { x: 0, y: 0 };
-    this.zoomAnchor = null;
     this.drag = null;
     this.needsDraw = false;
     this.motionFrame = null;
@@ -92,30 +89,36 @@ export class GlobeScene {
     this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
     this.canvas.dataset.dpr = String(dpr);
     this.globeRenderer?.resize(rect.width, rect.height, dpr);
-    this.zoomAnchor = null;
     this.requestDraw();
   }
 
-  cameraAt(gap, offset = this.cameraOffset) {
+  cameraAt(gap) {
     const dpr = Number(this.canvas.dataset.dpr || 1);
     const w = this.canvas.width / dpr;
     const h = this.canvas.height / dpr;
     const focal = Math.min(w, h) * 1.04;
     const centerZ = RADIUS + gap;
     const behavior = cameraBehavior(gap, MIN_GAP, OVERVIEW_GAP);
-    const baseCenterY = cameraCenterY({
-      height: h,
-      targetYRatio: behavior.targetYRatio,
-    });
 
-    return {
-      cx: w / 2 + offset.x,
-      cy: baseCenterY + offset.y,
+    // The globe is never translated in screen space. First project it with a
+    // zero vertical principal point, then compensate for the zoom-dependent
+    // camera tilt so the exact projected sphere silhouette remains centered in
+    // the viewport. This invariant applies to every zoom, drag and focus state.
+    const probe = {
+      cx: w / 2,
+      cy: 0,
       focal,
       centerZ,
       near: 0.1,
       dpr,
       ...behavior,
+    };
+    const bounds = projectedSphereVerticalBounds(probe, RADIUS);
+    const cy = bounds ? h / 2 - bounds.centerY : h / 2;
+
+    return {
+      ...probe,
+      cy,
     };
   }
 
@@ -165,21 +168,16 @@ export class GlobeScene {
       const direction = Math.sign(event.deltaY);
       if (!direction) return;
 
-      // Wheel zoom never changes focus or rotates the tree. Capture the selected
-      // person's current screen point and preserve it throughout the distance
-      // change. Home recentering is an explicit Home/Return action only.
-      if (!this.zoomAnchor) this.captureZoomAnchor();
-      const zoomLimit = direction > 0 ? this.zoomOutLimit() : ABSOLUTE_MAX_GAP;
+      // Wheel zoom changes distance only. It never changes selection, rotates
+      // to Home, or translates the globe away from the center of the viewport.
       this.targetCameraGap = clamp(
         this.targetCameraGap * Math.exp(direction * 0.13),
         MIN_GAP,
-        zoomLimit,
+        ABSOLUTE_MAX_GAP,
       );
 
       if (this.reduceMotion) {
         this.cameraGap = this.targetCameraGap;
-        this.applyZoomAnchor();
-        this.zoomAnchor = null;
         this.requestDraw();
       } else {
         this.requestMotion();
@@ -198,7 +196,6 @@ export class GlobeScene {
       this.yaw += yawDelta * behavior.motionEase;
       this.pitch += pitchDelta * behavior.motionEase;
       this.cameraGap += gapDelta * 0.14;
-      if (this.zoomAnchor) this.applyZoomAnchor();
 
       const settled = Math.abs(yawDelta) < 0.00028
         && Math.abs(pitchDelta) < 0.00028
@@ -208,8 +205,6 @@ export class GlobeScene {
         this.yaw = this.targetYaw;
         this.pitch = this.targetPitch;
         this.cameraGap = this.targetCameraGap;
-        if (this.zoomAnchor) this.applyZoomAnchor();
-        this.zoomAnchor = null;
         this.motionFrame = null;
         this.requestDraw();
         return;
@@ -227,7 +222,6 @@ export class GlobeScene {
     this.targetYaw = this.yaw;
     this.targetPitch = this.pitch;
     this.targetCameraGap = this.cameraGap;
-    this.zoomAnchor = null;
   }
 
   cancelFocus() {
@@ -249,15 +243,12 @@ export class GlobeScene {
       yaw: this.yaw,
       pitch: this.pitch,
       gap: this.cameraGap,
-      offsetX: this.cameraOffset.x,
-      offsetY: this.cameraOffset.y,
     };
 
     if (this.reduceMotion) {
       this.yaw = this.targetYaw = target.yaw;
       this.pitch = this.targetPitch = target.pitch;
       this.cameraGap = this.targetCameraGap = targetGap;
-      this.cameraOffset = { x: 0, y: 0 };
       this.requestDraw();
       return;
     }
@@ -269,8 +260,6 @@ export class GlobeScene {
       this.yaw = from.yaw + shortestAngle(from.yaw, target.yaw) * eased;
       this.pitch = from.pitch + (target.pitch - from.pitch) * eased;
       this.cameraGap = from.gap + (targetGap - from.gap) * eased;
-      this.cameraOffset.x = from.offsetX * (1 - eased);
-      this.cameraOffset.y = from.offsetY * (1 - eased);
       this.targetYaw = this.yaw;
       this.targetPitch = this.pitch;
       this.targetCameraGap = this.cameraGap;
@@ -282,7 +271,6 @@ export class GlobeScene {
         this.yaw = this.targetYaw = target.yaw;
         this.pitch = this.targetPitch = target.pitch;
         this.cameraGap = this.targetCameraGap = targetGap;
-        this.cameraOffset = { x: 0, y: 0 };
         this.focusFrame = null;
         this.requestDraw();
       }
@@ -295,58 +283,6 @@ export class GlobeScene {
     if (!local) return null;
     const unit = rotatePoint(local, this.yaw, this.pitch);
     return projectSpherePoint(unit, camera, RADIUS);
-  }
-
-  captureZoomAnchor() {
-    const point = this.focusedScreenPoint();
-    this.zoomAnchor = point ? { x: point.x, y: point.y } : null;
-  }
-
-  cameraAnchoredAtGap(gap, anchor) {
-    const local = this.positions.get(this.focusedId);
-    if (!local || !anchor) return this.cameraAt(gap);
-    const unit = rotatePoint(local, this.yaw, this.pitch);
-    const baseCamera = this.cameraAt(gap, { x: 0, y: 0 });
-    const projected = projectSpherePoint(unit, baseCamera, RADIUS);
-    if (!projected) return this.cameraAt(gap);
-    return this.cameraAt(gap, {
-      x: anchor.x - projected.x,
-      y: anchor.y - projected.y,
-    });
-  }
-
-  zoomOutLimit() {
-    const anchor = this.zoomAnchor || this.focusedScreenPoint();
-    if (!anchor || !this.focusedId) return OVERVIEW_GAP;
-
-    const topAt = gap => {
-      const bounds = projectedSphereVerticalBounds(this.cameraAnchoredAtGap(gap, anchor), RADIUS);
-      return bounds?.top ?? -Infinity;
-    };
-
-    if (topAt(OVERVIEW_GAP) >= SPHERE_TOP_INSET) {
-      return Math.max(this.cameraGap, OVERVIEW_GAP);
-    }
-    if (topAt(ABSOLUTE_MAX_GAP) < SPHERE_TOP_INSET) {
-      return ABSOLUTE_MAX_GAP;
-    }
-
-    let low = OVERVIEW_GAP;
-    let high = ABSOLUTE_MAX_GAP;
-    for (let i = 0; i < 24; i += 1) {
-      const middle = (low + high) / 2;
-      if (topAt(middle) < SPHERE_TOP_INSET) low = middle;
-      else high = middle;
-    }
-    return Math.max(this.cameraGap, high);
-  }
-
-  applyZoomAnchor() {
-    if (!this.zoomAnchor || !this.focusedId) return;
-    const point = this.focusedScreenPoint();
-    if (!point) return;
-    this.cameraOffset.x += this.zoomAnchor.x - point.x;
-    this.cameraOffset.y += this.zoomAnchor.y - point.y;
   }
 
   requestDraw() {

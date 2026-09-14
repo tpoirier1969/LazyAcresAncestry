@@ -7,6 +7,17 @@ This file tracks requested work that is intentionally not part of the current pr
 - Re-tune the default camera distance after the current zoom-dependent camera behavior is visually verified against the approved atlas reference.
 - Re-check plaque legibility, picking, connector weights, and texture filtering after the next dense-family stress test.
 
+## Personal and family geography
+
+- Add an evidence-backed **Personal Geography** overlay when a person is selected. Build it from normalized life events such as birth, residence/census, marriage, work, military service, immigration/emigration, death, burial, and explicitly documented travel.
+- Render geographic coverage as soft, rounded, organic contours / heat regions on the sphere. Do **not** use rectangular geographic blocks as the visible footprint.
+- Weight and style the footprint by what the evidence actually establishes. A documented residence can contribute more strongly than a one-time event, and a town-level fact should be tighter than a county/state/country-level fact.
+- Keep documented locations, inferred locations, and uncertain geocoding visually and structurally distinct. Never invent a travel route merely because two sequential records occur in different places.
+- Add a related **Family Region** mode that aggregates the documented geography of a selected family/branch into broader rounded density regions.
+- Later add a time control so a family region can be viewed through time, revealing migration and geographic concentration without treating genealogy layout positions as literal locations.
+- Normalize places once and cache reviewed coordinates, geographic precision, source provenance, and confidence so repeated historical place names do not require repeated geocoding.
+- Implement the visible overlay as a sphere-aware WebGL texture/mask so it rotates, foreshortens, clips at the horizon, and remains locked to the atlas surface.
+
 ## Home person
 
 - Add a **Make home person** action to Person Details.

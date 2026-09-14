@@ -18,6 +18,14 @@ const ROLE_LEVEL = Object.freeze({
   spouse: 0,
   sibling: 0,
 });
+const LINEAGE_SLOT_SPACING = 12;
+
+export function generationGapForPopulation(count) {
+  const population = Math.max(1, Number(count) || 1);
+  if (population <= 44) return LAYOUT_GAPS.GENERATION_GAP;
+  const extra = Math.log2(population / 44) * 1.45;
+  return Math.min(9, LAYOUT_GAPS.GENERATION_GAP + extra);
+}
 
 export function layoutSample(people, radius, relationships = []) {
   const positions = new Map();
@@ -32,25 +40,36 @@ export function layoutSample(people, radius, relationships = []) {
   const parentsByChild = collectParents(parentLinks);
   const spouseAdjacency = collectSpouses(spouseLinks);
   const distances = graphDistances(root.id, people, parentLinks, spouseLinks);
+  const lineagePositions = buildLineagePositions(
+    people,
+    root.id,
+    parentsByChild,
+    parentLinks,
+    spouseAdjacency,
+  );
   const { unitsByLevel, unitByPerson } = buildGenerationUnits(
     people,
     levels,
     parentsByChild,
     spouseAdjacency,
     distances,
+    lineagePositions,
     root.id,
   );
 
   connectFamilyUnits(unitsByLevel, unitByPerson, parentsByChild);
   const { blocksByLevel, blockByPerson } = buildFamilyBlocks(unitsByLevel);
   connectBlockNeighbors(parentLinks, blockByPerson);
-  const planar = placeFamilyBlocks(blocksByLevel, root.id);
+  const planar = placeFamilyBlocks(blocksByLevel, root.id, people.length);
   const rootPoint = planar.get(root.id) || { x: 0, y: 0 };
 
   for (const person of people) {
     const point = planar.get(person.id);
     if (!point) continue;
-    positions.set(person.id, tangentPoint(point.x - rootPoint.x, point.y, radius));
+    positions.set(
+      person.id,
+      tangentPoint(point.x - rootPoint.x, point.y - rootPoint.y, radius),
+    );
   }
 
   return positions;
@@ -116,6 +135,15 @@ function collectParents(parentLinks) {
   return map;
 }
 
+function collectChildren(parentLinks) {
+  const map = new Map();
+  parentLinks.forEach(link => {
+    if (!map.has(link.from)) map.set(link.from, new Set());
+    map.get(link.from).add(link.to);
+  });
+  return map;
+}
+
 function collectSpouses(spouseLinks) {
   const map = new Map();
   spouseLinks.forEach(link => {
@@ -148,7 +176,107 @@ function graphDistances(rootId, people, parentLinks, spouseLinks) {
   return distances;
 }
 
-function buildGenerationUnits(people, levels, parentsByChild, spouseAdjacency, distances, rootId) {
+function buildLineagePositions(people, rootId, parentsByChild, parentLinks, spouseAdjacency) {
+  const byId = new Map(people.map(person => [person.id, person]));
+  const childrenByParent = collectChildren(parentLinks);
+  const rootParents = [...(parentsByChild.get(rootId) || [])]
+    .sort((a, b) => lineagePersonOrder(byId.get(a), byId.get(b)));
+  const grandparentBranches = [];
+
+  rootParents.forEach(parentId => {
+    const grandparents = [...(parentsByChild.get(parentId) || [])]
+      .sort((a, b) => lineagePersonOrder(byId.get(a), byId.get(b)));
+    grandparents.forEach(id => {
+      if (!grandparentBranches.includes(id)) grandparentBranches.push(id);
+    });
+  });
+
+  const slotCount = grandparentBranches.length;
+  const slotValues = grandparentBranches.map((_, index) => (
+    slotCount <= 1 ? 0 : -((slotCount - 1) / 2) + index
+  ));
+  const sum = new Map();
+  const count = new Map();
+  const blood = new Set();
+
+  const add = (id, slot) => {
+    if (!byId.has(id)) return false;
+    sum.set(id, (sum.get(id) || 0) + slot);
+    count.set(id, (count.get(id) || 0) + 1);
+    blood.add(id);
+    return true;
+  };
+
+  grandparentBranches.forEach((grandparentId, index) => {
+    const slot = slotValues[index];
+    const branchSeeds = new Set([grandparentId]);
+    for (const greatGrandparent of parentsByChild.get(grandparentId) || []) {
+      add(greatGrandparent, slot);
+      for (const sibling of childrenByParent.get(greatGrandparent) || []) branchSeeds.add(sibling);
+    }
+
+    const queue = [...branchSeeds];
+    const visited = new Set();
+    while (queue.length) {
+      const id = queue.shift();
+      if (visited.has(id)) continue;
+      visited.add(id);
+      add(id, slot);
+      for (const child of childrenByParent.get(id) || []) queue.push(child);
+    }
+  });
+
+  const positions = new Map();
+  for (const person of people) {
+    if (count.has(person.id)) {
+      positions.set(person.id, sum.get(person.id) / count.get(person.id));
+    }
+  }
+
+  // Partners inherit the horizontal family neighborhood of the blood-line
+  // person they are attached to, but partner ancestry is never propagated.
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const person of people) {
+      if (positions.has(person.id) || blood.has(person.id)) continue;
+      const partnerPositions = [...(spouseAdjacency.get(person.id) || [])]
+        .map(id => positions.get(id))
+        .filter(Number.isFinite);
+      if (partnerPositions.length) positions.set(person.id, average(partnerPositions));
+    }
+  }
+
+  // Fallback ordering keeps incomplete prototype records deterministic.
+  for (const person of people) {
+    if (positions.has(person.id)) continue;
+    const branch = BRANCH_ORDER[person.branch];
+    positions.set(person.id, branch == null ? 0 : branch - 1);
+  }
+  return positions;
+}
+
+function lineagePersonOrder(a, b) {
+  const branchA = BRANCH_ORDER[a?.branch] ?? 3;
+  const branchB = BRANCH_ORDER[b?.branch] ?? 3;
+  if (branchA !== branchB) return branchA - branchB;
+  const sexOrder = { M: 0, F: 1, U: 2 };
+  const sexA = sexOrder[a?.sex] ?? 3;
+  const sexB = sexOrder[b?.sex] ?? 3;
+  if (sexA !== sexB) return sexA - sexB;
+  const yearA = birthYear(a);
+  const yearB = birthYear(b);
+  if (yearA !== yearB) return yearA - yearB;
+  return String(a?.name || '').localeCompare(String(b?.name || ''));
+}
+
+function buildGenerationUnits(
+  people,
+  levels,
+  parentsByChild,
+  spouseAdjacency,
+  distances,
+  lineagePositions,
+  rootId,
+) {
   const byId = new Map(people.map(person => [person.id, person]));
   const peopleByLevel = new Map();
   people.forEach(person => {
@@ -196,6 +324,7 @@ function buildGenerationUnits(people, levels, parentsByChild, spouseAdjacency, d
       const branches = members.map(member => byId.get(member)?.branch).filter(Boolean);
       const birthYears = members.map(member => birthYear(byId.get(member))).filter(Number.isFinite);
       const labels = members.map(member => byId.get(member)?.name || member).sort();
+      const lineageValues = members.map(member => lineagePositions.get(member)).filter(Number.isFinite);
       const unit = {
         id: `${level}:${units.length}`,
         level,
@@ -205,6 +334,7 @@ function buildGenerationUnits(people, levels, parentsByChild, spouseAdjacency, d
         layoutParentUnits: new Set(),
         childUnits: new Set(),
         branch: mostCommon(branches),
+        lineagePosition: lineageValues.length ? average(lineageValues) : 0,
         birthYear: birthYears.length ? Math.min(...birthYears) : 9999,
         label: labels[0] || '',
       };
@@ -300,11 +430,13 @@ function buildFamilyBlocks(unitsByLevel) {
       groupUnits.sort(compareSeed);
       const placements = blockPlacements(groupUnits);
       const branches = groupUnits.map(unit => unit.branch).filter(Boolean);
+      const lineageValues = groupUnits.map(unit => unit.lineagePosition).filter(Number.isFinite);
       const block = {
         id: `${level}:${key}`,
         level,
         units: groupUnits,
         branch: mostCommon(branches),
+        lineagePosition: lineageValues.length ? average(lineageValues) : 0,
         birthYear: Math.min(...groupUnits.map(unit => unit.birthYear)),
         label: groupUnits.map(unit => unit.label).sort()[0] || '',
         placements,
@@ -352,9 +484,10 @@ function blockPlacements(units) {
   return { entries, span };
 }
 
-function placeFamilyBlocks(blocksByLevel, rootId) {
+function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
   const planar = new Map();
   const levels = [...blocksByLevel.keys()].sort((a, b) => b - a);
+  const generationGap = generationGapForPopulation(peopleCount);
 
   const placeLevel = (level, neighborDirection) => {
     const blocks = blocksByLevel.get(level);
@@ -363,7 +496,12 @@ function placeFamilyBlocks(blocksByLevel, rootId) {
       const xs = [...ids]
         .map(id => planar.get(id)?.x)
         .filter(Number.isFinite);
-      block.desiredX = xs.length ? average(xs) : null;
+      const lineageTarget = block.lineagePosition * LINEAGE_SLOT_SPACING;
+      if (xs.length) {
+        block.desiredX = average(xs) * 0.84 + lineageTarget * 0.16;
+      } else {
+        block.desiredX = lineageTarget;
+      }
     });
 
     blocks.sort((a, b) => {
@@ -375,7 +513,7 @@ function placeFamilyBlocks(blocksByLevel, rootId) {
     });
 
     const centers = packedCenters(blocks);
-    const y = level * LAYOUT_GAPS.GENERATION_GAP;
+    const y = level * generationGap;
     blocks.forEach((block, index) => {
       const center = centers[index];
       for (const entry of block.placements.entries) {
@@ -387,11 +525,11 @@ function placeFamilyBlocks(blocksByLevel, rootId) {
   // Seed from the oldest visible generation and walk toward descendants.
   for (const level of levels) placeLevel(level, 'up');
 
-  // Alternate upward/downward barycentric sweeps. A sibling family remains a
-  // compact block while each generation is pulled toward the exact people it
-  // connects to. This is the important distinction from the old one-row-per-
-  // generation layout, which allowed long rails to cross unrelated families.
-  for (let pass = 0; pass < 4; pass += 1) {
+  // Alternate upward/downward barycentric sweeps. Families remain compact and
+  // the four root-lineage neighborhoods keep a stable left-to-right order, so
+  // collateral descendants stay under the actual ancestor branch they came
+  // from instead of becoming unrelated generation-wide ribbons.
+  for (let pass = 0; pass < 5; pass += 1) {
     for (const level of [...levels].reverse()) placeLevel(level, 'down');
     for (const level of levels) placeLevel(level, 'up');
   }
@@ -399,7 +537,11 @@ function placeFamilyBlocks(blocksByLevel, rootId) {
   const root = planar.get(rootId);
   if (root) {
     const rootX = root.x;
-    for (const point of planar.values()) point.x -= rootX;
+    const rootY = root.y;
+    for (const point of planar.values()) {
+      point.x -= rootX;
+      point.y -= rootY;
+    }
   }
   return planar;
 }
@@ -441,6 +583,7 @@ function blockSeparation(a, b) {
 }
 
 function compareSeed(a, b) {
+  if (a.lineagePosition !== b.lineagePosition) return a.lineagePosition - b.lineagePosition;
   const branchA = BRANCH_ORDER[a.branch] ?? 3;
   const branchB = BRANCH_ORDER[b.branch] ?? 3;
   if (branchA !== branchB) return branchA - branchB;

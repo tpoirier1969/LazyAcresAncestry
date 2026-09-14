@@ -16,10 +16,11 @@ import {
   atlasDetailLevel,
   atlasDetailStrength,
   atlasDetailUrl,
+  quantizeAtlasDetailCenter,
 } from '../src/atlas-map.js';
 
-assert.match(ATLAS_TEXTURE_URL, /^https:\/\/upload\.wikimedia\.org\//, 'atlas must use the detailed Wikimedia base image');
-assert(ATLAS_TEXTURE_URL.endsWith('/Equirectangular-projection-topographic-world.jpg'), 'atlas base must remain equirectangular');
+assert.match(ATLAS_TEXTURE_URL, /^https:\/\/upload\.wikimedia\.org\//, 'atlas must use the detailed Wikimedia source family');
+assert.match(ATLAS_TEXTURE_URL, /2560px-Equirectangular-projection-topographic-world\.jpg$/, 'global base should use a bounded equirectangular derivative');
 assert.match(ATLAS_RELIEF_TEXTURE_URL, /3840px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'global relief should use a bounded 4K-class texture');
 assert.equal(ATLAS_RELIEF_TEXTURE_URL, ATLAS_RELIEF_TEXTURE_FALLBACK_URL, 'all GPUs should share the bounded global relief texture budget');
 assert.equal(ATLAS_DETAIL_LEVELS.length, 4, 'progressive atlas should expose four regional detail levels');
@@ -40,6 +41,13 @@ assert.ok(atlasDetailStrength(140) > 0 && atlasDetailStrength(140) < 1, 'regiona
 assert.equal(atlasDetailStrength(155), 0);
 
 const local = atlasDetailLevel(7);
+const quantizedHome = quantizeAtlasDetailCenter(ATLAS_HOME_ANCHOR, local);
+const quantizedNearby = quantizeAtlasDetailCenter({
+  longitude: ATLAS_HOME_ANCHOR.longitude + 1,
+  latitude: ATLAS_HOME_ANCHOR.latitude + 1,
+}, local);
+assert.deepEqual(quantizedNearby, quantizedHome, 'small camera movements should reuse the same regional texture instead of churning GPU uploads');
+
 const homeBounds = atlasDetailBounds(ATLAS_HOME_ANCHOR, local);
 assert(homeBounds, 'home view should receive a regional detail rectangle');
 assert.ok(ATLAS_HOME_ANCHOR.longitude > homeBounds.west && ATLAS_HOME_ANCHOR.longitude < homeBounds.east);
@@ -60,4 +68,4 @@ assert.match(ATLAS_TEXTURE_SHA1, /^[0-9a-f]{40}$/, 'atlas source checksum must r
 assert.ok(ATLAS_HOME_ANCHOR.latitude > 45 && ATLAS_HOME_ANCHOR.latitude < 48, 'home anchor should remain in Michigan Upper Peninsula latitude');
 assert.ok(ATLAS_HOME_ANCHOR.longitude < -84 && ATLAS_HOME_ANCHOR.longitude > -91, 'home anchor should remain in Michigan Upper Peninsula longitude');
 
-console.log('progressive cross-faded regional atlas LOD uses a bounded GPU texture budget');
+console.log('progressive atlas LOD stays sharp while bounding global and regional GPU texture memory');

@@ -57,19 +57,19 @@ The current prototype grandparent generation is laid out as a single generation 
 
 ## Person plaques
 
-Person plaques are rigid physical objects hinged to the sphere. The lower center remains attached to the atlas surface.
+Person plaques are fixed-size physical objects laid in the local tangent plane of the globe. They do not hinge toward the camera.
 
-The projection uses both axes of the actual 3D plaque plane. This allows genuine screen-space foreshortening as a plaque moves toward the horizon, so people read as objects resting on the curved surface rather than upright screen-facing badges. A small zoom-dependent hinge lift preserves readability without returning to the marching-soldier look.
+The projection uses both axes of the actual 3D tangent plane. Plaques near the viewing apex therefore read nearly face-on, while plaques farther around the sphere progressively foreshorten with the surface. This makes the people look attached to the atlas rather than standing upright as camera-facing badges.
 
 The current label treatment is dark wood with brass end caps and lighter engraved-style lettering. Portrait/plaque dimensions were enlarged from the first WebGL pass to move back toward the approved reference, where faces and names remain recognizable in the normal home view.
 
 ## Current interaction
 
 - Drag the atlas surface to rotate the globe.
-- Drag sensitivity is tied to zoom level. Close inspection is deliberately very slow; broad overview is somewhat faster, but remains substantially slower than the original prototype.
+- Drag sensitivity is tied to zoom level and is deliberately restrained throughout the range. Close inspection is slowest; broad overview becomes only moderately faster.
 - Wheel or trackpad movement changes camera distance across a wide near/far range.
-- Camera **angle** now changes with zoom rather than merely moving the sphere up or down on screen. Close views are almost perpendicular to the focused family patch; wide views tilt progressively toward the horizon, reaching an oblique globe view at the far end.
-- The focused surface point is re-framed as the angle changes, so zooming changes perspective without simply throwing the selected family out of the useful viewing area.
+- Camera **angle** changes continuously with zoom through a smooth S-curve. Close views remain nearly perpendicular to the focused family patch; the view leans progressively as distance increases, without an early jump into an overview angle.
+- The focused family moves gradually higher in the viewport as the view widens. At the far end the sphere center remains high enough to keep most of the globe visible instead of leaving a large empty sky area above a low globe.
 - Click a person to rotate that branch into focus.
 - Use `Return to Tod` or Home to restore the current prototype home person.
 - Search the current sample by name.
@@ -131,7 +131,7 @@ node tests/relationships.test.mjs
 node tests/gedcom.test.mjs
 ```
 
-The camera-behavior test guards the requested zoom-dependent viewing angle, focused-point framing, and slower zoom-dependent panning. The WebGL mesh test guards unit-sphere geometry, local compass orientation, and the Upper Peninsula atlas anchor. The atlas-map test guards the source URLs, provenance, and anchor bounds. The plaque-projection test guards the surface attachment and 3D foreshortening behavior. The layout test guards the semantic gap hierarchy and equal generation spacing. Geometry, relationship, and GEDCOM tests protect the other deterministic renderer and data rules.
+The camera-behavior test guards the gradual zoom-dependent viewing angle, higher wide-view framing, tangent plaque mode, and slower zoom-dependent panning. The WebGL mesh test guards unit-sphere geometry, local compass orientation, and the Upper Peninsula atlas anchor. The atlas-map test guards the source URLs, provenance, and anchor bounds. The plaque-projection test guards the surface attachment and 3D foreshortening behavior. The layout test guards the semantic gap hierarchy and equal generation spacing. Geometry, relationship, and GEDCOM tests protect the other deterministic renderer and data rules.
 
 ## Hosting
 

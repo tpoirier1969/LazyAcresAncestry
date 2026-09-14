@@ -1,8 +1,15 @@
 import { isVisible, projectSpherePoint, rotatePoint } from './geometry.js';
 
+// Equirectangular textures collapse every longitude to one point at each pole.
+// Affine triangle texturing cannot represent that singularity cleanly and was
+// turning the first latitude row into giant fan-shaped wedges. Leave a tiny,
+// visually negligible polar cap to the parchment sphere base instead.
+export const ATLAS_POLAR_EPSILON = 1 / 512;
+
 export function atlasUnitFromUv(u, v) {
+  const safeV = Math.max(ATLAS_POLAR_EPSILON, Math.min(1 - ATLAS_POLAR_EPSILON, v));
   const lon = (u - 0.5) * Math.PI * 2;
-  const lat = (0.5 - v) * Math.PI;
+  const lat = (0.5 - safeV) * Math.PI;
   const cosLat = Math.cos(lat);
   return { x: Math.sin(lon) * cosLat, y: Math.sin(lat), z: -Math.cos(lon) * cosLat };
 }

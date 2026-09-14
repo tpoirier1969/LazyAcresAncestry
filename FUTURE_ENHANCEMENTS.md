@@ -2,6 +2,14 @@
 
 This file tracks requested work that is intentionally not part of the current prototype build.
 
+## Globe interaction and scale
+
+- Increase the physical sphere radius by roughly **25%** so nearby family groups occupy a flatter-looking portion of the atlas and the globe provides more usable family-tree surface area.
+- Re-tune the default camera distance after the radius change so the opening view also presents a meaningfully larger globe without hiding the useful horizon context.
+- Expand the zoom range substantially in both directions: allow a much closer inspection view and a much farther overview than the current limits.
+- Slow direct drag rotation and focus motion. Preserve smooth damping, but reduce the amount of globe rotation produced by the same pointer movement.
+- Re-check plaque legibility, picking, connector weights, and map texture filtering at the new near/far zoom extremes.
+
 ## Home person
 
 - Add a **Make home person** action to Person Details.

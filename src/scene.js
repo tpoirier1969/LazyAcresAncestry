@@ -2,13 +2,13 @@ import {
   apparentSphereRadius,
   isVisible,
   projectSpherePoint,
-  projectedRaisedFrame,
+  projectedTangentFrame,
   requiredSphereRadius,
   rotatePoint,
   tangentPoint,
   yawPitchToFront,
 } from './geometry.js';
-import { cameraBehavior, cameraCenterY } from './camera-behavior.js';
+import { blendOverviewCenter, cameraBehavior, cameraCenterY } from './camera-behavior.js';
 import { plaqueTexture } from './plaque.js';
 import { rigidPlaquePlacement } from './plaque-projection.js';
 import { layoutSample } from './layout.js';
@@ -17,16 +17,19 @@ import { GlobeWebGLRenderer } from './globe-webgl.js';
 
 const POPULATION = 9099;
 const PLAQUE = { width: 1.20, height: 1.08 };
-const RADIUS = Math.max(150, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
+const RADIUS = Math.max(225, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
 const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
-const MAX_GAP = 120;
+const MAX_GAP = 180;
+const OVERVIEW_TOP_INSET = 14;
 const RELATIONSHIP_COLORS = Object.freeze({
   couple: 'rgba(119,55,47,.97)',
   descent: 'rgba(132,62,52,.97)',
   rail: 'rgba(143,70,58,.94)',
   stem: 'rgba(151,78,64,.92)',
+  cluster: 'rgba(151,78,64,.82)',
   halo: 'rgba(247,225,190,.50)',
+  shadow: 'rgba(43,28,20,.42)',
 });
 
 export class GlobeScene {
@@ -48,6 +51,9 @@ export class GlobeScene {
     this.targetYaw = this.yaw;
     this.targetPitch = this.pitch;
     this.targetCameraGap = this.cameraGap;
+    this.cameraOffset = { x: 0, y: 0 };
+    this.focusedId = null;
+    this.zoomAnchor = null;
     this.drag = null;
     this.needsDraw = false;
     this.motionFrame = null;
@@ -77,6 +83,7 @@ export class GlobeScene {
     this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
     this.canvas.dataset.dpr = String(dpr);
     this.globeRenderer?.resize(rect.width, rect.height, dpr);
+    this.zoomAnchor = null;
     this.requestDraw();
   }
 
@@ -87,7 +94,7 @@ export class GlobeScene {
     const focal = Math.min(w, h) * 1.04;
     const centerZ = RADIUS + this.cameraGap;
     const behavior = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP);
-    const cy = cameraCenterY({
+    const focusedCenterY = cameraCenterY({
       height: h,
       focal,
       centerZ,
@@ -95,10 +102,17 @@ export class GlobeScene {
       viewTilt: behavior.viewTilt,
       targetYRatio: behavior.targetYRatio,
     });
+    const sphereRadius = apparentSphereRadius({ focal, centerZ }, RADIUS);
+    const baseCenterY = blendOverviewCenter(
+      focusedCenterY,
+      sphereRadius,
+      behavior.overviewT,
+      OVERVIEW_TOP_INSET,
+    );
 
     return {
-      cx: w / 2,
-      cy,
+      cx: w / 2 + this.cameraOffset.x,
+      cy: baseCenterY + this.cameraOffset.y,
       focal,
       centerZ,
       near: 0.1,
@@ -140,6 +154,7 @@ export class GlobeScene {
       event.preventDefault();
       const direction = Math.sign(event.deltaY);
       if (!direction) return;
+      if (!this.zoomAnchor) this.captureZoomAnchor();
       this.targetCameraGap = clamp(
         this.targetCameraGap * Math.exp(direction * 0.13),
         MIN_GAP,
@@ -147,6 +162,8 @@ export class GlobeScene {
       );
       if (this.reduceMotion) {
         this.cameraGap = this.targetCameraGap;
+        this.applyZoomAnchor();
+        this.zoomAnchor = null;
         this.requestDraw();
       } else {
         this.requestMotion();
@@ -164,11 +181,14 @@ export class GlobeScene {
       this.yaw += yawDelta * behavior.motionEase;
       this.pitch += pitchDelta * behavior.motionEase;
       this.cameraGap += gapDelta * 0.14;
+      if (this.zoomAnchor) this.applyZoomAnchor();
       const settled = Math.abs(yawDelta) < 0.00028 && Math.abs(pitchDelta) < 0.00028 && Math.abs(gapDelta) < 0.007;
       if (settled) {
         this.yaw = this.targetYaw;
         this.pitch = this.targetPitch;
         this.cameraGap = this.targetCameraGap;
+        if (this.zoomAnchor) this.applyZoomAnchor();
+        this.zoomAnchor = null;
         this.motionFrame = null;
         this.requestDraw();
         return;
@@ -185,6 +205,7 @@ export class GlobeScene {
     this.targetYaw = this.yaw;
     this.targetPitch = this.pitch;
     this.targetCameraGap = this.cameraGap;
+    this.zoomAnchor = null;
   }
 
   cancelFocus() {
@@ -197,9 +218,11 @@ export class GlobeScene {
     if (!local) return;
     this.stopMotion();
     this.cancelFocus();
+    this.focusedId = id;
     if (resetZoom) {
       this.cameraGap = DEFAULT_GAP;
       this.targetCameraGap = DEFAULT_GAP;
+      this.cameraOffset = { x: 0, y: 0 };
     }
     const target = yawPitchToFront(local);
     const behavior = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP);
@@ -223,6 +246,26 @@ export class GlobeScene {
       else this.focusFrame = null;
     };
     this.focusFrame = requestAnimationFrame(tick);
+  }
+
+  focusedScreenPoint(camera = this.camera()) {
+    const local = this.positions.get(this.focusedId);
+    if (!local) return null;
+    const unit = rotatePoint(local, this.yaw, camera.renderPitch);
+    return projectSpherePoint(unit, camera, RADIUS);
+  }
+
+  captureZoomAnchor() {
+    const point = this.focusedScreenPoint();
+    this.zoomAnchor = point ? { x: point.x, y: point.y } : null;
+  }
+
+  applyZoomAnchor() {
+    if (!this.zoomAnchor || !this.focusedId) return;
+    const point = this.focusedScreenPoint();
+    if (!point) return;
+    this.cameraOffset.x += this.zoomAnchor.x - point.x;
+    this.cameraOffset.y += this.zoomAnchor.y - point.y;
   }
 
   requestDraw() {
@@ -250,7 +293,8 @@ export class GlobeScene {
 
   drawRelationships(camera) {
     const knownIds = new Set(this.positions.keys());
-    const { spousePairs, parentSets } = buildRelationshipGroups(this.relationships, knownIds);
+    const { spousePairs, parentSets, siblingClusters } = buildRelationshipGroups(this.relationships, knownIds, this.people);
+    siblingClusters.forEach(ids => this.drawImportedSiblingCluster(ids, camera));
     spousePairs.forEach(([a, b]) => this.drawCoupleBar(a, b, camera));
     parentSets.forEach(group => {
       if (group.children.length > 1) this.drawSiblingGroup(group.parents, group.children, camera);
@@ -300,6 +344,28 @@ export class GlobeScene {
     ));
   }
 
+  drawImportedSiblingCluster(ids, camera) {
+    const members = ids
+      .map(id => ({ id, point: this.surfaceXY(this.positions.get(id)) }))
+      .filter(entry => entry.point)
+      .sort((a, b) => a.point.x - b.point.x);
+    if (members.length < 2) return;
+    const averageY = members.reduce((sum, entry) => sum + entry.point.y, 0) / members.length;
+    const railY = averageY - 0.52;
+    this.drawSurfacePolyline(
+      [[members[0].point.x, railY], [members[members.length - 1].point.x, railY]],
+      camera,
+      1.28,
+      RELATIONSHIP_COLORS.cluster,
+    );
+    members.forEach(({ point }) => this.drawSurfacePolyline(
+      [[point.x, point.y], [point.x, railY]],
+      camera,
+      1.16,
+      RELATIONSHIP_COLORS.cluster,
+    ));
+  }
+
   drawSurfacePolyline(xyPoints, camera, width = 0.7, stroke = null) {
     const sampled = [];
     const steps = this.drag || this.motionFrame || this.focusFrame ? 8 : 14;
@@ -323,6 +389,10 @@ export class GlobeScene {
     strokeSegments(ctx, sampled);
     ctx.strokeStyle = stroke || RELATIONSHIP_COLORS.descent;
     ctx.lineWidth = width;
+    ctx.shadowColor = RELATIONSHIP_COLORS.shadow;
+    ctx.shadowBlur = 2.4;
+    ctx.shadowOffsetX = 0.6;
+    ctx.shadowOffsetY = 1.1;
     strokeSegments(ctx, sampled);
     ctx.restore();
   }
@@ -351,13 +421,12 @@ export class GlobeScene {
   }
 
   drawPlaque({ person, unit, projected }, camera) {
-    const frame = projectedRaisedFrame(
+    const frame = projectedTangentFrame(
       unit,
       camera,
       RADIUS,
       PLAQUE.width,
       PLAQUE.height,
-      camera.plaqueFacing,
     );
     if (!frame) return;
 
@@ -401,7 +470,7 @@ export class GlobeScene {
   }
 }
 
-export function buildRelationshipGroups(relationships, knownIds = null) {
+export function buildRelationshipGroups(relationships, knownIds = null, people = []) {
   const isKnown = id => Boolean(id) && (!knownIds || knownIds.has(id));
   const parentLinks = relationships.filter(link => link.type === 'parent' && isKnown(link.from) && isKnown(link.to));
   const spousePairs = uniquePairs(relationships.filter(link => link.type === 'spouse' && isKnown(link.from) && isKnown(link.to)));
@@ -417,9 +486,27 @@ export function buildRelationshipGroups(relationships, knownIds = null) {
     if (!groupedChildren.has(key)) groupedChildren.set(key, { parents: parentIds, children: [] });
     groupedChildren.get(key).children.push(childId);
   });
+
+  // The prototype import already carries cluster metadata for grandparent
+  // sibling groups even where their parents were intentionally omitted from
+  // the 44-person subset. Use that metadata only as a sibling-group rail. It
+  // connects the imported people without inventing unnamed parents or spouse
+  // relationships that are not present in the relationship table.
+  const clusters = new Map();
+  people.forEach(person => {
+    if (!isKnown(person.id) || !person.cluster) return;
+    if (!['grandparent', 'grandparent-sibling'].includes(person.role)) return;
+    if (!clusters.has(person.cluster)) clusters.set(person.cluster, []);
+    clusters.get(person.cluster).push(person.id);
+  });
+  const siblingClusters = [...clusters.values()]
+    .map(ids => [...new Set(ids)].sort())
+    .filter(ids => ids.length > 1);
+
   return {
     spousePairs,
     parentSets: [...groupedChildren.values()].map(group => ({ parents: group.parents, children: [...new Set(group.children)].sort() })),
+    siblingClusters,
   };
 }
 

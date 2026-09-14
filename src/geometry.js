@@ -29,9 +29,14 @@ export function tangentBasis(unit) {
   let uz = unit.x;
   let len = Math.hypot(ux, uy, uz);
   if (len < 1e-8) {
-    ux = 1; uy = 0; uz = 0; len = 1;
+    ux = 1;
+    uy = 0;
+    uz = 0;
+    len = 1;
   }
-  ux /= len; uy /= len; uz /= len;
+  ux /= len;
+  uy /= len;
+  uz /= len;
   const vx = unit.y * uz - unit.z * uy;
   const vy = unit.z * ux - unit.x * uz;
   const vz = unit.x * uy - unit.y * ux;
@@ -39,8 +44,10 @@ export function tangentBasis(unit) {
 }
 
 export function rotatePoint(p, yaw, pitch) {
-  const cy = Math.cos(yaw), sy = Math.sin(yaw);
-  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
   const x1 = cy * p.x + sy * p.z;
   const z1 = -sy * p.x + cy * p.z;
   return {
@@ -67,9 +74,9 @@ export function projectLocalPoint(local, camera) {
   };
 }
 
-// Apply the zoom-dependent camera pitch around the front surface point rather
-// than around the globe center. The focused point therefore stays at the same
-// screen coordinate while the sphere center/horizon moves naturally beneath it.
+// The zoom-dependent view angle is a camera transform, not a second globe
+// rotation. It pivots around the front surface point so the focused person can
+// remain stationary while the visible amount of sphere changes around them.
 export function viewTiltPoint(world, camera, radius) {
   const tilt = camera.viewTilt || 0;
   if (!tilt) return { ...world };
@@ -115,9 +122,6 @@ export function projectSpherePoint(unit, camera, radius) {
     normal,
   };
 
-  // A sphere surface point on the far side has no legitimate screen-space
-  // projection for the visible atlas. Returning it used to let texture cells
-  // straddle the horizon and stretch into enormous triangular wedges.
   const toCamera = {
     x: -world.x,
     y: -world.y,
@@ -138,10 +142,35 @@ export function isVisible(unit, projected) {
   return normal.x * toCamera.x + normal.y * toCamera.y + normal.z * toCamera.z > 0;
 }
 
-export function apparentSphereRadius(camera, radius) {
+// Exact top/bottom silhouette for the projected sphere in the vertical camera
+// plane. Camera framing, the Canvas fallback, and zoom-limit calculations all
+// use this same geometry so no decorative circle can drift away from WebGL.
+export function projectedSphereVerticalBounds(camera, radius) {
   const center = viewTiltPoint({ x: 0, y: 0, z: camera.centerZ }, camera, radius);
-  const d = Math.hypot(center.x, center.y, center.z);
-  return camera.focal * radius / Math.sqrt(Math.max(1e-6, d * d - radius * radius));
+  const y = center.y;
+  const z = center.z;
+  const r2 = radius * radius;
+  const d2 = y * y + z * z;
+  if (d2 <= r2 + 1e-8 || z <= 0) return null;
+
+  const denominator = z * z - r2;
+  if (Math.abs(denominator) < 1e-9) return null;
+  const tangent = radius * Math.sqrt(Math.max(0, d2 - r2));
+  const slopeA = (y * z + tangent) / denominator;
+  const slopeB = (y * z - tangent) / denominator;
+  const screenA = camera.cy - camera.focal * slopeA;
+  const screenB = camera.cy - camera.focal * slopeB;
+
+  return {
+    top: Math.min(screenA, screenB),
+    bottom: Math.max(screenA, screenB),
+    centerY: (screenA + screenB) / 2,
+  };
+}
+
+export function apparentSphereRadius(camera, radius) {
+  const bounds = projectedSphereVerticalBounds(camera, radius);
+  return bounds ? (bounds.bottom - bounds.top) / 2 : 0;
 }
 
 export function fibonacciSphere(count) {
@@ -164,8 +193,16 @@ export function projectedTangentFrame(unit, camera, radius, width, height) {
   const { u, v } = tangentBasis(unit);
   const halfW = width / 2;
   const halfH = height / 2;
-  const pu = normalize({ x: unit.x + u.x * halfW / radius, y: unit.y + u.y * halfW / radius, z: unit.z + u.z * halfW / radius });
-  const pv = normalize({ x: unit.x + v.x * halfH / radius, y: unit.y + v.y * halfH / radius, z: unit.z + v.z * halfH / radius });
+  const pu = normalize({
+    x: unit.x + u.x * halfW / radius,
+    y: unit.y + u.y * halfW / radius,
+    z: unit.z + u.z * halfW / radius,
+  });
+  const pv = normalize({
+    x: unit.x + v.x * halfH / radius,
+    y: unit.y + v.y * halfH / radius,
+    z: unit.z + v.z * halfH / radius,
+  });
   const su = projectSpherePoint(pu, camera, radius);
   const sv = projectSpherePoint(pv, camera, radius);
   if (!su || !sv) return null;
@@ -176,86 +213,24 @@ export function projectedTangentFrame(unit, camera, radius, width, height) {
   };
 }
 
-// Legacy helper retained for compatibility with earlier prototype tests/tools.
-// Production person plaques now use projectedTangentFrame so they lie on the
-// globe rather than hinging upward toward the camera.
-export function projectedRaisedFrame(unit, camera, radius, width, height, cameraFacing = 0.88) {
-  const { u } = tangentBasis(unit);
-  const halfW = width / 2;
-  const halfH = height / 2;
-  const anchor = { x: unit.x * radius, y: unit.y * radius, z: unit.z * radius };
-  const cameraPoint = { x: 0, y: 0, z: -camera.centerZ };
-  const toCamera = normalize({
-    x: cameraPoint.x - anchor.x,
-    y: cameraPoint.y - anchor.y,
-    z: cameraPoint.z - anchor.z,
-  });
-  const tangentNormal = unit;
-  const viewDotU = toCamera.x * u.x + toCamera.y * u.y + toCamera.z * u.z;
-  const hingedViewNormal = normalize({
-    x: toCamera.x - u.x * viewDotU,
-    y: toCamera.y - u.y * viewDotU,
-    z: toCamera.z - u.z * viewDotU,
-  });
-  const normal = normalize({
-    x: tangentNormal.x * (1 - cameraFacing) + hingedViewNormal.x * cameraFacing,
-    y: tangentNormal.y * (1 - cameraFacing) + hingedViewNormal.y * cameraFacing,
-    z: tangentNormal.z * (1 - cameraFacing) + hingedViewNormal.z * cameraFacing,
-  });
-
-  let down = normalize(cross(normal, u));
-  const tangentDown = tangentBasis(unit).v;
-  if (down.x * tangentDown.x + down.y * tangentDown.y + down.z * tangentDown.z < 0) {
-    down = { x: -down.x, y: -down.y, z: -down.z };
-  }
-
-  const centerLocal = {
-    x: anchor.x - down.x * halfH,
-    y: anchor.y - down.y * halfH,
-    z: anchor.z - down.z * halfH,
-  };
-  const sideLocal = {
-    x: centerLocal.x + u.x * halfW,
-    y: centerLocal.y + u.y * halfW,
-    z: centerLocal.z + u.z * halfW,
-  };
-  const lowerLocal = {
-    x: centerLocal.x + down.x * halfH,
-    y: centerLocal.y + down.y * halfH,
-    z: centerLocal.z + down.z * halfH,
-  };
-
-  const center = projectLocalPoint(centerLocal, camera);
-  const side = projectLocalPoint(sideLocal, camera);
-  const lower = projectLocalPoint(lowerLocal, camera);
-  const anchorProjected = projectLocalPoint(anchor, camera);
-  if (!center || !side || !lower || !anchorProjected) return null;
-
-  return {
-    center,
-    anchor: anchorProjected,
-    xAxis: { x: side.x - center.x, y: side.y - center.y },
-    yAxis: { x: lower.x - center.x, y: lower.y - center.y },
-    normal,
-  };
-}
-
-function cross(a, b) {
-  return {
-    x: a.y * b.z - a.z * b.y,
-    y: a.z * b.x - a.x * b.z,
-    z: a.x * b.y - a.y * b.x,
-  };
-}
-
 export function slerpUnit(a, b, t) {
   const dot = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z));
   const angle = Math.acos(dot);
-  if (angle < 1e-8) return normalize({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t });
+  if (angle < 1e-8) {
+    return normalize({
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      z: a.z + (b.z - a.z) * t,
+    });
+  }
   const sinAngle = Math.sin(angle);
   const wa = Math.sin((1 - t) * angle) / sinAngle;
   const wb = Math.sin(t * angle) / sinAngle;
-  return normalize({ x: a.x * wa + b.x * wb, y: a.y * wa + b.y * wb, z: a.z * wa + b.z * wb });
+  return normalize({
+    x: a.x * wa + b.x * wb,
+    y: a.y * wa + b.y * wb,
+    z: a.z * wa + b.z * wb,
+  });
 }
 
 export function normalize(p) {

@@ -62,7 +62,6 @@ export class GlobeScene {
     this.targetCameraGap = this.cameraGap;
     this.cameraOffset = { x: 0, y: 0 };
     this.zoomAnchor = null;
-    this.homeRecentering = false;
     this.drag = null;
     this.needsDraw = false;
     this.motionFrame = null;
@@ -166,52 +165,26 @@ export class GlobeScene {
       const direction = Math.sign(event.deltaY);
       if (!direction) return;
 
-      if (direction > 0 && !this.zoomAnchor) this.captureZoomAnchor();
+      // Wheel zoom never changes focus or rotates the tree. Capture the selected
+      // person's current screen point and preserve it throughout the distance
+      // change. Home recentering is an explicit Home/Return action only.
+      if (!this.zoomAnchor) this.captureZoomAnchor();
       const zoomLimit = direction > 0 ? this.zoomOutLimit() : ABSOLUTE_MAX_GAP;
-      const nextGap = clamp(
+      this.targetCameraGap = clamp(
         this.targetCameraGap * Math.exp(direction * 0.13),
         MIN_GAP,
         zoomLimit,
       );
-      const returningToClosestHome = direction < 0
-        && this.focusedId === this.homeId
-        && nextGap <= MIN_GAP + 1e-6;
-
-      if (returningToClosestHome) {
-        this.beginClosestHomePose();
-      } else {
-        if (!this.zoomAnchor) this.captureZoomAnchor();
-        this.homeRecentering = false;
-        this.targetCameraGap = nextGap;
-      }
 
       if (this.reduceMotion) {
         this.cameraGap = this.targetCameraGap;
-        if (this.homeRecentering) {
-          this.yaw = this.targetYaw;
-          this.pitch = this.targetPitch;
-          this.cameraOffset = { x: 0, y: 0 };
-          this.homeRecentering = false;
-        } else {
-          this.applyZoomAnchor();
-        }
+        this.applyZoomAnchor();
         this.zoomAnchor = null;
         this.requestDraw();
       } else {
         this.requestMotion();
       }
     }, { passive: false });
-  }
-
-  beginClosestHomePose() {
-    const home = this.positions.get(this.homeId);
-    if (!home) return;
-    const target = yawPitchToFront(home);
-    this.zoomAnchor = null;
-    this.homeRecentering = true;
-    this.targetCameraGap = MIN_GAP;
-    this.targetYaw = target.yaw;
-    this.targetPitch = target.pitch;
   }
 
   requestMotion() {
@@ -225,29 +198,17 @@ export class GlobeScene {
       this.yaw += yawDelta * behavior.motionEase;
       this.pitch += pitchDelta * behavior.motionEase;
       this.cameraGap += gapDelta * 0.14;
+      if (this.zoomAnchor) this.applyZoomAnchor();
 
-      if (this.homeRecentering) {
-        const recenterEase = Math.max(0.10, behavior.motionEase);
-        this.cameraOffset.x += -this.cameraOffset.x * recenterEase;
-        this.cameraOffset.y += -this.cameraOffset.y * recenterEase;
-      } else if (this.zoomAnchor) {
-        this.applyZoomAnchor();
-      }
-
-      const offsetSettled = !this.homeRecentering
-        || (Math.abs(this.cameraOffset.x) < 0.15 && Math.abs(this.cameraOffset.y) < 0.15);
       const settled = Math.abs(yawDelta) < 0.00028
         && Math.abs(pitchDelta) < 0.00028
-        && Math.abs(gapDelta) < 0.007
-        && offsetSettled;
+        && Math.abs(gapDelta) < 0.007;
 
       if (settled) {
         this.yaw = this.targetYaw;
         this.pitch = this.targetPitch;
         this.cameraGap = this.targetCameraGap;
-        if (this.homeRecentering) this.cameraOffset = { x: 0, y: 0 };
-        else if (this.zoomAnchor) this.applyZoomAnchor();
-        this.homeRecentering = false;
+        if (this.zoomAnchor) this.applyZoomAnchor();
         this.zoomAnchor = null;
         this.motionFrame = null;
         this.requestDraw();
@@ -267,7 +228,6 @@ export class GlobeScene {
     this.targetPitch = this.pitch;
     this.targetCameraGap = this.cameraGap;
     this.zoomAnchor = null;
-    this.homeRecentering = false;
   }
 
   cancelFocus() {

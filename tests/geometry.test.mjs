@@ -4,6 +4,7 @@ import {
   requiredSphereRadius,
   tangentPoint,
   projectSpherePoint,
+  projectedSphereVerticalBounds,
   projectedTangentFrame,
   rotatePoint,
   slerpUnit,
@@ -14,7 +15,7 @@ import { buildRelationshipGroups } from '../src/scene.js';
 const radius = requiredSphereRadius({ count: 9099, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8, packingEfficiency: 0.65 });
 assert(radius > 38 && radius < 40, `unexpected radius ${radius}`);
 
-const camera = { cx: 800, cy: 450, focal: 900, centerZ: 47.8, near: 0.1 };
+const camera = { cx: 800, cy: 450, focal: 900, centerZ: 47.8, near: 0.1, viewTilt: 0 };
 const near = tangentPoint(0, 0, 40);
 const mid = tangentPoint(0, 5, 40);
 const far = tangentPoint(0, 10, 40);
@@ -31,7 +32,16 @@ const height = frame => Math.hypot(frame.yAxis.x, frame.yAxis.y) * 2;
 assert(width(fn) > width(fm) && width(fm) > width(ff), 'equal-size plaques must shrink monotonically with distance');
 assert(width(fn) / width(fm) < 1.35, 'near generations should not jump abruptly in apparent size');
 
-const slopedCamera = { cx: 800, cy: 2100, focal: 900, centerZ: 84.2, near: 0.1 };
+const pivotCamera = { cx: 800, cy: 522, focal: 936, centerZ: 225 + 155, near: 0.1, viewTilt: 0.24 };
+const pivotFront = projectSpherePoint({ x: 0, y: 0, z: -1 }, pivotCamera, 225);
+assert.ok(Math.abs(pivotFront.y - pivotCamera.cy) < 1e-9, 'camera tilt must pivot around the focused front surface point rather than moving it');
+assert.ok(Math.abs(pivotFront.z - 155) < 1e-9, 'camera tilt pivot must preserve focused-point depth');
+const pivotBounds = projectedSphereVerticalBounds(pivotCamera, 225);
+assert(pivotBounds, 'projected sphere bounds should exist for a valid camera');
+assert.ok(pivotBounds.top > 12 && pivotBounds.top < 18, `canonical wide sphere top should sit just below the viewport edge, got ${pivotBounds.top}`);
+assert.ok(pivotBounds.bottom > pivotBounds.top, 'sphere vertical bounds must be ordered');
+
+const slopedCamera = { cx: 800, cy: 2100, focal: 900, centerZ: 84.2, near: 0.1, viewTilt: 0 };
 const sloped = rotatePoint(tangentPoint(0, 15, 78), 0, 0.15);
 const slopedFrame = projectedTangentFrame(sloped, slopedCamera, 78, 1, 0.86);
 assert(width(slopedFrame) > 0 && height(slopedFrame) > 0, 'surface-tangent plaque must remain projectable');
@@ -91,4 +101,4 @@ fullGroups.siblingClusters.forEach(ids => ids.forEach(id => connected.add(id)));
 const disconnected = [...familyIds].filter(id => !connected.has(id));
 assert.deepEqual(disconnected, [], `every current prototype person must connect to at least one other person; disconnected: ${disconnected.join(', ')}`);
 
-console.log(`geometry ok: capacity sphere diameter ${(radius * 2).toFixed(1)} plaque widths; tangent plaques and complete sample connectivity ok`);
+console.log(`geometry ok: capacity sphere diameter ${(radius * 2).toFixed(1)} plaque widths; unified sphere projection, tangent plaques, and complete sample connectivity ok`);

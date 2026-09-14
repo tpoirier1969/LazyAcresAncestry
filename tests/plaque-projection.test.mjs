@@ -3,7 +3,6 @@ import { rigidPlaquePlacement } from '../src/plaque-projection.js';
 
 const frame = {
   center: { x: 300, y: 460 },
-  anchor: { x: 300, y: 500 },
   xAxis: { x: 40, y: 4 },
   yAxis: { x: 0, y: 40 },
 };
@@ -16,6 +15,7 @@ assert(Math.abs(placement.width - Math.hypot(40, 4) * 2) < 1e-9);
 assert(Math.abs(placement.height - 80) < 1e-9);
 assert(Math.abs(placement.e - frame.center.x) < 1e-9);
 assert(Math.abs(placement.f - frame.center.y) < 1e-9);
+assert.deepEqual(placement.anchor, frame.center, 'a tangent plaque without a hinge anchor should use its surface center as the attachment point');
 
 const projectTexturePoint = (x, y) => ({
   x: placement.a * x + placement.c * y + placement.e,
@@ -27,15 +27,11 @@ assert(Math.abs(projectedRight.x - (frame.center.x + frame.xAxis.x)) < 1e-9);
 assert(Math.abs(projectedRight.y - (frame.center.y + frame.xAxis.y)) < 1e-9);
 
 const projectedBottom = projectTexturePoint(0, textureHeight / 2);
-assert(Math.abs(projectedBottom.x - frame.anchor.x) < 1e-9);
-assert(
-  Math.abs(projectedBottom.y - frame.anchor.y) < 1e-9,
-  'projected plaque bottom center must stay attached to sphere anchor',
-);
+assert(Math.abs(projectedBottom.x - (frame.center.x + frame.yAxis.x)) < 1e-9);
+assert(Math.abs(projectedBottom.y - (frame.center.y + frame.yAxis.y)) < 1e-9, 'projected plaque must preserve the tangent plane instead of standing upright');
 
 const foreshortenedFrame = {
   center: { x: 300, y: 480 },
-  anchor: { x: 300, y: 500 },
   xAxis: { x: 40, y: 0 },
   yAxis: { x: 0, y: 20 },
 };
@@ -44,4 +40,4 @@ assert(foreshortened);
 assert.equal(foreshortened.height, 40, 'surface tilt must foreshorten plaque height on screen');
 assert.equal(foreshortened.width, 80, 'surface tilt must not invent horizontal scaling');
 
-console.log('3D plaque plane projection ok');
+console.log('surface-tangent plaque plane projection ok');

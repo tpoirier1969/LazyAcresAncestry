@@ -28,7 +28,6 @@ export function buildSphereMesh(longitudeSegments = 128, latitudeSegments = 64) 
       const b = a + stride;
       const c = a + 1;
       const d = b + 1;
-      // Counter-clockwise when viewed from outside the sphere.
       indices.push(a, c, b, c, d, b);
     }
   }
@@ -123,7 +122,9 @@ export class GlobeWebGLRenderer {
     gl.depthFunc(gl.LEQUAL);
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
-    gl.frontFace(gl.CCW);
+    // This application camera looks down +Z. Outward-facing sphere triangles
+    // therefore appear clockwise in window coordinates.
+    gl.frontFace(gl.CW);
   }
 
   loadTexture() {
@@ -276,7 +277,6 @@ void main() {
   float ndcY = 1.0 - screenY / (uViewport.y * 0.5);
   float ndcZ = clamp((depth - uNearDepth) / (uFarDepth - uNearDepth), 0.0, 1.0) * 2.0 - 1.0;
 
-  // w=depth gives the GPU the correct perspective interpolation for UVs.
   gl_Position = vec4(ndcX * depth, ndcY * depth, ndcZ * depth, depth);
   vUv = aUv;
   vNormal = normal;

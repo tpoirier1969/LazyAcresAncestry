@@ -209,28 +209,46 @@ export class GlobeScene {
     if (resetZoom) {
       this.cameraGap = DEFAULT_GAP;
       this.targetCameraGap = DEFAULT_GAP;
-      this.cameraOffset = { x: 0, y: 0 };
     }
     const target = yawPitchToFront(local);
     const behavior = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP);
+    const from = {
+      yaw: this.yaw,
+      pitch: this.pitch,
+      offsetX: this.cameraOffset.x,
+      offsetY: this.cameraOffset.y,
+    };
+
+    // A newly selected person becomes the canonical tree focus. Zoom may keep
+    // the current distance, but it must not inherit a screen offset that was
+    // created to anchor the previously focused person. Retiring that offset as
+    // part of the same focus animation prevents the intermittent off-screen
+    // jump that occurred after certain zoom sequences.
     if (this.reduceMotion) {
       this.yaw = this.targetYaw = target.yaw;
       this.pitch = this.targetPitch = target.pitch;
+      this.cameraOffset = { x: 0, y: 0 };
       this.requestDraw();
       return;
     }
-    const from = { yaw: this.yaw, pitch: this.pitch };
+
     const start = performance.now();
     const tick = now => {
       const t = Math.min(1, (now - start) / behavior.focusDuration);
       const eased = t * t * (3 - 2 * t);
       this.yaw = from.yaw + shortestAngle(from.yaw, target.yaw) * eased;
       this.pitch = from.pitch + (target.pitch - from.pitch) * eased;
+      this.cameraOffset.x = from.offsetX * (1 - eased);
+      this.cameraOffset.y = from.offsetY * (1 - eased);
       this.targetYaw = this.yaw;
       this.targetPitch = this.pitch;
       this.requestDraw();
-      if (t < 1) this.focusFrame = requestAnimationFrame(tick);
-      else this.focusFrame = null;
+      if (t < 1) {
+        this.focusFrame = requestAnimationFrame(tick);
+      } else {
+        this.cameraOffset = { x: 0, y: 0 };
+        this.focusFrame = null;
+      }
     };
     this.focusFrame = requestAnimationFrame(tick);
   }
@@ -272,8 +290,10 @@ export class GlobeScene {
     ctx.clearRect(0, 0, w, h);
 
     const globeDrawn = this.globeRenderer?.render(camera, this.yaw, this.pitch, RADIUS);
-    if (!globeDrawn) drawSphereBase(ctx, camera, RADIUS);
-    drawSphereShade(ctx, camera, RADIUS);
+    if (!globeDrawn) {
+      drawSphereBase(ctx, camera, RADIUS);
+      drawSphereShade(ctx, camera, RADIUS);
+    }
     this.drawRelationships(camera);
     this.drawPeople(camera);
   }
@@ -284,7 +304,7 @@ export class GlobeScene {
     siblingClusters.forEach(ids => this.drawImportedSiblingCluster(ids, camera));
     spousePairs.forEach(([a, b]) => this.drawCoupleBar(a, b, camera));
     parentSets.forEach(group => {
-      if (group.children.length > 1) this.drawSiblingGroup(group.parents, group.children, camera);
+      if (group.children.length > 1) this.drawSiblingGroup(group.parents, group.children, camera));
       else this.drawDescent(group.parents, group.children[0], camera);
     });
   }

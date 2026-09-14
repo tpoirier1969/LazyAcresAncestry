@@ -8,7 +8,7 @@ export function plaqueTexture(person, size = 520) {
   canvas.width = size;
   canvas.height = Math.round(size * 0.90);
   const ctx = canvas.getContext('2d');
-  drawScroll(ctx, canvas.width, canvas.height);
+  drawWoodPlaque(ctx, canvas.width, canvas.height);
   drawPortrait(ctx, canvas.width, canvas.height, person);
   drawText(ctx, canvas.width, canvas.height, person);
   CACHE.set(key, canvas);
@@ -116,89 +116,126 @@ function drawFallbackPortrait(ctx, cx, cy, rx, ry, sex) {
   if (sex === 'F') { ctx.beginPath(); ctx.ellipse(cx, cy - ry * 0.2, rx * 0.42, ry * 0.39, 0, Math.PI, Math.PI * 2); ctx.fill(); }
 }
 
-function drawScroll(ctx, w, h) {
+function drawWoodPlaque(ctx, w, h) {
+  const x = w * 0.135;
   const y = h * 0.655;
-  const rh = h * 0.255;
-  const left = w * 0.145;
-  const right = w * 0.855;
-  const curl = w * 0.075;
+  const width = w * 0.73;
+  const height = h * 0.245;
+  const radius = w * 0.028;
+  const capWidth = w * 0.075;
 
   ctx.save();
-  ctx.shadowColor = 'rgba(55,31,12,.42)';
-  ctx.shadowBlur = w * 0.026;
-  ctx.shadowOffsetY = w * 0.018;
+  ctx.shadowColor = 'rgba(42,24,12,.46)';
+  ctx.shadowBlur = w * 0.024;
+  ctx.shadowOffsetY = w * 0.016;
 
-  const parchment = ctx.createLinearGradient(0, y, 0, y + rh);
-  parchment.addColorStop(0, '#f4e2ad');
-  parchment.addColorStop(0.44, '#e5c986');
-  parchment.addColorStop(0.76, '#d2aa61');
-  parchment.addColorStop(1, '#b77e3c');
-  ctx.fillStyle = parchment;
-  ctx.strokeStyle = '#765028';
-  ctx.lineWidth = Math.max(2, w * 0.0065);
-
-  ctx.beginPath();
-  ctx.moveTo(left, y + rh * 0.08);
-  ctx.quadraticCurveTo(w * 0.5, y - rh * 0.03, right, y + rh * 0.08);
-  ctx.lineTo(right, y + rh * 0.88);
-  ctx.quadraticCurveTo(w * 0.5, y + rh * 1.01, left, y + rh * 0.88);
-  ctx.closePath();
+  roundedRectPath(ctx, x, y, width, height, radius);
+  const wood = ctx.createLinearGradient(0, y, 0, y + height);
+  wood.addColorStop(0, '#74461f');
+  wood.addColorStop(0.20, '#9a6330');
+  wood.addColorStop(0.52, '#6d3d1b');
+  wood.addColorStop(0.82, '#4b2915');
+  wood.addColorStop(1, '#2f1a10');
+  ctx.fillStyle = wood;
   ctx.fill();
+  ctx.strokeStyle = '#2a170d';
+  ctx.lineWidth = Math.max(2, w * 0.007);
   ctx.stroke();
 
-  drawScrollCurl(ctx, left, y + rh * 0.49, -1, curl, rh, parchment, w);
-  drawScrollCurl(ctx, right, y + rh * 0.49, 1, curl, rh, parchment, w);
-
-  ctx.strokeStyle = 'rgba(255,244,205,.52)';
-  ctx.lineWidth = Math.max(1.2, w * 0.003);
-  ctx.beginPath();
-  ctx.moveTo(left + curl * 0.28, y + rh * 0.16);
-  ctx.quadraticCurveTo(w * 0.5, y + rh * 0.06, right - curl * 0.28, y + rh * 0.16);
+  roundedRectPath(ctx, x + w * 0.014, y + h * 0.018, width - w * 0.028, height - h * 0.036, radius * 0.72);
+  ctx.strokeStyle = 'rgba(214,159,78,.50)';
+  ctx.lineWidth = Math.max(1.2, w * 0.0035);
   ctx.stroke();
+
+  ctx.globalAlpha = 0.22;
+  ctx.strokeStyle = '#d4a66e';
+  ctx.lineWidth = Math.max(0.8, w * 0.0024);
+  for (let i = 0; i < 5; i += 1) {
+    const gy = y + height * (0.18 + i * 0.16);
+    ctx.beginPath();
+    ctx.moveTo(x + capWidth * 0.70, gy);
+    ctx.bezierCurveTo(
+      x + width * 0.34, gy - h * 0.010,
+      x + width * 0.62, gy + h * 0.012,
+      x + width - capWidth * 0.70, gy - h * 0.004,
+    );
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  drawBrassCap(ctx, x - capWidth * 0.45, y - h * 0.006, capWidth, height + h * 0.012, w);
+  drawBrassCap(ctx, x + width - capWidth * 0.55, y - h * 0.006, capWidth, height + h * 0.012, w);
   ctx.restore();
 }
 
-function drawScrollCurl(ctx, x, cy, direction, curl, rh, parchment, w) {
-  ctx.save();
-  ctx.fillStyle = parchment;
-  ctx.strokeStyle = '#765028';
-  ctx.lineWidth = Math.max(2, w * 0.006);
+function drawBrassCap(ctx, x, y, width, height, w) {
+  const radius = width * 0.32;
+  roundedRectPath(ctx, x, y, width, height, radius);
+  const brass = ctx.createLinearGradient(x, y, x + width, y);
+  brass.addColorStop(0, '#604018');
+  brass.addColorStop(0.18, '#a97829');
+  brass.addColorStop(0.43, '#e3c36d');
+  brass.addColorStop(0.62, '#9d6d22');
+  brass.addColorStop(0.84, '#d4aa4b');
+  brass.addColorStop(1, '#513515');
+  ctx.fillStyle = brass;
+  ctx.fill();
+  ctx.strokeStyle = '#4e3215';
+  ctx.lineWidth = Math.max(1.6, w * 0.0045);
+  ctx.stroke();
 
+  const rivetRadius = Math.max(2.2, w * 0.010);
+  [0.22, 0.78].forEach(position => {
+    const cx = x + width * 0.5;
+    const cy = y + height * position;
+    const rivet = ctx.createRadialGradient(cx - rivetRadius * 0.3, cy - rivetRadius * 0.3, 1, cx, cy, rivetRadius);
+    rivet.addColorStop(0, '#f5dda0');
+    rivet.addColorStop(0.45, '#c38b32');
+    rivet.addColorStop(1, '#5f3c15');
+    ctx.fillStyle = rivet;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rivetRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(58,35,12,.78)';
+    ctx.lineWidth = Math.max(1, w * 0.0025);
+    ctx.stroke();
+  });
+}
+
+function roundedRectPath(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
   ctx.beginPath();
-  ctx.moveTo(x, cy - rh * 0.40);
-  ctx.bezierCurveTo(x + direction * curl * 0.95, cy - rh * 0.34, x + direction * curl * 0.98, cy - rh * 0.02, x + direction * curl * 0.38, cy + rh * 0.09);
-  ctx.bezierCurveTo(x + direction * curl * 0.88, cy + rh * 0.18, x + direction * curl * 0.80, cy + rh * 0.42, x, cy + rh * 0.40);
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  const roll = ctx.createLinearGradient(x, cy, x + direction * curl, cy);
-  roll.addColorStop(0, 'rgba(92,55,24,.18)');
-  roll.addColorStop(0.45, 'rgba(255,244,202,.48)');
-  roll.addColorStop(1, 'rgba(84,49,20,.34)');
-  ctx.fillStyle = roll;
-  ctx.beginPath();
-  ctx.ellipse(x + direction * curl * 0.46, cy + rh * 0.08, curl * 0.34, rh * 0.11, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
 }
 
 function drawText(ctx, w, h, person) {
-  const max = w * 0.67;
-  let fontSize = w * 0.074;
-  ctx.fillStyle = '#26190e';
+  const max = w * 0.61;
+  let fontSize = w * 0.069;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(25,14,7,.72)';
+  ctx.shadowBlur = w * 0.006;
+  ctx.shadowOffsetY = w * 0.003;
+  ctx.fillStyle = '#f3dfac';
   ctx.font = `700 ${fontSize}px Georgia, serif`;
-  while (ctx.measureText(person.name).width > max && fontSize > w * 0.050) {
+  while (ctx.measureText(person.name).width > max && fontSize > w * 0.047) {
     fontSize -= 1;
     ctx.font = `700 ${fontSize}px Georgia, serif`;
   }
-  ctx.fillText(person.name, w * 0.5, h * 0.765);
+  ctx.fillText(person.name, w * 0.5, h * 0.758);
   const dates = `${person.birth?.date || '?'}${person.death?.date ? ` – ${person.death.date}` : ' –'}`;
-  ctx.font = `600 ${w * 0.046}px Georgia, serif`;
-  ctx.fillText(dates, w * 0.5, h * 0.838);
+  ctx.fillStyle = '#dbc28a';
+  ctx.font = `600 ${w * 0.043}px Georgia, serif`;
+  ctx.fillText(dates, w * 0.5, h * 0.833);
 }
 
 function loadImage(src) {

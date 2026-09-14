@@ -4,10 +4,8 @@ This file tracks requested work that is intentionally not part of the current pr
 
 ## Globe interaction and scale
 
-- Re-tune the default camera distance after the larger sphere is visually verified so the opening view preserves useful horizon context.
-- Expand the zoom range substantially in both directions: allow a much closer inspection view and a much farther overview than the current limits.
-- Slow direct drag rotation and focus motion. Preserve smooth damping, but reduce the amount of globe rotation produced by the same pointer movement.
-- Re-check plaque legibility, picking, connector weights, and map texture filtering at the new near/far zoom extremes.
+- Re-tune the default camera distance after the current zoom-dependent camera behavior is visually verified against the approved atlas reference.
+- Re-check plaque legibility, picking, connector weights, and texture filtering after the next dense-family stress test.
 
 ## Home person
 

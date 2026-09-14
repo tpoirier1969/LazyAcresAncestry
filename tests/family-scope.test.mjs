@@ -8,6 +8,8 @@ const people = [
   { id: 'mom', name: 'Mom', role: 'parent' },
   { id: 'pgf', name: 'Paternal Grandfather', role: 'grandparent' },
   { id: 'pgm', name: 'Paternal Grandmother', role: 'grandparent' },
+  { id: 'gggf', name: 'Beyond Requested Depth Grandfather', role: 'extended-family' },
+  { id: 'gggm', name: 'Beyond Requested Depth Grandmother', role: 'extended-family' },
   { id: 'uncle', name: 'Dad Sibling', role: 'extended-family' },
   { id: 'cousin', name: 'Cousin', role: 'extended-family' },
   { id: 'cousinSpouse', name: 'Cousin Spouse', role: 'family-spouse' },
@@ -21,6 +23,8 @@ const relationships = [
   { type: 'spouse', from: 'root', to: 'spouse' },
   { type: 'parent', from: 'pgf', to: 'dad' },
   { type: 'parent', from: 'pgm', to: 'dad' },
+  { type: 'parent', from: 'gggf', to: 'pgf' },
+  { type: 'parent', from: 'gggm', to: 'pgf' },
   { type: 'parent', from: 'pgf', to: 'uncle' },
   { type: 'parent', from: 'pgm', to: 'uncle' },
   { type: 'parent', from: 'uncle', to: 'cousin' },
@@ -35,6 +39,8 @@ const ids = new Set(scoped.people.map(person => person.id));
 for (const expected of ['root', 'spouse', 'dad', 'mom', 'pgf', 'pgm', 'uncle', 'cousin', 'cousinSpouse']) {
   assert(ids.has(expected), `${expected} should remain in the requested ancestor/sibling/descendant family scope`);
 }
+assert(!ids.has('gggf'), 'ancestors above the requested depth must not leak into the displayed tree as family partners');
+assert(!ids.has('gggm'), 'the requested ancestor depth must be a hard upward boundary');
 assert(!ids.has('inlawParent'), 'a spouse parent must not pull an unrelated ancestry branch into the displayed tree');
 assert(!ids.has('inlawSibling'), 'a spouse sibling must not hitchhike into the displayed tree');
 assert.equal(
@@ -49,7 +55,9 @@ assert.equal(
 );
 
 const scopedRelationshipIds = new Set(scoped.relationships.flatMap(link => [link.from, link.to]));
+assert(!scopedRelationshipIds.has('gggf'));
+assert(!scopedRelationshipIds.has('gggm'));
 assert(!scopedRelationshipIds.has('inlawParent'));
 assert(!scopedRelationshipIds.has('inlawSibling'));
 
-console.log('ancestor, sibling-descendant, and one-hop partner family scope ok');
+console.log('ancestor, sibling-descendant, one-hop partner, and depth boundary family scope ok');

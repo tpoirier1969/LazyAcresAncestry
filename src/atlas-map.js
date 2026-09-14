@@ -3,9 +3,14 @@ export const ATLAS_TEXTURE_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/Fil
 export const ATLAS_TEXTURE_CREDIT = 'Gundan / mapswire.com, CC BY-SA 4.0';
 export const ATLAS_TEXTURE_SHA1 = '2d069905a76447a5de0c11bb02628fb8d8323528';
 
-// A true 8192x4096 equirectangular day map supplies fine terrain and water
-// detail when the globe is viewed close-up. WebGL implementations limited to
-// 4K textures use the Wikimedia 3840px derivative instead.
+// Prefer a 16K derivative of a 21,600 x 10,800 Plate Carree physical map on
+// GPUs that can accept it. This materially improves Great Lakes and regional
+// terrain detail at the close camera distances used by the genealogy atlas.
+// If that derivative is unavailable or the GPU is smaller, the renderer falls
+// back through the established 8K and 3840px sources.
+export const ATLAS_RELIEF_TEXTURE_ULTRA_URL = 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Large_World_Map_unmodified.jpg/16384px-Large_World_Map_unmodified.jpg';
+export const ATLAS_RELIEF_TEXTURE_ULTRA_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Large_World_Map_unmodified.jpg';
+export const ATLAS_RELIEF_TEXTURE_ULTRA_CREDIT = 'MTBlack, CC BY-SA 4.0; NOAA bathymetry, NASA land data, Natural Earth III rivers/lakes';
 export const ATLAS_RELIEF_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg';
 export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/3840px-Solarsystemscope_texture_8k_earth_daymap.jpg';
 export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_daymap.jpg';

@@ -117,12 +117,12 @@ function drawFallbackPortrait(ctx, cx, cy, rx, ry, sex) {
 }
 
 function drawWoodPlaque(ctx, w, h) {
-  const x = w * 0.135;
-  const y = h * 0.655;
-  const width = w * 0.73;
-  const height = h * 0.245;
+  const x = w * 0.06;
+  const y = h * 0.625;
+  const width = w * 0.88;
+  const height = h * 0.31;
   const radius = w * 0.028;
-  const capWidth = w * 0.075;
+  const capWidth = w * 0.062;
 
   ctx.save();
   ctx.shadowColor = 'rgba(42,24,12,.46)';
@@ -218,24 +218,90 @@ function roundedRectPath(ctx, x, y, width, height, radius) {
 }
 
 function drawText(ctx, w, h, person) {
-  const max = w * 0.61;
-  let fontSize = w * 0.069;
+  const maxWidth = w * 0.74;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = 'rgba(25,14,7,.72)';
   ctx.shadowBlur = w * 0.006;
   ctx.shadowOffsetY = w * 0.003;
+
+  const name = fitWrappedText(ctx, person.name || 'Unknown', {
+    maxWidth,
+    maxLines: 2,
+    startSize: w * 0.061,
+    minSize: w * 0.035,
+    weight: 700,
+  });
   ctx.fillStyle = '#f3dfac';
-  ctx.font = `700 ${fontSize}px Georgia, serif`;
-  while (ctx.measureText(person.name).width > max && fontSize > w * 0.047) {
-    fontSize -= 1;
-    ctx.font = `700 ${fontSize}px Georgia, serif`;
-  }
-  ctx.fillText(person.name, w * 0.5, h * 0.758);
+  ctx.font = `700 ${name.fontSize}px Georgia, serif`;
+  const nameLineHeight = name.fontSize * 1.02;
+  const nameCenterY = h * 0.735;
+  const firstNameY = nameCenterY - ((name.lines.length - 1) * nameLineHeight) / 2;
+  name.lines.forEach((line, index) => {
+    ctx.fillText(line, w * 0.5, firstNameY + index * nameLineHeight);
+  });
+
   const dates = `${person.birth?.date || '?'}${person.death?.date ? ` – ${person.death.date}` : ' –'}`;
-  ctx.fillStyle = '#dbc28a';
-  ctx.font = `600 ${w * 0.043}px Georgia, serif`;
-  ctx.fillText(dates, w * 0.5, h * 0.833);
+  const dateSize = fitSingleLine(ctx, dates, maxWidth, w * 0.052, w * 0.040, 600);
+  ctx.fillStyle = '#e4cc94';
+  ctx.font = `600 ${dateSize}px Georgia, serif`;
+  ctx.fillText(dates, w * 0.5, h * 0.858);
+}
+
+function fitWrappedText(ctx, text, { maxWidth, maxLines, startSize, minSize, weight }) {
+  let fontSize = startSize;
+  let lines = [String(text || '')];
+  while (fontSize >= minSize) {
+    ctx.font = `${weight} ${fontSize}px Georgia, serif`;
+    lines = wrapWords(ctx, String(text || ''), maxWidth);
+    if (lines.length <= maxLines && lines.every(line => ctx.measureText(line).width <= maxWidth)) {
+      return { lines, fontSize };
+    }
+    fontSize -= 1;
+  }
+
+  ctx.font = `${weight} ${minSize}px Georgia, serif`;
+  lines = wrapWords(ctx, String(text || ''), maxWidth);
+  while (lines.length > maxLines) {
+    const tail = lines.pop();
+    lines[lines.length - 1] = `${lines[lines.length - 1]} ${tail}`.trim();
+  }
+
+  let fallbackSize = minSize;
+  while (fallbackSize > 8 && lines.some(line => ctx.measureText(line).width > maxWidth)) {
+    fallbackSize -= 1;
+    ctx.font = `${weight} ${fallbackSize}px Georgia, serif`;
+  }
+  return { lines, fontSize: fallbackSize };
+}
+
+function fitSingleLine(ctx, text, maxWidth, startSize, minSize, weight) {
+  let fontSize = startSize;
+  ctx.font = `${weight} ${fontSize}px Georgia, serif`;
+  while (ctx.measureText(text).width > maxWidth && fontSize > minSize) {
+    fontSize -= 1;
+    ctx.font = `${weight} ${fontSize}px Georgia, serif`;
+  }
+  return fontSize;
+}
+
+function wrapWords(ctx, text, maxWidth) {
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines = [];
+  let line = '';
+
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (!line || ctx.measureText(candidate).width <= maxWidth) {
+      line = candidate;
+      continue;
+    }
+    lines.push(line);
+    line = word;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 function loadImage(src) {

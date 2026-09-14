@@ -1,9 +1,16 @@
 import { tangentPoint } from './geometry.js';
 
-// Generations get clear vertical bands. People within a generation are kept
-// compact, with branch-specific expansion only where large sibling groups need it.
+// The visible home view uses perspective, so equal physical surface gaps appear
+// progressively compressed as generations move away from the viewing apex.
+// Keep the root-to-parent spacing the user already likes, then compensate the
+// next band so the apparent generation spacing stays visually even.
+const ROOT_Y = 0;
+const PARENT_Y = 2.48;
+const GRANDPARENT_Y = 5.46;
+const PEER_GAP = 1.32;
+
 const BASE = {
-  root: [0, 0],
+  root: [0, ROOT_Y],
   spouse: [2.08, 0.05],
   sibling: [-2.08, 0.05],
 };
@@ -26,15 +33,15 @@ export function layoutSample(people, radius) {
 
   parents.forEach(person => {
     const x = person.branch === 'paternal' ? -1.46 : 1.46;
-    place(person, x, 2.48);
+    place(person, x, PARENT_Y);
   });
 
   grandparents.forEach(person => {
     const paternal = person.branch === 'paternal';
     const branchGrandparents = grandparents.filter(p => p.branch === person.branch);
     const sideIndex = branchGrandparents.indexOf(person);
-    const x = (paternal ? -1 : 1) * (1.25 + sideIndex * 1.78);
-    place(person, x, 4.95);
+    const x = (paternal ? -1 : 1) * (1.34 + sideIndex * 1.92);
+    place(person, x, GRANDPARENT_Y);
   });
 
   const siblingGroups = new Map();
@@ -49,21 +56,15 @@ export function layoutSample(people, radius) {
     const anchorXY = coordinates.get(anchor.id);
     const outward = anchor.branch === 'paternal' ? -1 : 1;
     const columns = Math.min(group.length, 5);
-    const columnGap = 1.08;
-    const rowGap = 0.88;
-    const branchGrandparents = grandparents.filter(person => person.branch === anchor.branch);
-    const anchorIndex = branchGrandparents.indexOf(anchor);
-    const rowBias = (anchorIndex % 2 === 0 ? -1 : 1) * 0.38;
+    const rowCountTotal = Math.ceil(group.length / columns);
 
     group.forEach((person, index) => {
       const row = Math.floor(index / columns);
       const col = index % columns;
       const rowCount = Math.min(columns, group.length - row * columns);
-      const offset = (col + 1) * columnGap + (rowCount < columns ? (columns - rowCount) * columnGap * 0.10 : 0);
+      const offset = (col + 1) * PEER_GAP + (rowCount < columns ? (columns - rowCount) * PEER_GAP * 0.10 : 0);
       const x = anchorXY.x + outward * offset;
-      // Keep siblings in the grandparent generation band. Wrapped rows move
-      // only slightly within that band instead of masquerading as older generations.
-      const y = anchorXY.y + rowBias + (row - (Math.ceil(group.length / columns) - 1) / 2) * rowGap;
+      const y = anchorXY.y + (row - (rowCountTotal - 1) / 2) * PEER_GAP;
       place(person, x, y);
     });
   });

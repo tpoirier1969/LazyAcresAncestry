@@ -3,25 +3,27 @@ export const ATLAS_TEXTURE_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/Fil
 export const ATLAS_TEXTURE_CREDIT = 'Gundan / mapswire.com, CC BY-SA 4.0';
 export const ATLAS_TEXTURE_SHA1 = '2d069905a76447a5de0c11bb02628fb8d8323528';
 
-// Global detail remains an 8192x4096 equirectangular texture so the whole
-// sphere is continuously available without a giant decoded image in memory.
-export const ATLAS_RELIEF_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg';
-export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/3840px-Solarsystemscope_texture_8k_earth_daymap.jpg';
+// The global relief layer is intentionally capped at 3840 px. Close views get
+// their sharpness from geographically narrow regional detail requests, so an 8K
+// whole-world texture only burns GPU memory and competes with other accelerated
+// browser content such as video playback.
+export const ATLAS_RELIEF_TEXTURE_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/3840px-Solarsystemscope_texture_8k_earth_daymap.jpg';
+export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = ATLAS_RELIEF_TEXTURE_URL;
 export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_daymap.jpg';
 export const ATLAS_RELIEF_CREDIT = 'Solar System Scope, CC BY 4.0; based on NASA elevation and imagery data';
 
 // Close atlas views use progressively smaller geographic windows rather than
 // stretching one world bitmap beyond its useful resolution. The renderer asks
 // NASA GIBS for only the region facing the camera and cross-fades between
-// successive requests. Each narrower level therefore carries more source pixels
-// per degree without decoding a gigantic whole-world image in the browser.
+// successive requests. Widths are deliberately bounded so two transition
+// textures can coexist without creating a large GPU-memory spike.
 export const ATLAS_DETAIL_LEVELS = Object.freeze([
-  Object.freeze({ id: 'local', maxGap: 12, longitudeSpan: 30, latitudeSpan: 20, width: 4096 }),
-  Object.freeze({ id: 'subregional', maxGap: 30, longitudeSpan: 48, latitudeSpan: 30, width: 4096 }),
-  Object.freeze({ id: 'regional', maxGap: 70, longitudeSpan: 78, latitudeSpan: 46, width: 3584 }),
-  Object.freeze({ id: 'continental', maxGap: 130, longitudeSpan: 120, latitudeSpan: 70, width: 3072 }),
+  Object.freeze({ id: 'local', maxGap: 12, longitudeSpan: 30, latitudeSpan: 20, width: 2560 }),
+  Object.freeze({ id: 'subregional', maxGap: 30, longitudeSpan: 48, latitudeSpan: 30, width: 2304 }),
+  Object.freeze({ id: 'regional', maxGap: 70, longitudeSpan: 78, latitudeSpan: 46, width: 2048 }),
+  Object.freeze({ id: 'continental', maxGap: 130, longitudeSpan: 120, latitudeSpan: 70, width: 1536 }),
 ]);
-export const ATLAS_DETAIL_FADE_MS = 520;
+export const ATLAS_DETAIL_FADE_MS = 360;
 export const ATLAS_DETAIL_SOURCE_PAGE = 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/';
 export const ATLAS_DETAIL_CREDIT = 'NASA Earth Observatory Blue Marble: Next Generation, served by NASA GIBS';
 const ATLAS_DETAIL_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi';
@@ -75,7 +77,7 @@ export function atlasDetailBounds(center, level) {
 
   const west = quantized.longitude - longitudeSpan / 2;
   const east = quantized.longitude + longitudeSpan / 2;
-  // A single WMS rectangle cannot wrap through the antimeridian. The 8K global
+  // A single WMS rectangle cannot wrap through the antimeridian. The global
   // layer remains the deliberate fallback in that narrow circumstance.
   if (west < -180 || east > 180) return null;
 
@@ -93,8 +95,8 @@ export function atlasDetailUrl(bounds, level) {
   if (!bounds || !level) return null;
   const longitudeSpan = bounds.east - bounds.west;
   const latitudeSpan = bounds.north - bounds.south;
-  const width = clamp(Math.round(level.width), 1024, 4096);
-  const height = clamp(Math.round(width * latitudeSpan / longitudeSpan), 768, 4096);
+  const width = clamp(Math.round(level.width), 1024, 3072);
+  const height = clamp(Math.round(width * latitudeSpan / longitudeSpan), 768, 3072);
   const params = new URLSearchParams({
     version: '1.1.1',
     service: 'WMS',

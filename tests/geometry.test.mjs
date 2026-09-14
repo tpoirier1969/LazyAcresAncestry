@@ -22,6 +22,7 @@ const n = projectSpherePoint(near, camera, 40);
 const m = projectSpherePoint(mid, camera, 40);
 const f = projectSpherePoint(far, camera, 40);
 assert(n.z < m.z && m.z < f.z, 'distance from camera must rise smoothly with arc distance');
+assert.equal(projectSpherePoint({ x: 0, y: 0, z: 1 }, camera, 40), null, 'back-side sphere points must not project across the visible atlas horizon');
 const fn = projectedTangentFrame(near, camera, 40, 1, 0.82);
 const fm = projectedTangentFrame(mid, camera, 40, 1, 0.82);
 const ff = projectedTangentFrame(far, camera, 40, 1, 0.82);

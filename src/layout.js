@@ -310,6 +310,7 @@ function buildGenerationUnits(
         parentsByChild,
         distances,
       );
+      const distance = Math.min(...members.map(member => distances.get(member) ?? 1e9));
       const anchorMember = [...members].sort((a, b) => (
         (distances.get(a) ?? 1e9) - (distances.get(b) ?? 1e9)
         || memberSeed(a, b, byId, rootId)
@@ -323,6 +324,7 @@ function buildGenerationUnits(
         level,
         members,
         anchorMember,
+        distance,
         parentUnits: new Set(),
         layoutParentUnits: new Set(),
         childUnits: new Set(),
@@ -467,10 +469,15 @@ function blockPlacements(units) {
     });
   }
 
-  const span = entries.length ? entries[entries.length - 1].x - entries[0].x : 0;
-  const midpoint = entries.length ? (entries[0].x + entries[entries.length - 1].x) / 2 : 0;
-  entries.forEach(entry => { entry.offset = entry.x - midpoint; });
-  return { entries, span };
+  if (!entries.length) return { entries, span: 0 };
+  const anchorUnit = [...units].sort((a, b) => a.distance - b.distance || compareSeed(a, b))[0];
+  const anchorEntries = entries.filter(entry => entry.unitId === anchorUnit.id);
+  const anchorMidpoint = anchorEntries.length
+    ? (anchorEntries[0].x + anchorEntries[anchorEntries.length - 1].x) / 2
+    : (entries[0].x + entries[entries.length - 1].x) / 2;
+  entries.forEach(entry => { entry.offset = entry.x - anchorMidpoint; });
+  const extent = Math.max(...entries.map(entry => Math.abs(entry.offset)), 0);
+  return { entries, span: extent * 2 };
 }
 
 function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {

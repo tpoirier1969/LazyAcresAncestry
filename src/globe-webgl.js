@@ -1,6 +1,7 @@
 import {
   ATLAS_HOME_ANCHOR,
   ATLAS_RELIEF_TEXTURE_FALLBACK_URL,
+  ATLAS_RELIEF_TEXTURE_ULTRA_URL,
   ATLAS_RELIEF_TEXTURE_URL,
 } from './atlas-map.js';
 
@@ -32,7 +33,7 @@ export function atlasPointToLocal(longitudeDeg, latitudeDeg, anchor = ATLAS_HOME
   };
 }
 
-export function buildSphereMesh(longitudeSegments = 320, latitudeSegments = 160) {
+export function buildSphereMesh(longitudeSegments = 360, latitudeSegments = 180) {
   const vertices = [];
   const indices = [];
 
@@ -159,11 +160,13 @@ export class GlobeWebGLRenderer {
   loadDetailTexture() {
     const gl = this.gl;
     const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096;
-    const reliefUrl = maxTextureSize >= 8192
-      ? ATLAS_RELIEF_TEXTURE_URL
-      : ATLAS_RELIEF_TEXTURE_FALLBACK_URL;
+    const candidates = maxTextureSize >= 16384
+      ? [ATLAS_RELIEF_TEXTURE_ULTRA_URL, ATLAS_RELIEF_TEXTURE_URL, ATLAS_RELIEF_TEXTURE_FALLBACK_URL]
+      : maxTextureSize >= 8192
+        ? [ATLAS_RELIEF_TEXTURE_URL, ATLAS_RELIEF_TEXTURE_FALLBACK_URL]
+        : [ATLAS_RELIEF_TEXTURE_FALLBACK_URL];
 
-    this.loadImageIntoTexture(this.reliefTexture, reliefUrl, {
+    this.loadFirstAvailableTexture(this.reliefTexture, candidates, {
       name: 'Atlas high-resolution detail texture',
       onLoad: image => {
         this.reliefSize = imageSize(image, this.reliefSize);
@@ -172,7 +175,22 @@ export class GlobeWebGLRenderer {
     });
   }
 
-  loadImageIntoTexture(texture, url, { name = 'Atlas texture', onLoad = null } = {}) {
+  loadFirstAvailableTexture(texture, urls, options = {}) {
+    const [url, ...fallbacks] = urls;
+    if (!url) return;
+    this.loadImageIntoTexture(texture, url, {
+      ...options,
+      onError: () => {
+        if (fallbacks.length) {
+          this.loadFirstAvailableTexture(texture, fallbacks, options);
+        } else {
+          console.error(`${options.name || 'Atlas texture'} failed to load`, url);
+        }
+      },
+    });
+  }
+
+  loadImageIntoTexture(texture, url, { name = 'Atlas texture', onLoad = null, onError = null } = {}) {
     const image = new Image();
     image.decoding = 'async';
     image.crossOrigin = 'anonymous';
@@ -186,7 +204,8 @@ export class GlobeWebGLRenderer {
       onLoad?.(image);
     }, { once: true });
     image.addEventListener('error', () => {
-      console.error(`${name} failed to load`, url);
+      if (onError) onError();
+      else console.error(`${name} failed to load`, url);
     }, { once: true });
     image.src = url;
   }
@@ -359,7 +378,7 @@ function isPowerOfTwo(value) {
 }
 
 function createShader(gl, type, source) {
-  const shader = gl.createShader(type);
+  const shader = gl.createShader(gl[type] ? gl[type] : type);
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
@@ -473,15 +492,10 @@ void main() {
     smoothstep(0.015, 0.15, detailBlue) * 0.92
   );
 
-  // The sea is deliberately only a cool grey-green wash. Antique paper and
-  // ink remain dominant, so water reads as aged cartography rather than a
-  // modern blue political or satellite map.
   vec3 landPaper = vec3(0.82, 0.71, 0.52);
   vec3 seaPaper = vec3(0.68, 0.69, 0.65);
   vec3 antique = mix(landPaper, seaPaper, water);
 
-  // Use the 8K layer primarily as luminance/relief. That gives close views
-  // real geographic detail without importing its modern photographic color.
   float broadRelief = (sourceLuma - 0.50) * 0.54 + (detailLuma - 0.50) * 0.38;
   antique += broadRelief * mix(vec3(0.50, 0.41, 0.28), vec3(0.31, 0.34, 0.31), water);
 
@@ -497,8 +511,6 @@ void main() {
   float detailSouth = luminance(texture2D(uRelief, vUv - vec2(0.0, uReliefTexel.y)).rgb);
   float detailNeighbor = (detailEast + detailWest + detailNorth + detailSouth) * 0.25;
 
-  // Local-contrast sharpening preserves mountains, drainage and fine terrain
-  // at close zoom. It is tonal sharpening, not a generated landmass outline.
   float fineDetail = clamp(
     (sourceLuma - sourceNeighbor) * 2.1 + (detailLuma - detailNeighbor) * 1.85,
     -0.20,
@@ -506,8 +518,6 @@ void main() {
   );
   antique += fineDetail * mix(vec3(0.74, 0.60, 0.39), vec3(0.43, 0.47, 0.42), water);
 
-  // A second directional high-frequency term gives relief a lightly engraved
-  // quality without tracing coastlines or political boundaries.
   float reliefGradient = length(vec2(detailEast - detailWest, detailNorth - detailSouth));
   float engraving = smoothstep(0.020, 0.11, reliefGradient);
   antique = mix(
@@ -516,8 +526,6 @@ void main() {
     engraving * mix(0.075, 0.022, water)
   );
 
-  // Native imagery color is almost entirely suppressed. A tiny remainder
-  // keeps lakes and terrain from becoming monochrome without looking modern.
   vec3 mutedDetail = mix(vec3(detailLuma), detail, 0.12);
   antique = mix(antique, mutedDetail, 0.022);
 
@@ -529,8 +537,6 @@ void main() {
   vec4 label = texture2D(uLabels, vUv);
   antique = mix(antique, vec3(0.27, 0.19, 0.13), label.a * 0.36);
 
-  // Coarse mottling supplies the age/paper character. Fine grain stays weak
-  // so it does not turn geographic detail into blur or video noise.
   float coarseGrain = paperNoise(vUv * vec2(720.0, 360.0)) - 0.5;
   float fineGrain = paperNoise(vUv * vec2(8192.0, 4096.0)) - 0.5;
   antique += coarseGrain * vec3(0.030, 0.024, 0.016);

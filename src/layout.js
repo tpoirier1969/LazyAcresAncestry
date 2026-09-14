@@ -1,10 +1,10 @@
 import { tangentPoint } from './geometry.js';
 
 export const LAYOUT_GAPS = Object.freeze({
-  COUPLE_GAP: 1.25,
-  SIBLING_GAP: 1.55,
-  MIN_PERSON_CLEARANCE: 1.08,
-  BETWEEN_FAMILY_GAP: 2.05,
+  COUPLE_GAP: 1.30,
+  SIBLING_GAP: 1.72,
+  MIN_PERSON_CLEARANCE: 1.24,
+  BETWEEN_FAMILY_GAP: 2.38,
   GENERATION_GAP: 2.48,
 });
 

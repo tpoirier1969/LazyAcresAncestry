@@ -3,18 +3,28 @@ export const ATLAS_TEXTURE_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/Fil
 export const ATLAS_TEXTURE_CREDIT = 'Gundan / mapswire.com, CC BY-SA 4.0';
 export const ATLAS_TEXTURE_SHA1 = '2d069905a76447a5de0c11bb02628fb8d8323528';
 
-// Prefer a 16K derivative of a 21,600 x 10,800 Plate Carree physical map on
-// GPUs that can accept it. This materially improves Great Lakes and regional
-// terrain detail at the close camera distances used by the genealogy atlas.
-// If that derivative is unavailable or the GPU is smaller, the renderer falls
-// back through the established 8K and 3840px sources.
-export const ATLAS_RELIEF_TEXTURE_ULTRA_URL = 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Large_World_Map_unmodified.jpg/16384px-Large_World_Map_unmodified.jpg';
-export const ATLAS_RELIEF_TEXTURE_ULTRA_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Large_World_Map_unmodified.jpg';
-export const ATLAS_RELIEF_TEXTURE_ULTRA_CREDIT = 'MTBlack, CC BY-SA 4.0; NOAA bathymetry, NASA land data, Natural Earth III rivers/lakes';
+// Global detail remains an 8192x4096 equirectangular texture so the whole
+// sphere is continuously available without a giant decoded image in memory.
 export const ATLAS_RELIEF_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg';
 export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/3840px-Solarsystemscope_texture_8k_earth_daymap.jpg';
 export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_daymap.jpg';
 export const ATLAS_RELIEF_CREDIT = 'Solar System Scope, CC BY 4.0; based on NASA elevation and imagery data';
+
+// The normal home view spends most of its time over the Great Lakes. Rather
+// than stretching the global bitmap farther, request a high-resolution regional
+// Level-of-Detail image from NASA GIBS. It is blended into the same sphere UVs
+// only inside these geographic bounds, with feathered edges. The WMS service is
+// intended for map-image requests and avoids decoding a 20K+ global JPEG in the
+// browser merely to sharpen one visible region.
+export const ATLAS_REGIONAL_DETAIL_BOUNDS = Object.freeze({
+  west: -105,
+  south: 35,
+  east: -70,
+  north: 55,
+});
+export const ATLAS_REGIONAL_DETAIL_URL = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?version=1.1.1&service=WMS&request=GetMap&format=image/jpeg&styles=&srs=EPSG:4326&bbox=-105,35,-70,55&height=2340&width=4096&layers=BlueMarble_NextGeneration';
+export const ATLAS_REGIONAL_DETAIL_SOURCE_PAGE = 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/';
+export const ATLAS_REGIONAL_DETAIL_CREDIT = 'NASA Earth Observatory Blue Marble: Next Generation, served by NASA GIBS';
 
 // The home person is geographically anchored in the central Upper Peninsula.
 // This is a visual home reference, not a claim that genealogy layout positions

@@ -32,7 +32,7 @@ export function atlasPointToLocal(longitudeDeg, latitudeDeg, anchor = ATLAS_HOME
   };
 }
 
-export function buildSphereMesh(longitudeSegments = 256, latitudeSegments = 128) {
+export function buildSphereMesh(longitudeSegments = 320, latitudeSegments = 160) {
   const vertices = [];
   const indices = [];
 
@@ -303,22 +303,20 @@ function createAtlasLabelCanvas(width = 4096, height = 2048) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Labels are deliberately sparse and quiet. They should feel hand-lettered
-  // into the parchment, not behave like a modern political-map overlay.
   const labels = [
-    ['Mare Atlanticum', -35, 30, 30],
-    ['Mare Pacificum', -148, 8, 27],
-    ['Mare Indicum', 78, -23, 25],
-    ['Lacus Superior', -87.5, 48.0, 18],
-    ['Occidens', -118, 3, 21],
-    ['Oriens', 108, 5, 21],
+    ['Mare Atlanticum', -35, 30, 26],
+    ['Mare Pacificum', -148, 8, 24],
+    ['Mare Indicum', 78, -23, 22],
+    ['Lacus Superior', -87.5, 48.0, 16],
+    ['Occidens', -118, 3, 18],
+    ['Oriens', 108, 5, 18],
   ];
 
   labels.forEach(([text, longitude, latitude, size]) => {
     const x = ((longitude + 180) / 360) * width;
     const y = ((90 - latitude) / 180) * height;
-    ctx.font = `italic 500 ${size}px "Segoe Script", "Lucida Handwriting", "Brush Script MT", cursive`;
-    ctx.fillStyle = 'rgba(62,42,28,.42)';
+    ctx.font = `italic 500 ${size}px "Palatino Linotype", "Book Antiqua", Georgia, serif`;
+    ctx.fillStyle = 'rgba(61,43,29,.34)';
     ctx.fillText(text, x, y);
   });
 
@@ -459,7 +457,7 @@ float paperNoise(vec2 p) {
 float gridLine(float coordinate, float divisions) {
   float cell = fract(coordinate * divisions);
   float distanceToLine = min(cell, 1.0 - cell);
-  return 1.0 - smoothstep(0.0, 0.0035, distanceToLine);
+  return 1.0 - smoothstep(0.0, 0.0030, distanceToLine);
 }
 
 void main() {
@@ -475,52 +473,68 @@ void main() {
     smoothstep(0.015, 0.15, detailBlue) * 0.92
   );
 
-  // Antique parchment land with a restrained slate-blue water wash. Oceans
-  // and inland lakes use the same family so the sphere reads as one map.
+  // The sea is deliberately only a cool grey-green wash. Antique paper and
+  // ink remain dominant, so water reads as aged cartography rather than a
+  // modern blue political or satellite map.
   vec3 landPaper = vec3(0.82, 0.71, 0.52);
-  vec3 seaPaper = vec3(0.56, 0.66, 0.68);
+  vec3 seaPaper = vec3(0.68, 0.69, 0.65);
   vec3 antique = mix(landPaper, seaPaper, water);
 
-  float broadRelief = (sourceLuma - 0.50) * 0.58 + (detailLuma - 0.50) * 0.24;
-  antique += broadRelief * mix(vec3(0.50, 0.41, 0.28), vec3(0.26, 0.31, 0.32), water);
+  // Use the 8K layer primarily as luminance/relief. That gives close views
+  // real geographic detail without importing its modern photographic color.
+  float broadRelief = (sourceLuma - 0.50) * 0.54 + (detailLuma - 0.50) * 0.38;
+  antique += broadRelief * mix(vec3(0.50, 0.41, 0.28), vec3(0.31, 0.34, 0.31), water);
 
-  // Recover the fine linework that disappears when a detailed map is merely
-  // sepia-toned. This is an unsharp pass over the actual source textures, not
-  // an artificial coastline or political-border outline.
-  float sourceNeighbor = (
-    luminance(texture2D(uAtlas, vUv + vec2(uAtlasTexel.x, 0.0)).rgb)
-    + luminance(texture2D(uAtlas, vUv - vec2(uAtlasTexel.x, 0.0)).rgb)
-    + luminance(texture2D(uAtlas, vUv + vec2(0.0, uAtlasTexel.y)).rgb)
-    + luminance(texture2D(uAtlas, vUv - vec2(0.0, uAtlasTexel.y)).rgb)
-  ) * 0.25;
-  float detailNeighbor = (
-    luminance(texture2D(uRelief, vUv + vec2(uReliefTexel.x, 0.0)).rgb)
-    + luminance(texture2D(uRelief, vUv - vec2(uReliefTexel.x, 0.0)).rgb)
-    + luminance(texture2D(uRelief, vUv + vec2(0.0, uReliefTexel.y)).rgb)
-    + luminance(texture2D(uRelief, vUv - vec2(0.0, uReliefTexel.y)).rgb)
-  ) * 0.25;
+  float sourceEast = luminance(texture2D(uAtlas, vUv + vec2(uAtlasTexel.x, 0.0)).rgb);
+  float sourceWest = luminance(texture2D(uAtlas, vUv - vec2(uAtlasTexel.x, 0.0)).rgb);
+  float sourceNorth = luminance(texture2D(uAtlas, vUv + vec2(0.0, uAtlasTexel.y)).rgb);
+  float sourceSouth = luminance(texture2D(uAtlas, vUv - vec2(0.0, uAtlasTexel.y)).rgb);
+  float sourceNeighbor = (sourceEast + sourceWest + sourceNorth + sourceSouth) * 0.25;
+
+  float detailEast = luminance(texture2D(uRelief, vUv + vec2(uReliefTexel.x, 0.0)).rgb);
+  float detailWest = luminance(texture2D(uRelief, vUv - vec2(uReliefTexel.x, 0.0)).rgb);
+  float detailNorth = luminance(texture2D(uRelief, vUv + vec2(0.0, uReliefTexel.y)).rgb);
+  float detailSouth = luminance(texture2D(uRelief, vUv - vec2(0.0, uReliefTexel.y)).rgb);
+  float detailNeighbor = (detailEast + detailWest + detailNorth + detailSouth) * 0.25;
+
+  // Local-contrast sharpening preserves mountains, drainage and fine terrain
+  // at close zoom. It is tonal sharpening, not a generated landmass outline.
   float fineDetail = clamp(
-    (sourceLuma - sourceNeighbor) * 2.4 + (detailLuma - detailNeighbor) * 1.25,
-    -0.16,
-    0.16
+    (sourceLuma - sourceNeighbor) * 2.1 + (detailLuma - detailNeighbor) * 1.85,
+    -0.20,
+    0.20
   );
-  antique += fineDetail * mix(vec3(0.72, 0.59, 0.39), vec3(0.40, 0.50, 0.52), water);
+  antique += fineDetail * mix(vec3(0.74, 0.60, 0.39), vec3(0.43, 0.47, 0.42), water);
 
-  // Retain a little native color so terrain and water have depth without
-  // slipping back into a modern satellite-globe appearance.
-  vec3 mutedDetail = mix(vec3(detailLuma), detail, 0.24);
-  antique = mix(antique, mutedDetail, 0.08);
+  // A second directional high-frequency term gives relief a lightly engraved
+  // quality without tracing coastlines or political boundaries.
+  float reliefGradient = length(vec2(detailEast - detailWest, detailNorth - detailSouth));
+  float engraving = smoothstep(0.020, 0.11, reliefGradient);
+  antique = mix(
+    antique,
+    vec3(0.33, 0.27, 0.18),
+    engraving * mix(0.075, 0.022, water)
+  );
+
+  // Native imagery color is almost entirely suppressed. A tiny remainder
+  // keeps lakes and terrain from becoming monochrome without looking modern.
+  vec3 mutedDetail = mix(vec3(detailLuma), detail, 0.12);
+  antique = mix(antique, mutedDetail, 0.022);
 
   float longitudeGrid = gridLine(vUv.x, 24.0);
   float latitudeGrid = gridLine(vUv.y, 12.0);
-  float graticule = max(longitudeGrid, latitudeGrid) * 0.035;
-  antique = mix(antique, vec3(0.34, 0.28, 0.21), graticule);
+  float graticule = max(longitudeGrid, latitudeGrid) * 0.024;
+  antique = mix(antique, vec3(0.35, 0.29, 0.21), graticule);
 
   vec4 label = texture2D(uLabels, vUv);
-  antique = mix(antique, vec3(0.27, 0.19, 0.13), label.a * 0.46);
+  antique = mix(antique, vec3(0.27, 0.19, 0.13), label.a * 0.36);
 
-  float grain = paperNoise(vUv * vec2(8192.0, 4096.0));
-  antique *= 0.994 + grain * 0.012;
+  // Coarse mottling supplies the age/paper character. Fine grain stays weak
+  // so it does not turn geographic detail into blur or video noise.
+  float coarseGrain = paperNoise(vUv * vec2(720.0, 360.0)) - 0.5;
+  float fineGrain = paperNoise(vUv * vec2(8192.0, 4096.0)) - 0.5;
+  antique += coarseGrain * vec3(0.030, 0.024, 0.016);
+  antique += fineGrain * vec3(0.008, 0.007, 0.005);
 
   float facing = clamp(-vNormal.z, 0.0, 1.0);
   float sphereShade = 0.79 + 0.21 * pow(facing, 0.44);

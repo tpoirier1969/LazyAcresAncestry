@@ -9,7 +9,7 @@ assert.equal(mesh.vertexCount, (longitudeSegments + 1) * (latitudeSegments + 1))
 assert.equal(mesh.triangleCount, longitudeSegments * latitudeSegments * 2);
 assert.equal(mesh.vertices.length, mesh.vertexCount * 5);
 assert.equal(mesh.indices.length, mesh.triangleCount * 3);
-assert.equal(ATLAS_FLIP_Y, false, 'atlas upload must preserve SVG top-to-bottom orientation');
+assert.equal(ATLAS_FLIP_Y, false, 'atlas upload must preserve source-image top-to-bottom orientation');
 
 const vertex = index => {
   const offset = index * 5;

@@ -1,6 +1,7 @@
 import {
   apparentSphereRadius,
   isVisible,
+  projectedSphereVerticalBounds,
   projectSpherePoint,
   projectedTangentFrame,
   requiredSphereRadius,
@@ -20,7 +21,9 @@ const PLAQUE = { width: 1.20, height: 1.08 };
 const RADIUS = Math.max(225, requiredSphereRadius({ count: POPULATION, plaqueWidth: 1, plaqueHeight: 0.75, spacingFactor: 1.8 }));
 const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
-const MAX_GAP = 180;
+const OVERVIEW_GAP = 155;
+const ABSOLUTE_MAX_GAP = 520;
+const SPHERE_TOP_INSET = 14;
 const RELATIONSHIP_COLORS = Object.freeze({
   couple: 'rgba(119,55,47,.97)',
   descent: 'rgba(132,62,52,.97)',
@@ -86,27 +89,31 @@ export class GlobeScene {
     this.requestDraw();
   }
 
-  camera() {
+  cameraAt(gap, offset = this.cameraOffset) {
     const dpr = Number(this.canvas.dataset.dpr || 1);
     const w = this.canvas.width / dpr;
     const h = this.canvas.height / dpr;
     const focal = Math.min(w, h) * 1.04;
-    const centerZ = RADIUS + this.cameraGap;
-    const behavior = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP);
+    const centerZ = RADIUS + gap;
+    const behavior = cameraBehavior(gap, MIN_GAP, OVERVIEW_GAP);
     const baseCenterY = cameraCenterY({
       height: h,
       targetYRatio: behavior.targetYRatio,
     });
 
     return {
-      cx: w / 2 + this.cameraOffset.x,
-      cy: baseCenterY + this.cameraOffset.y,
+      cx: w / 2 + offset.x,
+      cy: baseCenterY + offset.y,
       focal,
       centerZ,
       near: 0.1,
       dpr,
       ...behavior,
     };
+  }
+
+  camera() {
+    return this.cameraAt(this.cameraGap);
   }
 
   bind() {
@@ -116,12 +123,13 @@ export class GlobeScene {
       this.canvas.setPointerCapture(event.pointerId);
       this.drag = { x: event.clientX, y: event.clientY, yaw: this.yaw, pitch: this.pitch, moved: false };
     });
+
     this.canvas.addEventListener('pointermove', event => {
       if (!this.drag) return;
       const dx = event.clientX - this.drag.x;
       const dy = event.clientY - this.drag.y;
       if (Math.hypot(dx, dy) > 3) this.drag.moved = true;
-      const sensitivity = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP).dragSensitivity;
+      const sensitivity = cameraBehavior(this.cameraGap, MIN_GAP, OVERVIEW_GAP).dragSensitivity;
       this.targetYaw = this.drag.yaw - dx * sensitivity;
       this.targetPitch = clamp(this.drag.pitch - dy * sensitivity, -1.08, 1.08);
       if (this.reduceMotion) {
@@ -132,20 +140,23 @@ export class GlobeScene {
         this.requestMotion();
       }
     });
+
     this.canvas.addEventListener('pointerup', event => {
       if (!this.drag?.moved) this.pick(event.offsetX, event.offsetY);
       this.drag = null;
     });
     this.canvas.addEventListener('pointercancel', () => { this.drag = null; });
+
     this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
       const direction = Math.sign(event.deltaY);
       if (!direction) return;
       if (!this.zoomAnchor) this.captureZoomAnchor();
+      const zoomLimit = direction > 0 ? this.zoomOutLimit() : ABSOLUTE_MAX_GAP;
       this.targetCameraGap = clamp(
         this.targetCameraGap * Math.exp(direction * 0.13),
         MIN_GAP,
-        MAX_GAP,
+        zoomLimit,
       );
       if (this.reduceMotion) {
         this.cameraGap = this.targetCameraGap;
@@ -164,12 +175,14 @@ export class GlobeScene {
       const yawDelta = shortestAngle(this.yaw, this.targetYaw);
       const pitchDelta = this.targetPitch - this.pitch;
       const gapDelta = this.targetCameraGap - this.cameraGap;
-      const behavior = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP);
+      const behavior = cameraBehavior(this.cameraGap, MIN_GAP, OVERVIEW_GAP);
       this.yaw += yawDelta * behavior.motionEase;
       this.pitch += pitchDelta * behavior.motionEase;
       this.cameraGap += gapDelta * 0.14;
       if (this.zoomAnchor) this.applyZoomAnchor();
-      const settled = Math.abs(yawDelta) < 0.00028 && Math.abs(pitchDelta) < 0.00028 && Math.abs(gapDelta) < 0.007;
+      const settled = Math.abs(yawDelta) < 0.00028
+        && Math.abs(pitchDelta) < 0.00028
+        && Math.abs(gapDelta) < 0.007;
       if (settled) {
         this.yaw = this.targetYaw;
         this.pitch = this.targetPitch;
@@ -210,8 +223,9 @@ export class GlobeScene {
       this.cameraGap = DEFAULT_GAP;
       this.targetCameraGap = DEFAULT_GAP;
     }
+
     const target = yawPitchToFront(local);
-    const behavior = cameraBehavior(this.cameraGap, MIN_GAP, MAX_GAP);
+    const behavior = cameraBehavior(this.cameraGap, MIN_GAP, OVERVIEW_GAP);
     const from = {
       yaw: this.yaw,
       pitch: this.pitch,
@@ -219,11 +233,9 @@ export class GlobeScene {
       offsetY: this.cameraOffset.y,
     };
 
-    // A newly selected person becomes the canonical tree focus. Zoom may keep
-    // the current distance, but it must not inherit a screen offset that was
-    // created to anchor the previously focused person. Retiring that offset as
-    // part of the same focus animation prevents the intermittent off-screen
-    // jump that occurred after certain zoom sequences.
+    // A newly selected person becomes the tree focus. The previous person's
+    // zoom-anchor offset is retired as part of the same transition so a click
+    // cannot intermittently fling the new focus beyond the viewport.
     if (this.reduceMotion) {
       this.yaw = this.targetYaw = target.yaw;
       this.pitch = this.targetPitch = target.pitch;
@@ -265,6 +277,49 @@ export class GlobeScene {
     this.zoomAnchor = point ? { x: point.x, y: point.y } : null;
   }
 
+  cameraAnchoredAtGap(gap, anchor) {
+    const local = this.positions.get(this.focusedId);
+    if (!local || !anchor) return this.cameraAt(gap);
+    const unit = rotatePoint(local, this.yaw, this.pitch);
+    const baseCamera = this.cameraAt(gap, { x: 0, y: 0 });
+    const projected = projectSpherePoint(unit, baseCamera, RADIUS);
+    if (!projected) return this.cameraAt(gap);
+    return this.cameraAt(gap, {
+      x: anchor.x - projected.x,
+      y: anchor.y - projected.y,
+    });
+  }
+
+  zoomOutLimit() {
+    const anchor = this.zoomAnchor || this.focusedScreenPoint();
+    if (!anchor || !this.focusedId) return OVERVIEW_GAP;
+
+    const topAt = gap => {
+      const bounds = projectedSphereVerticalBounds(this.cameraAnchoredAtGap(gap, anchor), RADIUS);
+      return bounds?.top ?? -Infinity;
+    };
+
+    // The ordinary wide view is tuned to put the sphere apex just under the
+    // viewport top. If the focused person has been panned upward, preserve that
+    // person's screen position and increase camera distance only as much as is
+    // needed to recover the same top margin.
+    if (topAt(OVERVIEW_GAP) >= SPHERE_TOP_INSET) {
+      return Math.max(this.cameraGap, OVERVIEW_GAP);
+    }
+    if (topAt(ABSOLUTE_MAX_GAP) < SPHERE_TOP_INSET) {
+      return ABSOLUTE_MAX_GAP;
+    }
+
+    let low = OVERVIEW_GAP;
+    let high = ABSOLUTE_MAX_GAP;
+    for (let i = 0; i < 24; i += 1) {
+      const middle = (low + high) / 2;
+      if (topAt(middle) < SPHERE_TOP_INSET) low = middle;
+      else high = middle;
+    }
+    return Math.max(this.cameraGap, high);
+  }
+
   applyZoomAnchor() {
     if (!this.zoomAnchor || !this.focusedId) return;
     const point = this.focusedScreenPoint();
@@ -300,11 +355,15 @@ export class GlobeScene {
 
   drawRelationships(camera) {
     const knownIds = new Set(this.positions.keys());
-    const { spousePairs, parentSets, siblingClusters } = buildRelationshipGroups(this.relationships, knownIds, this.people);
+    const { spousePairs, parentSets, siblingClusters } = buildRelationshipGroups(
+      this.relationships,
+      knownIds,
+      this.people,
+    );
     siblingClusters.forEach(ids => this.drawImportedSiblingCluster(ids, camera));
     spousePairs.forEach(([a, b]) => this.drawCoupleBar(a, b, camera));
     parentSets.forEach(group => {
-      if (group.children.length > 1) this.drawSiblingGroup(group.parents, group.children, camera));
+      if (group.children.length > 1) this.drawSiblingGroup(group.parents, group.children, camera);
       else this.drawDescent(group.parents, group.children[0], camera);
     });
   }
@@ -381,12 +440,17 @@ export class GlobeScene {
       const b = xyPoints[segment + 1];
       for (let i = 0; i <= steps; i += 1) {
         const t = i / steps;
-        const local = tangentPoint(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, RADIUS);
+        const local = tangentPoint(
+          a[0] + (b[0] - a[0]) * t,
+          a[1] + (b[1] - a[1]) * t,
+          RADIUS,
+        );
         const unit = rotatePoint(local, this.yaw, this.pitch);
         const q = projectSpherePoint(unit, camera, RADIUS + 0.012);
         sampled.push(isVisible(unit, q) ? q : null);
       }
     }
+
     const ctx = this.ctx;
     ctx.save();
     ctx.lineCap = 'round';
@@ -480,12 +544,15 @@ export class GlobeScene {
 export function buildRelationshipGroups(relationships, knownIds = null, people = []) {
   const isKnown = id => Boolean(id) && (!knownIds || knownIds.has(id));
   const parentLinks = relationships.filter(link => link.type === 'parent' && isKnown(link.from) && isKnown(link.to));
-  const spousePairs = uniquePairs(relationships.filter(link => link.type === 'spouse' && isKnown(link.from) && isKnown(link.to)));
+  const spousePairs = uniquePairs(
+    relationships.filter(link => link.type === 'spouse' && isKnown(link.from) && isKnown(link.to)),
+  );
   const parentsByChild = new Map();
   parentLinks.forEach(link => {
     if (!parentsByChild.has(link.to)) parentsByChild.set(link.to, new Set());
     parentsByChild.get(link.to).add(link.from);
   });
+
   const groupedChildren = new Map();
   parentsByChild.forEach((parents, childId) => {
     const parentIds = [...parents].sort();
@@ -494,11 +561,6 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
     groupedChildren.get(key).children.push(childId);
   });
 
-  // The prototype import already carries cluster metadata for grandparent
-  // sibling groups even where their parents were intentionally omitted from
-  // the 44-person subset. Use that metadata only as a sibling-group rail. It
-  // connects the imported people without inventing unnamed parents or spouse
-  // relationships that are not present in the relationship table.
   const clusters = new Map();
   people.forEach(person => {
     if (!isKnown(person.id) || !person.cluster) return;
@@ -512,42 +574,41 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
 
   return {
     spousePairs,
-    parentSets: [...groupedChildren.values()].map(group => ({ parents: group.parents, children: [...new Set(group.children)].sort() })),
+    parentSets: [...groupedChildren.values()].map(group => ({
+      parents: group.parents,
+      children: [...new Set(group.children)].sort(),
+    })),
     siblingClusters,
   };
 }
 
-function sphereScreenCenter(camera, radius) {
-  const tilt = camera.viewTilt || 0;
-  const cp = Math.cos(tilt);
-  const sp = Math.sin(tilt);
-  const pivotZ = camera.centerZ - radius;
-  const worldY = -sp * radius;
-  const worldZ = pivotZ + cp * radius;
-  const scale = camera.focal / Math.max(camera.near, worldZ);
-  return {
-    x: camera.cx,
-    y: camera.cy - worldY * scale,
-  };
-}
-
 function drawSphereBase(ctx, camera, radius) {
+  const bounds = projectedSphereVerticalBounds(camera, radius);
+  if (!bounds) return;
   const pr = apparentSphereRadius(camera, radius);
-  const center = sphereScreenCenter(camera, radius);
   ctx.save();
   ctx.shadowColor = 'rgba(45,29,18,.42)';
   ctx.shadowBlur = 46;
   ctx.fillStyle = '#dec48d';
   ctx.beginPath();
-  ctx.arc(center.x, center.y, pr, 0, Math.PI * 2);
+  ctx.arc(camera.cx, bounds.centerY, pr, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
 
 function drawSphereShade(ctx, camera, radius) {
+  const bounds = projectedSphereVerticalBounds(camera, radius);
+  if (!bounds) return;
   const pr = apparentSphereRadius(camera, radius);
-  const center = sphereScreenCenter(camera, radius);
-  const g = ctx.createRadialGradient(center.x - pr * 0.10, center.y - pr * 0.28, pr * 0.10, center.x, center.y, pr);
+  const centerY = bounds.centerY;
+  const g = ctx.createRadialGradient(
+    camera.cx - pr * 0.10,
+    centerY - pr * 0.28,
+    pr * 0.10,
+    camera.cx,
+    centerY,
+    pr,
+  );
   g.addColorStop(0, 'rgba(255,244,207,.06)');
   g.addColorStop(0.64, 'rgba(106,71,39,.015)');
   g.addColorStop(0.86, 'rgba(78,49,28,.10)');
@@ -555,7 +616,7 @@ function drawSphereShade(ctx, camera, radius) {
   ctx.save();
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.arc(center.x, center.y, pr, 0, Math.PI * 2);
+  ctx.arc(camera.cx, centerY, pr, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = 'rgba(248,224,166,.70)';
   ctx.lineWidth = 1.8;
@@ -586,9 +647,16 @@ function strokeSegments(ctx, points) {
   ctx.beginPath();
   let active = false;
   points.forEach(point => {
-    if (!point) { active = false; return; }
-    if (!active) { ctx.moveTo(point.x, point.y); active = true; }
-    else ctx.lineTo(point.x, point.y);
+    if (!point) {
+      active = false;
+      return;
+    }
+    if (!active) {
+      ctx.moveTo(point.x, point.y);
+      active = true;
+    } else {
+      ctx.lineTo(point.x, point.y);
+    }
   });
   ctx.stroke();
 }
@@ -599,4 +667,7 @@ function shortestAngle(from, to) {
   if (diff < -Math.PI) diff += Math.PI * 2;
   return diff;
 }
-function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}

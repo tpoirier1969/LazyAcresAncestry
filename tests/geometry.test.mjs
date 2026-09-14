@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   requiredSphereRadius,
   tangentPoint,
   projectSpherePoint,
   projectedTangentFrame,
-  projectedRaisedFrame,
   rotatePoint,
   slerpUnit,
   yawPitchToFront,
@@ -31,13 +31,11 @@ const height = frame => Math.hypot(frame.yAxis.x, frame.yAxis.y) * 2;
 assert(width(fn) > width(fm) && width(fm) > width(ff), 'equal-size plaques must shrink monotonically with distance');
 assert(width(fn) / width(fm) < 1.35, 'near generations should not jump abruptly in apparent size');
 
-const raisedCamera = { cx: 800, cy: 2100, focal: 900, centerZ: 84.2, near: 0.1 };
+const slopedCamera = { cx: 800, cy: 2100, focal: 900, centerZ: 84.2, near: 0.1 };
 const sloped = rotatePoint(tangentPoint(0, 15, 78), 0, 0.15);
-const flatSloped = projectedTangentFrame(sloped, raisedCamera, 78, 1, 0.86);
-const raisedSloped = projectedRaisedFrame(sloped, raisedCamera, 78, 1, 0.86, 0.20);
-assert(raisedSloped?.anchor, 'raised plaque must expose its projected sphere contact point');
-assert(height(raisedSloped) > height(flatSloped) * 1.1, 'hinging plaques toward camera should reduce vertical foreshortening');
-assert(width(raisedSloped) > 0 && height(raisedSloped) > 0, 'raised plaque must remain projectable');
+const slopedFrame = projectedTangentFrame(sloped, slopedCamera, 78, 1, 0.86);
+assert(width(slopedFrame) > 0 && height(slopedFrame) > 0, 'surface-tangent plaque must remain projectable');
+assert(height(slopedFrame) < width(slopedFrame) * 1.2, 'surface tilt must naturally foreshorten a plaque rather than standing it upright');
 
 const arcMid = slerpUnit(tangentPoint(-2, 3, 40), tangentPoint(2, 3, 40), 0.5);
 assert(Math.abs(Math.hypot(arcMid.x, arcMid.y, arcMid.z) - 1) < 1e-10, 'relationship paths must remain on the sphere');
@@ -55,12 +53,42 @@ const relationshipSample = [
   { type: 'parent', from: 'P2', to: 'C2' },
   { type: 'parent', from: 'MISSING', to: 'C3' },
 ];
-const knownIds = new Set(['P1', 'P2', 'C1', 'C2', 'C3', 'UNRELATED']);
-const grouped = buildRelationshipGroups(relationshipSample, knownIds);
+const samplePeople = [
+  { id: 'P1' },
+  { id: 'P2' },
+  { id: 'C1' },
+  { id: 'C2' },
+  { id: 'C3' },
+  { id: 'G1', role: 'grandparent', cluster: 'family-a' },
+  { id: 'G2', role: 'grandparent-sibling', cluster: 'family-a' },
+  { id: 'UNRELATED' },
+];
+const knownIds = new Set(samplePeople.map(person => person.id));
+const grouped = buildRelationshipGroups(relationshipSample, knownIds, samplePeople);
 assert.deepEqual(grouped.spousePairs, [['P1', 'P2']], 'recorded spouses should produce one partner bar');
 assert.equal(grouped.parentSets.length, 1, 'children with the same recorded parents should form one sibling group');
 assert.deepEqual(grouped.parentSets[0], { parents: ['P1', 'P2'], children: ['C1', 'C2'] });
-assert(!JSON.stringify(grouped).includes('UNRELATED'), 'layout clusters must never invent genealogical connectors');
+assert.deepEqual(grouped.siblingClusters, [['G1', 'G2']], 'imported sibling-cluster metadata should create a peer rail without inventing parents');
 assert(!JSON.stringify(grouped).includes('MISSING'), 'relationships to people outside the rendered sample must not create stray lines');
+assert(!JSON.stringify(grouped).includes('UNRELATED'), 'people without evidence or sibling-cluster metadata must not gain fabricated connectors');
 
-console.log(`geometry ok: capacity sphere diameter ${(radius * 2).toFixed(1)} plaque widths; raised plaques and relationships ok`);
+const familySample = JSON.parse(readFileSync(new URL('../data/sample-family.json', import.meta.url), 'utf8'));
+const familyIds = new Set(familySample.people.map(person => person.gedcom_id));
+const normalizedPeople = familySample.people.map(person => ({
+  id: person.gedcom_id,
+  role: person.role,
+  cluster: person.cluster,
+}));
+const normalizedRelationships = familySample.relationships.map(link => ({ type: link.type, from: link.from, to: link.to }));
+const fullGroups = buildRelationshipGroups(normalizedRelationships, familyIds, normalizedPeople);
+const connected = new Set();
+fullGroups.spousePairs.forEach(pair => pair.forEach(id => connected.add(id)));
+fullGroups.parentSets.forEach(group => {
+  group.parents.forEach(id => connected.add(id));
+  group.children.forEach(id => connected.add(id));
+});
+fullGroups.siblingClusters.forEach(ids => ids.forEach(id => connected.add(id)));
+const disconnected = [...familyIds].filter(id => !connected.has(id));
+assert.deepEqual(disconnected, [], `every current prototype person must connect to at least one other person; disconnected: ${disconnected.join(', ')}`);
+
+console.log(`geometry ok: capacity sphere diameter ${(radius * 2).toFixed(1)} plaque widths; tangent plaques and complete sample connectivity ok`);

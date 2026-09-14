@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { ATLAS_HOME_ANCHOR } from '../src/atlas-map.js';
-import { ATLAS_FLIP_Y, atlasPointToLocal, buildSphereMesh } from '../src/globe-webgl.js';
+import { ATLAS_HOME_ANCHOR, ATLAS_REGIONAL_DETAIL_BOUNDS } from '../src/atlas-map.js';
+import { ATLAS_FLIP_Y, atlasPointToLocal, atlasUvBounds, buildSphereMesh } from '../src/globe-webgl.js';
 
 const longitudeSegments = 16;
 const latitudeSegments = 8;
@@ -22,6 +22,12 @@ const southOfHome = atlasPointToLocal(ATLAS_HOME_ANCHOR.longitude, ATLAS_HOME_AN
 assert.ok(eastOfHome.x > 0 && westOfHome.x < 0, 'east/west must remain right/left around the home anchor');
 assert.ok(northOfHome.y > 0 && southOfHome.y < 0, 'north/south must remain up/down around the home anchor');
 
+const regional = atlasUvBounds(ATLAS_REGIONAL_DETAIL_BOUNDS);
+assert.ok(regional.left < regional.right && regional.top < regional.bottom, 'regional atlas UV rectangle must preserve west/east and north/south order');
+const homeU = (ATLAS_HOME_ANCHOR.longitude + 180) / 360;
+const homeV = (90 - ATLAS_HOME_ANCHOR.latitude) / 180;
+assert.ok(homeU > regional.left && homeU < regional.right && homeV > regional.top && homeV < regional.bottom, 'Upper Peninsula home anchor must fall inside the high-resolution regional detail layer');
+
 const vertex = index => {
   const offset = index * 5;
   return {
@@ -39,4 +45,7 @@ for (let i = 0; i < mesh.vertexCount; i += 1) {
   assert.ok(p.u >= 0 && p.u <= 1 && p.v >= 0 && p.v <= 1, 'UVs must remain inside the atlas texture');
 }
 
-console.log('WebGL atlas anchor, orientation, and mesh ok');
+const productionMesh = buildSphereMesh();
+assert.ok(productionMesh.vertexCount < 65536, 'default atlas mesh must remain safe for Uint16 element indices');
+
+console.log('WebGL atlas anchor, regional LOD bounds, orientation, and mesh ok');

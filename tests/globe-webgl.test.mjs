@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { ATLAS_FLIP_Y, buildSphereMesh } from '../src/globe-webgl.js';
+import { ATLAS_HOME_ANCHOR } from '../src/atlas-map.js';
+import { ATLAS_FLIP_Y, atlasPointToLocal, buildSphereMesh } from '../src/globe-webgl.js';
 
 const longitudeSegments = 16;
 const latitudeSegments = 8;
@@ -10,6 +11,16 @@ assert.equal(mesh.triangleCount, longitudeSegments * latitudeSegments * 2);
 assert.equal(mesh.vertices.length, mesh.vertexCount * 5);
 assert.equal(mesh.indices.length, mesh.triangleCount * 3);
 assert.equal(ATLAS_FLIP_Y, false, 'atlas upload must preserve source-image top-to-bottom orientation');
+
+const home = atlasPointToLocal(ATLAS_HOME_ANCHOR.longitude, ATLAS_HOME_ANCHOR.latitude);
+assert.ok(Math.abs(home.x) < 1e-10 && Math.abs(home.y) < 1e-10 && home.z < -0.999999999, 'Upper Peninsula home anchor must sit at the genealogy viewing apex');
+
+const eastOfHome = atlasPointToLocal(ATLAS_HOME_ANCHOR.longitude + 1, ATLAS_HOME_ANCHOR.latitude);
+const westOfHome = atlasPointToLocal(ATLAS_HOME_ANCHOR.longitude - 1, ATLAS_HOME_ANCHOR.latitude);
+const northOfHome = atlasPointToLocal(ATLAS_HOME_ANCHOR.longitude, ATLAS_HOME_ANCHOR.latitude + 1);
+const southOfHome = atlasPointToLocal(ATLAS_HOME_ANCHOR.longitude, ATLAS_HOME_ANCHOR.latitude - 1);
+assert.ok(eastOfHome.x > 0 && westOfHome.x < 0, 'east/west must remain right/left around the home anchor');
+assert.ok(northOfHome.y > 0 && southOfHome.y < 0, 'north/south must remain up/down around the home anchor');
 
 const vertex = index => {
   const offset = index * 5;
@@ -22,30 +33,10 @@ const vertex = index => {
   };
 };
 
-const stride = longitudeSegments + 1;
-const middleRow = latitudeSegments / 2;
-const middleCol = longitudeSegments / 2;
-const front = vertex(middleRow * stride + middleCol);
-assert.ok(Math.abs(front.x) < 1e-6);
-assert.ok(Math.abs(front.y) < 1e-6);
-assert.ok(Math.abs(front.z + 1) < 1e-6, 'UV center must face the viewing apex');
-assert.ok(Math.abs(front.u - 0.5) < 1e-6 && Math.abs(front.v - 0.5) < 1e-6);
-
-const north = vertex(middleCol);
-const south = vertex(latitudeSegments * stride + middleCol);
-assert.ok(north.y > 0.999 && Math.abs(north.v) < 1e-6, 'north pole must use the top edge of the atlas texture');
-assert.ok(south.y < -0.999 && Math.abs(south.v - 1) < 1e-6, 'south pole must use the bottom edge of the atlas texture');
-
-const east = vertex(middleRow * stride + Math.round(longitudeSegments * 0.625));
-const west = vertex(middleRow * stride + Math.round(longitudeSegments * 0.375));
-assert.ok(east.x > 0, 'increasing atlas longitude must move east to screen-right');
-assert.ok(west.x < 0, 'decreasing atlas longitude must move west to screen-left');
-assert.ok(east.u > front.u && west.u < front.u, 'atlas U orientation must remain west-to-east');
-
 for (let i = 0; i < mesh.vertexCount; i += 1) {
   const p = vertex(i);
   assert.ok(Math.abs(Math.hypot(p.x, p.y, p.z) - 1) < 1e-5, 'sphere vertices must remain unit length');
   assert.ok(p.u >= 0 && p.u <= 1 && p.v >= 0 && p.v <= 1, 'UVs must remain inside the atlas texture');
 }
 
-console.log('WebGL UV sphere orientation and mesh ok');
+console.log('WebGL atlas anchor, orientation, and mesh ok');

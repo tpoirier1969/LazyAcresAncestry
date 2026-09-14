@@ -4,8 +4,7 @@ This file tracks requested work that is intentionally not part of the current pr
 
 ## Globe interaction and scale
 
-- Increase the physical sphere radius by roughly **25%** so nearby family groups occupy a flatter-looking portion of the atlas and the globe provides more usable family-tree surface area.
-- Re-tune the default camera distance after the radius change so the opening view also presents a meaningfully larger globe without hiding the useful horizon context.
+- Re-tune the default camera distance after the larger sphere is visually verified so the opening view preserves useful horizon context.
 - Expand the zoom range substantially in both directions: allow a much closer inspection view and a much farther overview than the current limits.
 - Slow direct drag rotation and focus motion. Preserve smooth damping, but reduce the amount of globe rotation produced by the same pointer movement.
 - Re-check plaque legibility, picking, connector weights, and map texture filtering at the new near/far zoom extremes.
@@ -16,6 +15,7 @@ This file tracks requested work that is intentionally not part of the current pr
 - When selected, that person becomes the reference point for named relationships, family-side calculations, navigation, and the Home / Return button.
 - Persist the chosen home person so it survives a reload and can later follow the same signed-in user across devices.
 - Preserve a clear way to restore Tod as the default home person.
+- When a home person has a known geographic home anchor, allow the atlas to use that location as the visual home point without implying that genealogy layout positions are literal birth/residence coordinates.
 
 ## Shared notes
 
@@ -30,6 +30,13 @@ This file tracks requested work that is intentionally not part of the current pr
 - Keep source records distinct from family notes and data-quality warnings.
 - After the complete graph is restored, run the requested high-density visual test: siblings for visible family groups, Donna's side to the same generation depth, one additional ancestral generation with siblings, and descendants for the displayed families.
 
-## Media
+## Media and galleries
 
-- Connect Person Details and galleries to the ancestry-prefixed media and media-person tables once the real media archive is populated.
+- Let the user add images directly to a person's record over time without requiring a GEDCOM re-import.
+- Give each person one explicit **profile/frame image** used on the globe plus a gallery of additional photographs, scans, portraits, documents, and other media.
+- Add upload, replace, remove, caption, date, and note controls in Person Details / Gallery.
+- Allow any gallery image to be promoted with **Use as profile image** and allow the profile image to be changed without deleting the underlying gallery item.
+- Store media against the stable GEDCOM/person identifier so images survive layout changes and future GEDCOM refreshes.
+- Preserve media provenance separately from genealogy facts: uploader/source, original filename, caption, date, rights/permission status when relevant, and whether an image is imported, user-added, or inferred.
+- Connect Person Details and galleries to ancestry-prefixed Supabase media and media-person tables once authentication, write-safe RLS, and the real media archive are in place.
+- Keep the permanent binary image archive in controlled storage such as Cloudflare R2 rather than embedding large media in the public GitHub repository.

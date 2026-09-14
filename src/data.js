@@ -75,5 +75,10 @@ async function loadFallback() {
 
 function attachPortraits(family) {
   family.people.forEach(person => { person.photo = SAMPLE_PORTRAITS[person.id] || null; });
+  Object.defineProperty(family.people, 'relationships', {
+    value: family.relationships,
+    enumerable: false,
+    configurable: true,
+  });
   return family;
 }

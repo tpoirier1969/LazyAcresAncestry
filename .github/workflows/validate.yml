@@ -1,0 +1,32 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check source
+        run: |
+          for file in src/*.js; do
+            node --check "$file"
+          done
+      - name: Run deterministic tests
+        run: |
+          for test in tests/*.test.mjs; do
+            echo "Running $test"
+            node "$test"
+          done

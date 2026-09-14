@@ -1,9 +1,13 @@
 import {
+  ATLAS_DETAIL_FADE_MS,
   ATLAS_HOME_ANCHOR,
-  ATLAS_REGIONAL_DETAIL_BOUNDS,
-  ATLAS_REGIONAL_DETAIL_URL,
   ATLAS_RELIEF_TEXTURE_FALLBACK_URL,
   ATLAS_RELIEF_TEXTURE_URL,
+  atlasDetailBounds,
+  atlasDetailKey,
+  atlasDetailLevel,
+  atlasDetailStrength,
+  atlasDetailUrl,
 } from './atlas-map.js';
 
 export const ATLAS_FLIP_Y = false;
@@ -32,6 +36,28 @@ export function atlasPointToLocal(longitudeDeg, latitudeDeg, anchor = ATLAS_HOME
     y: cp * point.y - sp * z1,
     z: sp * point.y + cp * z1,
   };
+}
+
+export function atlasLocalToPoint(local, anchor = ATLAS_HOME_ANCHOR) {
+  const yaw = anchor.longitude * Math.PI / 180;
+  const pitch = -anchor.latitude * Math.PI / 180;
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
+  const y = cp * local.y + sp * local.z;
+  const z1 = -sp * local.y + cp * local.z;
+  const x = cy * local.x - sy * z1;
+  const z = sy * local.x + cy * z1;
+  return {
+    longitude: normalizeLongitude(Math.atan2(x, -z) * 180 / Math.PI),
+    latitude: Math.asin(clamp(y, -1, 1)) * 180 / Math.PI,
+  };
+}
+
+export function viewingAtlasPoint(yaw, pitch, anchor = ATLAS_HOME_ANCHOR) {
+  const front = inverseRotatePoint({ x: 0, y: 0, z: -1 }, yaw, pitch);
+  return atlasLocalToPoint(front, anchor);
 }
 
 export function buildSphereMesh(longitudeSegments = 360, latitudeSegments = 180) {
@@ -87,10 +113,13 @@ export class GlobeWebGLRenderer {
     });
     this.available = Boolean(this.gl);
     this.ready = false;
-    this.regionalReady = false;
     this.atlasSize = { width: 4424, height: 2214 };
     this.reliefSize = { width: 8192, height: 4096 };
-    this.regionalSize = { width: 4096, height: 2340 };
+    this.activeDetail = null;
+    this.nextDetail = null;
+    this.detailRequestKey = null;
+    this.detailRequestSerial = 0;
+    this.detailTransitionStart = null;
 
     if (!this.available) return;
 
@@ -98,7 +127,6 @@ export class GlobeWebGLRenderer {
       this.initialize();
       this.loadTexture();
       this.loadDetailTexture();
-      this.loadRegionalDetailTexture();
     } catch (error) {
       console.error('WebGL globe initialization failed', error);
       this.available = false;
@@ -124,13 +152,18 @@ export class GlobeWebGLRenderer {
       farDepth: gl.getUniformLocation(this.program, 'uFarDepth'),
       atlas: gl.getUniformLocation(this.program, 'uAtlas'),
       relief: gl.getUniformLocation(this.program, 'uRelief'),
-      regional: gl.getUniformLocation(this.program, 'uRegional'),
+      regionalA: gl.getUniformLocation(this.program, 'uRegionalA'),
+      regionalB: gl.getUniformLocation(this.program, 'uRegionalB'),
       labels: gl.getUniformLocation(this.program, 'uLabels'),
       atlasTexel: gl.getUniformLocation(this.program, 'uAtlasTexel'),
       reliefTexel: gl.getUniformLocation(this.program, 'uReliefTexel'),
-      regionalTexel: gl.getUniformLocation(this.program, 'uRegionalTexel'),
-      regionalBounds: gl.getUniformLocation(this.program, 'uRegionalBounds'),
-      regionalReady: gl.getUniformLocation(this.program, 'uRegionalReady'),
+      detailTexel: gl.getUniformLocation(this.program, 'uDetailTexel'),
+      regionalBoundsA: gl.getUniformLocation(this.program, 'uRegionalBoundsA'),
+      regionalBoundsB: gl.getUniformLocation(this.program, 'uRegionalBoundsB'),
+      regionalReadyA: gl.getUniformLocation(this.program, 'uRegionalReadyA'),
+      regionalReadyB: gl.getUniformLocation(this.program, 'uRegionalReadyB'),
+      regionalMix: gl.getUniformLocation(this.program, 'uRegionalMix'),
+      regionalStrength: gl.getUniformLocation(this.program, 'uRegionalStrength'),
     };
 
     const mesh = buildSphereMesh();
@@ -146,7 +179,7 @@ export class GlobeWebGLRenderer {
 
     this.texture = createSolidTexture(gl, [222, 196, 141, 255]);
     this.reliefTexture = createSolidTexture(gl, [128, 128, 128, 255]);
-    this.regionalTexture = createSolidTexture(gl, [128, 128, 128, 255]);
+    this.emptyRegionalTexture = createSolidTexture(gl, [128, 128, 128, 255]);
     this.labelTexture = createLabelTexture(gl);
 
     gl.enable(gl.DEPTH_TEST);
@@ -183,15 +216,73 @@ export class GlobeWebGLRenderer {
     });
   }
 
-  loadRegionalDetailTexture() {
-    this.loadImageIntoTexture(this.regionalTexture, ATLAS_REGIONAL_DETAIL_URL, {
-      name: 'NASA Great Lakes regional detail texture',
-      onLoad: image => {
-        this.regionalSize = imageSize(image, this.regionalSize);
-        this.regionalReady = true;
-        this.onReady?.();
-      },
-    });
+  updateRegionalDetail(camera, yaw, pitch, radius) {
+    const gap = Math.max(0, camera.centerZ - radius);
+    const level = atlasDetailLevel(gap);
+    if (!level) return;
+    const center = viewingAtlasPoint(yaw, pitch);
+    const bounds = atlasDetailBounds(center, level);
+    if (!bounds) return;
+    const key = atlasDetailKey(bounds, level);
+    if (
+      key === this.activeDetail?.key
+      || key === this.nextDetail?.key
+      || key === this.detailRequestKey
+    ) return;
+
+    const url = atlasDetailUrl(bounds, level);
+    if (!url) return;
+    this.requestRegionalDetail({ key, bounds, level, url });
+  }
+
+  requestRegionalDetail(spec) {
+    const gl = this.gl;
+    const requestSerial = ++this.detailRequestSerial;
+    this.detailRequestKey = spec.key;
+    const image = new Image();
+    image.decoding = 'async';
+    image.crossOrigin = 'anonymous';
+
+    image.addEventListener('load', () => {
+      if (!this.available || requestSerial !== this.detailRequestSerial) return;
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, ATLAS_FLIP_Y);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      configureTextureQuality(gl, image);
+
+      if (this.nextDetail?.texture) gl.deleteTexture(this.nextDetail.texture);
+      this.nextDetail = {
+        ...spec,
+        texture,
+        size: imageSize(image, { width: spec.level.width, height: spec.level.width }),
+      };
+      this.detailRequestKey = null;
+      this.detailTransitionStart = performance.now();
+      this.onReady?.();
+    }, { once: true });
+
+    image.addEventListener('error', () => {
+      if (requestSerial !== this.detailRequestSerial) return;
+      this.detailRequestKey = null;
+      console.error('Atlas progressive regional detail failed to load', spec.url);
+    }, { once: true });
+    image.src = spec.url;
+  }
+
+  settleDetailTransition(now) {
+    if (!this.nextDetail || this.detailTransitionStart == null) return 0;
+    const mix = clamp((now - this.detailTransitionStart) / ATLAS_DETAIL_FADE_MS, 0, 1);
+    if (mix < 1) {
+      this.onReady?.();
+      return mix;
+    }
+
+    if (this.activeDetail?.texture) this.gl.deleteTexture(this.activeDetail.texture);
+    this.activeDetail = this.nextDetail;
+    this.nextDetail = null;
+    this.detailTransitionStart = null;
+    return 0;
   }
 
   loadImageIntoTexture(texture, url, { name = 'Atlas texture', onLoad = null } = {}) {
@@ -228,6 +319,12 @@ export class GlobeWebGLRenderer {
     const height = this.canvas.height;
     if (!width || !height) return false;
 
+    this.updateRegionalDetail(camera, yaw, pitch, radius);
+    const now = performance.now();
+    const regionalMix = this.settleDetailTransition(now);
+    const gap = Math.max(0, camera.centerZ - radius);
+    const regionalStrength = atlasDetailStrength(gap);
+
     gl.viewport(0, 0, width, height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -248,7 +345,14 @@ export class GlobeWebGLRenderer {
     const cy = camera.cy * dpr;
     const nearDepth = Math.max(0.05, camera.centerZ - radius - 0.5);
     const farDepth = camera.centerZ + radius + 0.5;
-    const regionalBounds = atlasUvBounds(ATLAS_REGIONAL_DETAIL_BOUNDS);
+    const activeBounds = detailUvBounds(this.activeDetail);
+    const nextBounds = detailUvBounds(this.nextDetail);
+    const detailTexel = blendedDetailTexel(
+      this.activeDetail,
+      this.nextDetail,
+      regionalMix,
+      this.reliefSize,
+    );
 
     gl.uniform1f(this.locations.radius, radius);
     gl.uniform1f(this.locations.yaw, yaw);
@@ -271,24 +375,31 @@ export class GlobeWebGLRenderer {
       1 / Math.max(1, this.reliefSize.width),
       1 / Math.max(1, this.reliefSize.height),
     );
-    gl.uniform2f(
-      this.locations.regionalTexel,
-      1 / Math.max(1, this.regionalSize.width),
-      1 / Math.max(1, this.regionalSize.height),
+    gl.uniform2f(this.locations.detailTexel, detailTexel.x, detailTexel.y);
+    gl.uniform4f(
+      this.locations.regionalBoundsA,
+      activeBounds.left,
+      activeBounds.top,
+      activeBounds.right,
+      activeBounds.bottom,
     );
     gl.uniform4f(
-      this.locations.regionalBounds,
-      regionalBounds.left,
-      regionalBounds.top,
-      regionalBounds.right,
-      regionalBounds.bottom,
+      this.locations.regionalBoundsB,
+      nextBounds.left,
+      nextBounds.top,
+      nextBounds.right,
+      nextBounds.bottom,
     );
-    gl.uniform1f(this.locations.regionalReady, this.regionalReady ? 1 : 0);
+    gl.uniform1f(this.locations.regionalReadyA, this.activeDetail ? 1 : 0);
+    gl.uniform1f(this.locations.regionalReadyB, this.nextDetail ? 1 : 0);
+    gl.uniform1f(this.locations.regionalMix, regionalMix);
+    gl.uniform1f(this.locations.regionalStrength, regionalStrength);
 
     bindTexture(gl, this.texture, 0, this.locations.atlas);
     bindTexture(gl, this.reliefTexture, 1, this.locations.relief);
     bindTexture(gl, this.labelTexture, 2, this.locations.labels);
-    bindTexture(gl, this.regionalTexture, 3, this.locations.regional);
+    bindTexture(gl, this.activeDetail?.texture || this.emptyRegionalTexture, 3, this.locations.regionalA);
+    bindTexture(gl, this.nextDetail?.texture || this.emptyRegionalTexture, 4, this.locations.regionalB);
 
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
     return this.ready;
@@ -296,11 +407,54 @@ export class GlobeWebGLRenderer {
 }
 
 export function atlasUvBounds(bounds) {
+  if (!bounds) return { left: 0, top: 0, right: 1, bottom: 1 };
   return {
     left: (bounds.west + 180) / 360,
     top: (90 - bounds.north) / 180,
     right: (bounds.east + 180) / 360,
     bottom: (90 - bounds.south) / 180,
+  };
+}
+
+function detailUvBounds(detail) {
+  return atlasUvBounds(detail?.bounds || null);
+}
+
+function detailGlobalTexel(detail, fallbackSize) {
+  if (!detail) {
+    return {
+      x: 1 / Math.max(1, fallbackSize.width),
+      y: 1 / Math.max(1, fallbackSize.height),
+    };
+  }
+  const bounds = atlasUvBounds(detail.bounds);
+  return {
+    x: (bounds.right - bounds.left) / Math.max(1, detail.size.width),
+    y: (bounds.bottom - bounds.top) / Math.max(1, detail.size.height),
+  };
+}
+
+function blendedDetailTexel(active, next, mix, fallbackSize) {
+  const a = detailGlobalTexel(active, fallbackSize);
+  const b = detailGlobalTexel(next, fallbackSize);
+  const t = next ? mix : 0;
+  return {
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+  };
+}
+
+function inverseRotatePoint(point, yaw, pitch) {
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
+  const y = cp * point.y + sp * point.z;
+  const z1 = -sp * point.y + cp * point.z;
+  return {
+    x: cy * point.x - sy * z1,
+    y,
+    z: sy * point.x + cy * z1,
   };
 }
 
@@ -405,6 +559,14 @@ function isPowerOfTwo(value) {
   return value > 0 && (value & (value - 1)) === 0;
 }
 
+function normalizeLongitude(value) {
+  return ((value + 180) % 360 + 360) % 360 - 180;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -505,13 +667,18 @@ precision highp float;
 
 uniform sampler2D uAtlas;
 uniform sampler2D uRelief;
-uniform sampler2D uRegional;
+uniform sampler2D uRegionalA;
+uniform sampler2D uRegionalB;
 uniform sampler2D uLabels;
 uniform vec2 uAtlasTexel;
 uniform vec2 uReliefTexel;
-uniform vec2 uRegionalTexel;
-uniform vec4 uRegionalBounds;
-uniform float uRegionalReady;
+uniform vec2 uDetailTexel;
+uniform vec4 uRegionalBoundsA;
+uniform vec4 uRegionalBoundsB;
+uniform float uRegionalReadyA;
+uniform float uRegionalReadyB;
+uniform float uRegionalMix;
+uniform float uRegionalStrength;
 varying vec2 vUv;
 varying vec3 vNormal;
 
@@ -529,27 +696,32 @@ float gridLine(float coordinate, float divisions) {
   return 1.0 - smoothstep(0.0, 0.0030, distanceToLine);
 }
 
-float regionalMask(vec2 uv) {
-  vec2 span = max(uRegionalBounds.zw - uRegionalBounds.xy, vec2(0.000001));
-  vec2 low = (uv - uRegionalBounds.xy) / span;
-  vec2 high = (uRegionalBounds.zw - uv) / span;
+float regionalMask(vec2 uv, vec4 bounds, float ready) {
+  vec2 span = max(bounds.zw - bounds.xy, vec2(0.000001));
+  vec2 low = (uv - bounds.xy) / span;
+  vec2 high = (bounds.zw - uv) / span;
   float edge = min(min(low.x, low.y), min(high.x, high.y));
   float inside = step(0.0, low.x) * step(0.0, low.y) * step(0.0, high.x) * step(0.0, high.y);
-  return inside * smoothstep(0.0, 0.055, edge) * uRegionalReady;
+  return inside * smoothstep(0.0, 0.070, edge) * ready;
+}
+
+vec3 progressiveDetail(vec2 uv) {
+  vec3 value = texture2D(uRelief, uv).rgb;
+  float maskA = regionalMask(uv, uRegionalBoundsA, uRegionalReadyA) * uRegionalStrength;
+  vec2 spanA = max(uRegionalBoundsA.zw - uRegionalBoundsA.xy, vec2(0.000001));
+  vec2 uvA = clamp((uv - uRegionalBoundsA.xy) / spanA, vec2(0.0), vec2(1.0));
+  value = mix(value, texture2D(uRegionalA, uvA).rgb, maskA * (1.0 - uRegionalMix) * 0.94);
+
+  float maskB = regionalMask(uv, uRegionalBoundsB, uRegionalReadyB) * uRegionalStrength;
+  vec2 spanB = max(uRegionalBoundsB.zw - uRegionalBoundsB.xy, vec2(0.000001));
+  vec2 uvB = clamp((uv - uRegionalBoundsB.xy) / spanB, vec2(0.0), vec2(1.0));
+  value = mix(value, texture2D(uRegionalB, uvB).rgb, maskB * uRegionalMix * 0.94);
+  return value;
 }
 
 void main() {
   vec4 source = texture2D(uAtlas, vUv);
-  vec3 detail = texture2D(uRelief, vUv).rgb;
-  float regionMix = regionalMask(vUv);
-  vec2 regionalUv = clamp(
-    (vUv - uRegionalBounds.xy) / max(uRegionalBounds.zw - uRegionalBounds.xy, vec2(0.000001)),
-    vec2(0.0),
-    vec2(1.0)
-  );
-  vec3 regionalDetail = texture2D(uRegional, regionalUv).rgb;
-  detail = mix(detail, regionalDetail, regionMix * 0.92);
-
+  vec3 detail = progressiveDetail(vUv);
   float sourceLuma = luminance(source.rgb);
   float detailLuma = luminance(detail);
 
@@ -573,20 +745,10 @@ void main() {
   float sourceSouth = luminance(texture2D(uAtlas, vUv - vec2(0.0, uAtlasTexel.y)).rgb);
   float sourceNeighbor = (sourceEast + sourceWest + sourceNorth + sourceSouth) * 0.25;
 
-  float detailEast = luminance(texture2D(uRelief, vUv + vec2(uReliefTexel.x, 0.0)).rgb);
-  float detailWest = luminance(texture2D(uRelief, vUv - vec2(uReliefTexel.x, 0.0)).rgb);
-  float detailNorth = luminance(texture2D(uRelief, vUv + vec2(0.0, uReliefTexel.y)).rgb);
-  float detailSouth = luminance(texture2D(uRelief, vUv - vec2(0.0, uReliefTexel.y)).rgb);
-  if (regionMix > 0.01) {
-    vec2 rEast = clamp(regionalUv + vec2(uRegionalTexel.x, 0.0), vec2(0.0), vec2(1.0));
-    vec2 rWest = clamp(regionalUv - vec2(uRegionalTexel.x, 0.0), vec2(0.0), vec2(1.0));
-    vec2 rNorth = clamp(regionalUv + vec2(0.0, uRegionalTexel.y), vec2(0.0), vec2(1.0));
-    vec2 rSouth = clamp(regionalUv - vec2(0.0, uRegionalTexel.y), vec2(0.0), vec2(1.0));
-    detailEast = mix(detailEast, luminance(texture2D(uRegional, rEast).rgb), regionMix);
-    detailWest = mix(detailWest, luminance(texture2D(uRegional, rWest).rgb), regionMix);
-    detailNorth = mix(detailNorth, luminance(texture2D(uRegional, rNorth).rgb), regionMix);
-    detailSouth = mix(detailSouth, luminance(texture2D(uRegional, rSouth).rgb), regionMix);
-  }
+  float detailEast = luminance(progressiveDetail(vUv + vec2(uDetailTexel.x, 0.0)));
+  float detailWest = luminance(progressiveDetail(vUv - vec2(uDetailTexel.x, 0.0)));
+  float detailNorth = luminance(progressiveDetail(vUv + vec2(0.0, uDetailTexel.y)));
+  float detailSouth = luminance(progressiveDetail(vUv - vec2(0.0, uDetailTexel.y)));
   float detailNeighbor = (detailEast + detailWest + detailNorth + detailSouth) * 0.25;
 
   float fineDetail = clamp(

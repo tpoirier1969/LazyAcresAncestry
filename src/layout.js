@@ -22,11 +22,12 @@ const ROLE_LEVEL = Object.freeze({
 export function layoutSample(people, radius, relationships = []) {
   const positions = new Map();
   if (!people.length) return positions;
+  const graph = relationships.length ? relationships : (people.relationships || []);
 
   const byId = new Map(people.map(person => [person.id, person]));
   const known = new Set(byId.keys());
-  const parentLinks = relationships.filter(link => link.type === 'parent' && known.has(link.from) && known.has(link.to));
-  const spouseLinks = relationships.filter(link => link.type === 'spouse' && known.has(link.from) && known.has(link.to));
+  const parentLinks = graph.filter(link => link.type === 'parent' && known.has(link.from) && known.has(link.to));
+  const spouseLinks = graph.filter(link => link.type === 'spouse' && known.has(link.from) && known.has(link.to));
   const root = people.find(person => person.role === 'root') || people[0];
   const levels = assignGenerations(people, root.id, parentLinks, spouseLinks);
   const parentsByChild = collectParents(parentLinks);
@@ -313,7 +314,8 @@ function mostCommon(values) {
   if (!values.length) return null;
   const counts = new Map();
   values.forEach(value => counts.set(value, (counts.get(value) || 0) + 1));
-  return [...counts.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0][0];
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0][0];
 }
 
 function average(values) {

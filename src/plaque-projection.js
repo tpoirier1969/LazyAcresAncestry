@@ -2,7 +2,6 @@ export function rigidPlaquePlacement(frame, textureWidth, textureHeight) {
   if (
     !frame
     || !frame.center
-    || !frame.anchor
     || !frame.xAxis
     || !frame.yAxis
     || !textureWidth
@@ -17,10 +16,9 @@ export function rigidPlaquePlacement(frame, textureWidth, textureHeight) {
   const height = halfHeight * 2;
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
 
-  // Map the native plaque artwork onto the projected 3D plaque plane. Using
-  // both projected axes preserves the physical hinge and allows real
-  // foreshortening, so plaques read as objects resting on the globe rather
-  // than screen-facing badges.
+  // Map the native plaque artwork onto the projected physical surface plane.
+  // Both projected axes are preserved so plaques naturally foreshorten with
+  // the sphere rather than turning into screen-facing badges.
   const a = frame.xAxis.x / halfTextureWidth;
   const b = frame.xAxis.y / halfTextureWidth;
   const c = frame.yAxis.x / halfTextureHeight;
@@ -41,6 +39,6 @@ export function rigidPlaquePlacement(frame, textureWidth, textureHeight) {
     f,
     determinant,
     center: frame.center,
-    anchor: frame.anchor,
+    anchor: frame.anchor || frame.center,
   };
 }

@@ -21,7 +21,7 @@ import {
 
 assert.match(ATLAS_TEXTURE_URL, /^https:\/\/upload\.wikimedia\.org\//, 'atlas must use the detailed Wikimedia source family');
 assert.match(ATLAS_TEXTURE_URL, /2560px-Equirectangular-projection-topographic-world\.jpg$/, 'global base should use a bounded equirectangular derivative');
-assert.match(ATLAS_RELIEF_TEXTURE_URL, /3840px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'global relief should use a bounded 4K-class texture');
+assert.match(ATLAS_RELIEF_TEXTURE_URL, /2560px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'global relief should stay within the same bounded world-texture budget as the base atlas');
 assert.equal(ATLAS_RELIEF_TEXTURE_URL, ATLAS_RELIEF_TEXTURE_FALLBACK_URL, 'all GPUs should share the bounded global relief texture budget');
 assert.equal(ATLAS_DETAIL_LEVELS.length, 4, 'progressive atlas should expose four regional detail levels');
 assert.deepEqual(ATLAS_DETAIL_LEVELS.map(level => level.id), ['local', 'subregional', 'regional', 'continental']);

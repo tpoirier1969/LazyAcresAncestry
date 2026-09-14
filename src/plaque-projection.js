@@ -1,22 +1,46 @@
 export function rigidPlaquePlacement(frame, textureWidth, textureHeight) {
-  if (!frame || !frame.anchor || !frame.xAxis || !textureWidth || !textureHeight) return null;
+  if (
+    !frame
+    || !frame.center
+    || !frame.anchor
+    || !frame.xAxis
+    || !frame.yAxis
+    || !textureWidth
+    || !textureHeight
+  ) return null;
 
+  const halfTextureWidth = textureWidth / 2;
+  const halfTextureHeight = textureHeight / 2;
   const halfWidth = Math.hypot(frame.xAxis.x, frame.xAxis.y);
+  const halfHeight = Math.hypot(frame.yAxis.x, frame.yAxis.y);
   const width = halfWidth * 2;
-  if (!Number.isFinite(width) || width <= 0) return null;
+  const height = halfHeight * 2;
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
 
-  // Preserve the plaque artwork's native aspect ratio. The plaque is a rigid
-  // physical object whose lower-center hinge remains attached to the sphere.
-  // Sphere curvature/orientation changes the plaque's position and rotation,
-  // but never stretches a portrait into an egg.
-  const scale = width / textureWidth;
-  const height = textureHeight * scale;
-  const angle = Math.atan2(frame.xAxis.y, frame.xAxis.x);
-  const down = { x: -Math.sin(angle), y: Math.cos(angle) };
-  const center = {
-    x: frame.anchor.x - down.x * height * 0.5,
-    y: frame.anchor.y - down.y * height * 0.5,
+  // Map the native plaque artwork onto the projected 3D plaque plane. Using
+  // both projected axes preserves the physical hinge and allows real
+  // foreshortening, so plaques read as objects resting on the globe rather
+  // than screen-facing badges.
+  const a = frame.xAxis.x / halfTextureWidth;
+  const b = frame.xAxis.y / halfTextureWidth;
+  const c = frame.yAxis.x / halfTextureHeight;
+  const d = frame.yAxis.y / halfTextureHeight;
+  const e = frame.center.x;
+  const f = frame.center.y;
+  const determinant = a * d - b * c;
+  if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-10) return null;
+
+  return {
+    width,
+    height,
+    a,
+    b,
+    c,
+    d,
+    e,
+    f,
+    determinant,
+    center: frame.center,
+    anchor: frame.anchor,
   };
-
-  return { width, height, scale, angle, center, down, anchor: frame.anchor };
 }

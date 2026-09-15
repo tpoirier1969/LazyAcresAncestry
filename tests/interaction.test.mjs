@@ -37,28 +37,37 @@ function assertSphereCentered(message) {
   assert.ok(Math.abs(bounds.centerY - 400) < 1e-7, `${message}: projected sphere y center must remain at viewport midpoint`);
 }
 
+function assertFocusAt(target, message, tolerance = 0.75) {
+  const point = scene.focusedScreenPoint();
+  assert(point, `${message}: focused person must remain projectable`);
+  assert.ok(Math.abs(point.x - target.x) <= tolerance, `${message}: focused x moved ${Math.abs(point.x - target.x).toFixed(3)}px`);
+  assert.ok(Math.abs(point.y - target.y) <= tolerance, `${message}: focused y moved ${Math.abs(point.y - target.y).toFixed(3)}px`);
+}
+
 scene.focus('PARENT');
 assert.equal(scene.focusedId, 'PARENT');
-const focusedYaw = scene.yaw;
-const focusedPitch = scene.pitch;
+const focusedTarget = scene.focusedScreenPoint();
+assert(focusedTarget, 'focused parent should be visible before zoom');
 assertSphereCentered('after focusing another person');
 
 const wheel = listeners.get('wheel');
 assert.equal(typeof wheel, 'function', 'scene must install wheel zoom interaction');
 for (let index = 0; index < 60; index += 1) {
   wheel({ deltaY: -100, preventDefault() {} });
+  assertFocusAt(focusedTarget, `zoom-in step ${index + 1}`);
 }
 assert.equal(scene.focusedId, 'PARENT', 'zooming all the way in must never change the selected person to Home');
-assert.ok(Math.abs(scene.yaw - focusedYaw) < 1e-12, 'wheel zoom must not rotate away from the selected person');
-assert.ok(Math.abs(scene.pitch - focusedPitch) < 1e-12, 'wheel zoom must not pitch away from the selected person');
 assert.ok(scene.cameraGap <= 3.800001, 'test should actually reach the closest supported zoom');
 assertSphereCentered('at closest zoom');
+assertFocusAt(focusedTarget, 'at closest zoom');
 
 for (let index = 0; index < 100; index += 1) {
   wheel({ deltaY: 100, preventDefault() {} });
+  assertFocusAt(focusedTarget, `zoom-out step ${index + 1}`);
 }
 assert.ok(scene.cameraGap >= 519.9, 'test should actually reach the farthest supported zoom');
 assertSphereCentered('at farthest zoom');
+assertFocusAt(focusedTarget, 'at farthest zoom');
 
 const pointerDown = listeners.get('pointerdown');
 const pointerMove = listeners.get('pointermove');
@@ -68,9 +77,15 @@ pointerMove({ clientX: 650, clientY: 420 });
 pointerUp({ offsetX: 650, offsetY: 420 });
 assertSphereCentered('after drag rotation');
 
+const draggedTarget = scene.focusedScreenPoint();
+assert(draggedTarget, 'focused person should remain visible after the test drag');
+wheel({ deltaY: -100, preventDefault() {} });
+assertFocusAt(draggedTarget, 'zoom after manual rotation');
+assertSphereCentered('zoom after manual rotation');
+
 scene.focus('HOME', { resetZoom: true });
 assert.equal(scene.focusedId, 'HOME', 'Home remains an explicit focus action');
 assert.ok(scene.cameraGap > 3.8, 'explicit Home action may restore the normal home camera distance');
 assertSphereCentered('after returning Home');
 
-console.log('wheel zoom preserves focus and the projected globe center remains fixed at the viewport center');
+console.log('wheel zoom preserves the focused screen coordinate while the projected globe center remains fixed');

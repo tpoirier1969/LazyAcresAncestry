@@ -34,10 +34,31 @@ const RELATIONSHIP_COLORS = Object.freeze({
   descent: 'rgba(132,62,52,.97)',
   rail: 'rgba(143,70,58,.94)',
   stem: 'rgba(151,78,64,.92)',
-  cluster: 'rgba(151,78,64,.82)',
+  cluster: 'rgba(143,86,73,.66)',
   halo: 'rgba(247,225,190,.50)',
   shadow: 'rgba(43,28,20,.42)',
 });
+
+export function siblingClusterGuide(points, railOffset = 0.58, parentStub = 0.34) {
+  if (!Array.isArray(points) || points.length < 2) return null;
+  const sorted = points
+    .filter(point => Number.isFinite(point?.x) && Number.isFinite(point?.y))
+    .sort((a, b) => a.x - b.x);
+  if (sorted.length < 2) return null;
+
+  const averageY = sorted.reduce((sum, point) => sum + point.y, 0) / sorted.length;
+  const railY = averageY + railOffset;
+  const minX = sorted[0].x;
+  const maxX = sorted[sorted.length - 1].x;
+  const midX = (minX + maxX) / 2;
+  return {
+    rail: [[minX, railY], [maxX, railY]],
+    stems: sorted.map(point => [[point.x, point.y], [point.x, railY]]),
+    omittedParentsStub: [[midX, railY], [midX, railY + parentStub]],
+    railY,
+    averageY,
+  };
+}
 
 export class GlobeScene {
   constructor(canvas, onSelect) {
@@ -85,7 +106,10 @@ export class GlobeScene {
   get diameter() { return RADIUS * 2; }
 
   resize() {
-    const dpr = Math.min(devicePixelRatio || 1, 3);
+    // A 3x canvas roughly doubles framebuffer memory over 2x and competes with
+    // browser video decode for GPU resources. 2x remains sharp on high-DPI
+    // displays while keeping direct-manipulation interaction much lighter.
+    const dpr = Math.min(devicePixelRatio || 1, 2);
     const rect = this.canvas.getBoundingClientRect();
     this.canvas.width = Math.max(1, Math.round(rect.width * dpr));
     this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
@@ -407,29 +431,33 @@ export class GlobeScene {
 
   drawImportedSiblingCluster(ids, camera) {
     const members = ids
-      .map(id => ({ id, point: this.surfaceXY(this.positions.get(id)) }))
-      .filter(entry => entry.point)
-      .sort((a, b) => a.point.x - b.point.x);
-    if (members.length < 2) return;
-    const averageY = members.reduce((sum, entry) => sum + entry.point.y, 0) / members.length;
-    const railY = averageY - 0.52;
-    this.drawSurfacePolyline(
-      [[members[0].point.x, railY], [members[members.length - 1].point.x, railY]],
+      .map(id => this.surfaceXY(this.positions.get(id)))
+      .filter(Boolean);
+    const guide = siblingClusterGuide(members);
+    if (!guide) return;
+
+    // This is not a descendant rail. It says the visible people share parents
+    // whose generation is outside the current proof-tree scope. Draw it toward
+    // that omitted older generation so it cannot be mistaken for more children.
+    this.drawSurfacePolyline(guide.rail, camera, 1.12, RELATIONSHIP_COLORS.cluster);
+    guide.stems.forEach(stem => this.drawSurfacePolyline(
+      stem,
       camera,
-      1.28,
-      RELATIONSHIP_COLORS.cluster,
-    );
-    members.forEach(({ point }) => this.drawSurfacePolyline(
-      [[point.x, point.y], [point.x, railY]],
-      camera,
-      1.16,
+      0.96,
       RELATIONSHIP_COLORS.cluster,
     ));
+    this.drawSurfacePolyline(
+      guide.omittedParentsStub,
+      camera,
+      0.88,
+      RELATIONSHIP_COLORS.cluster,
+    );
   }
 
   drawSurfacePolyline(xyPoints, camera, width = 0.7, stroke = null) {
     const sampled = [];
-    const steps = this.drag || this.motionFrame || this.focusFrame ? 8 : 14;
+    const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
+    const steps = moving ? 6 : 12;
     for (let segment = 0; segment < xyPoints.length - 1; segment += 1) {
       const a = xyPoints[segment];
       const b = xyPoints[segment + 1];
@@ -451,14 +479,16 @@ export class GlobeScene {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.strokeStyle = RELATIONSHIP_COLORS.halo;
-    ctx.lineWidth = width + 1.35;
+    ctx.lineWidth = width + (moving ? 0.85 : 1.35);
     strokeSegments(ctx, sampled);
     ctx.strokeStyle = stroke || RELATIONSHIP_COLORS.descent;
     ctx.lineWidth = width;
-    ctx.shadowColor = RELATIONSHIP_COLORS.shadow;
-    ctx.shadowBlur = 2.4;
-    ctx.shadowOffsetX = 0.6;
-    ctx.shadowOffsetY = 1.1;
+    if (!moving) {
+      ctx.shadowColor = RELATIONSHIP_COLORS.shadow;
+      ctx.shadowBlur = 2.4;
+      ctx.shadowOffsetX = 0.6;
+      ctx.shadowOffsetY = 1.1;
+    }
     strokeSegments(ctx, sampled);
     ctx.restore();
   }

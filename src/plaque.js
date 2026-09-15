@@ -18,20 +18,20 @@ export function plaqueTexture(person, size = 520) {
 
   const canvas = document.createElement('canvas');
   canvas.width = size;
-  canvas.height = Math.round(size * 0.90);
+  canvas.height = Math.round(size * 0.92);
   const ctx = canvas.getContext('2d');
   drawWoodPlaque(ctx, canvas.width, canvas.height, metal);
   drawPortrait(ctx, canvas.width, canvas.height, person, metal);
-  drawText(ctx, canvas.width, canvas.height, person, metal);
+  drawText(ctx, canvas.width, canvas.height, person);
   CACHE.set(key, canvas);
   return canvas;
 }
 
 function drawPortrait(ctx, w, h, person, metal) {
   const cx = w * 0.5;
-  const cy = h * 0.315;
+  const cy = h * 0.34;
   const rx = w * 0.225;
-  const ry = h * 0.305;
+  const ry = h * 0.28;
   drawMetalFrame(ctx, cx, cy, rx, ry, w, metal);
 
   ctx.save();
@@ -200,11 +200,6 @@ function drawWoodPlaque(ctx, w, h, metal) {
   ctx.lineWidth = Math.max(2, w * 0.007);
   ctx.stroke();
 
-  roundedRectPath(ctx, x + w * 0.014, y + h * 0.018, width - w * 0.028, height - h * 0.036, radius * 0.72);
-  ctx.strokeStyle = metal.rule;
-  ctx.lineWidth = Math.max(1.2, w * 0.0035);
-  ctx.stroke();
-
   ctx.globalAlpha = 0.20;
   ctx.strokeStyle = '#d4a66e';
   ctx.lineWidth = Math.max(0.8, w * 0.0024);
@@ -278,7 +273,7 @@ function roundedRectPath(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-function drawText(ctx, w, h, person, metal) {
+function drawText(ctx, w, h, person) {
   const maxWidth = w * 0.74;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -302,32 +297,18 @@ function drawText(ctx, w, h, person, metal) {
     ctx.fillText(line, w * 0.5, firstNameY + index * nameLineHeight);
   });
 
-  ctx.save();
-  ctx.shadowColor = 'transparent';
-  ctx.strokeStyle = metal.rule;
-  ctx.lineWidth = Math.max(1.2, w * 0.0031);
-  ctx.beginPath();
-  ctx.moveTo(w * 0.22, h * 0.805);
-  ctx.lineTo(w * 0.78, h * 0.805);
-  ctx.stroke();
-  ctx.restore();
-
   const dates = `${person.birth?.date || '?'}${person.death?.date ? ` – ${person.death.date}` : ' –'}`;
   const date = fitWrappedText(ctx, dates, {
-    maxWidth,
-    maxLines: 2,
-    startSize: w * 0.057,
-    minSize: w * 0.043,
+    maxWidth: w * 0.80,
+    maxLines: 1,
+    startSize: w * 0.054,
+    minSize: w * 0.038,
     weight: 600,
   });
   ctx.fillStyle = '#ead5a0';
   ctx.font = `600 ${date.fontSize}px Georgia, serif`;
-  const dateLineHeight = date.fontSize * 1.02;
-  const dateCenterY = h * 0.864;
-  const firstDateY = dateCenterY - ((date.lines.length - 1) * dateLineHeight) / 2;
-  date.lines.forEach((line, index) => {
-    ctx.fillText(line, w * 0.5, firstDateY + index * dateLineHeight);
-  });
+  const dateCenterY = h * 0.862;
+  ctx.fillText(date.lines[0] || '', w * 0.5, dateCenterY);
 }
 
 function fitWrappedText(ctx, text, { maxWidth, maxLines, startSize, minSize, weight }) {

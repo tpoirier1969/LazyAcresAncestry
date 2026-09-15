@@ -23,8 +23,8 @@ const canvas = {
 const { GlobeScene } = await import('../src/scene.js');
 const scene = new GlobeScene(canvas, () => {});
 scene.setFamily([
-  { id: 'HOME', name: 'Home', role: 'root', branch: 'center', birth: { date: '1969' } },
-  { id: 'PARENT', name: 'Parent', role: 'parent', branch: 'paternal', birth: { date: '1940' } },
+  { id: 'HOME', name: 'Home', role: 'root', branch: 'center', directAncestorDepth: 0, birth: { date: '1969' } },
+  { id: 'PARENT', name: 'Parent', role: 'parent', branch: 'paternal', directAncestorDepth: 1, birth: { date: '1940' } },
 ], [
   { type: 'parent', from: 'PARENT', to: 'HOME' },
 ]);
@@ -46,28 +46,35 @@ function assertFocusAt(target, message, tolerance = 0.75) {
 
 scene.focus('PARENT');
 assert.equal(scene.focusedId, 'PARENT');
+const viewportCenter = { x: 600, y: 400 };
+assertFocusAt(viewportCenter, 'click focus must place the selected person at the visible viewport center');
 const focusedTarget = scene.focusedScreenPoint();
 assert(focusedTarget, 'focused parent should be visible before zoom');
 assertSphereCentered('after focusing another person');
 
+const customTarget = { x: 470, y: 400 };
+scene.focus('PARENT', { targetPoint: customTarget });
+assertFocusAt(customTarget, 'UI may supply the center of the unobscured map area');
+
 const wheel = listeners.get('wheel');
 assert.equal(typeof wheel, 'function', 'scene must install wheel zoom interaction');
+const anchoredTarget = scene.focusedScreenPoint();
 for (let index = 0; index < 60; index += 1) {
   wheel({ deltaY: -100, preventDefault() {} });
-  assertFocusAt(focusedTarget, `zoom-in step ${index + 1}`);
+  assertFocusAt(anchoredTarget, `zoom-in step ${index + 1}`);
 }
 assert.equal(scene.focusedId, 'PARENT', 'zooming all the way in must never change the selected person to Home');
 assert.ok(scene.cameraGap <= 3.800001, 'test should actually reach the closest supported zoom');
 assertSphereCentered('at closest zoom');
-assertFocusAt(focusedTarget, 'at closest zoom');
+assertFocusAt(anchoredTarget, 'at closest zoom');
 
 for (let index = 0; index < 100; index += 1) {
   wheel({ deltaY: 100, preventDefault() {} });
-  assertFocusAt(focusedTarget, `zoom-out step ${index + 1}`);
+  assertFocusAt(anchoredTarget, `zoom-out step ${index + 1}`);
 }
 assert.ok(scene.cameraGap >= 519.9, 'test should actually reach the farthest supported zoom');
 assertSphereCentered('at farthest zoom');
-assertFocusAt(focusedTarget, 'at farthest zoom');
+assertFocusAt(anchoredTarget, 'at farthest zoom');
 
 const pointerDown = listeners.get('pointerdown');
 const pointerMove = listeners.get('pointermove');
@@ -86,6 +93,7 @@ assertSphereCentered('zoom after manual rotation');
 scene.focus('HOME', { resetZoom: true });
 assert.equal(scene.focusedId, 'HOME', 'Home remains an explicit focus action');
 assert.ok(scene.cameraGap > 3.8, 'explicit Home action may restore the normal home camera distance');
+assertFocusAt(viewportCenter, 'returning Home must restore the home person to the viewport center');
 assertSphereCentered('after returning Home');
 
-console.log('wheel zoom preserves the focused screen coordinate while the projected globe center remains fixed');
+console.log('click focus centers the selected person while wheel zoom preserves that screen coordinate and the globe stays centered');

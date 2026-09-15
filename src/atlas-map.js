@@ -6,15 +6,15 @@ export const ATLAS_TEXTURE_SOURCE_PAGE = '';
 export const ATLAS_TEXTURE_CREDIT = 'Bundled Lazy Acres Ancestry schematic atlas; coastline reference derived from public-domain Natural Earth/Wikimedia material';
 export const ATLAS_TEXTURE_SHA1 = 'bundled-local-atlas';
 
-// The global relief layer is deliberately moderate resolution. Close views get
-// their sharpness from geographically narrow regional requests, so giant
-// whole-world textures do not monopolize GPU memory.
-export const ATLAS_RELIEF_TEXTURE_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/3840px-Solarsystemscope_texture_8k_earth_daymap.jpg';
-// If a device cannot support the relief texture size, fall back to the local
-// atlas rather than another remote dependency.
+// Wide views deliberately use the same bundled atlas as the relief source.
+// The previous global photo-relief texture produced broad bathymetric/shoreline
+// halos that could be mistaken for family or residence shading and also used a
+// large GPU texture. Close views still gain real geographic detail from the
+// regional NASA layer below.
+export const ATLAS_RELIEF_TEXTURE_URL = ATLAS_TEXTURE_URL;
 export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = ATLAS_TEXTURE_URL;
-export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_daymap.jpg';
-export const ATLAS_RELIEF_CREDIT = 'Solar System Scope, CC BY 4.0; based on NASA elevation and imagery data';
+export const ATLAS_RELIEF_SOURCE_PAGE = '';
+export const ATLAS_RELIEF_CREDIT = ATLAS_TEXTURE_CREDIT;
 
 export const ATLAS_DETAIL_LEVELS = Object.freeze([
   Object.freeze({ id: 'local', maxGap: 12, longitudeSpan: 30, latitudeSpan: 20, width: 2560 }),

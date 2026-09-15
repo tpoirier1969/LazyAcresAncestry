@@ -35,6 +35,7 @@ function emptyIndividual(id) {
     famc: [],
     birth: {},
     death: {},
+    events: [],
     adoptions: [],
     citations: [],
     rawLines: [],
@@ -67,6 +68,8 @@ function emptySource(id) {
   };
 }
 
+const GEOGRAPHY_EVENT_TAGS = new Set(['RESI', 'CENS', 'IMMI', 'EMIG']);
+
 export function parseGedcomFamilies(text) {
   const individuals = new Map();
   const families = new Map();
@@ -75,6 +78,7 @@ export function parseGedcomFamilies(text) {
   let record = null;
   let context = null;
   let currentFamc = null;
+  let currentEvent = null;
   let adoption = null;
   let citation = null;
   let citationLevel = null;
@@ -96,6 +100,7 @@ export function parseGedcomFamilies(text) {
     if (line.level === 0) {
       context = null;
       currentFamc = null;
+      currentEvent = null;
       adoption = null;
       citation = null;
       citationLevel = null;
@@ -149,6 +154,7 @@ export function parseGedcomFamilies(text) {
       if (line.level === 1) {
         context = line.tag;
         currentFamc = null;
+        currentEvent = null;
         adoption = null;
         if (line.tag === 'NAME') {
           const name = displayName(line.value);
@@ -170,6 +176,9 @@ export function parseGedcomFamilies(text) {
         } else if (line.tag === 'ADOP') {
           adoption = { familyId: null, by: null };
           record.adoptions.push(adoption);
+        } else if (GEOGRAPHY_EVENT_TAGS.has(line.tag)) {
+          currentEvent = { type: line.tag, date: '', place: '' };
+          record.events.push(currentEvent);
         }
       } else if (line.level >= 2) {
         if (context === 'BIRT') {
@@ -178,6 +187,9 @@ export function parseGedcomFamilies(text) {
         } else if (context === 'DEAT') {
           if (line.tag === 'DATE') record.death.date = line.value;
           if (line.tag === 'PLAC') record.death.place = line.value;
+        } else if (currentEvent) {
+          if (line.tag === 'DATE') currentEvent.date = line.value;
+          if (line.tag === 'PLAC') currentEvent.place = line.value;
         } else if (context === 'FAMC' && currentFamc && line.tag === 'PEDI') {
           currentFamc.pedigree = line.value.toLowerCase();
         } else if (context === 'ADOP' && adoption) {

@@ -5,7 +5,12 @@ globalThis.document = globalThis.document || { getElementById() { return null; }
 globalThis.matchMedia = globalThis.matchMedia || (() => ({ matches: false }));
 globalThis.ResizeObserver = globalThis.ResizeObserver || class { observe() {} };
 
-const { buildRelationshipGroups, familyLaneBand } = await import('../src/scene.js');
+const {
+  buildRelationshipGroups,
+  familyLaneBand,
+  familyRailY,
+  relationshipLineWidth,
+} = await import('../src/scene.js');
 
 const relationships = [
   { type: 'spouse', from: 'A', to: 'B', familyId: 'F1' },
@@ -29,6 +34,16 @@ assert.deepEqual(second.parents, ['A', 'D']);
 assert.deepEqual(second.children, ['C3']);
 assert.notEqual(first.lane, second.lane, 'families sharing a parent must receive separate rail lanes');
 assert.notEqual(familyLaneBand(first.lane), familyLaneBand(second.lane), 'separate family lanes must render at different vertical offsets');
+assert.equal(familyLaneBand(0), 0);
+assert.equal(familyLaneBand(1), 1);
+assert.equal(familyLaneBand(2), 2, 'family lanes should stack monotonically instead of alternating back onto one another');
+
+const rail0 = familyRailY(4, 0, 0);
+const rail1 = familyRailY(4, 0, 1);
+const rail2 = familyRailY(4, 0, 2);
+assert.ok(rail0 > 0 && rail0 < rail1 && rail1 < rail2, 'parallel family rails must have comfortable ordered separation');
+assert.ok(rail2 <= 1.08, 'child drop must never exceed the plaque/photo-frame height');
+assert.equal(relationshipLineWidth(), relationshipLineWidth(), 'all relationship segments must share one screen-space line width');
 
 const directAndCollateral = buildRelationshipGroups([
   { type: 'spouse', from: 'P1', to: 'P2', familyId: 'F3' },
@@ -43,4 +58,4 @@ assert.deepEqual(
   'direct ancestors and their siblings must stay on one documented family rail rather than competing routes',
 );
 
-console.log('GEDCOM family IDs keep children on the correct union rail and separate remarriage lanes');
+console.log('GEDCOM family routes use short child drops, separated parallel lanes, and one connector thickness');

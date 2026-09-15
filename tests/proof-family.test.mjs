@@ -4,6 +4,7 @@ import { parseGedcomFamilies, validateGedcomFamilyGraph } from '../src/gedcom-fa
 import {
   buildProofFamily,
   PROOF_BASE_EXPECTED_PEOPLE,
+  PROOF_BREADTH_EXPECTED_PEOPLE,
   PROOF_EXPECTED_PEOPLE,
   PROOF_ROOT_ID,
   PROOF_SIBLING_CHILD_ID,
@@ -17,15 +18,28 @@ assert.equal(validateGedcomFamilyGraph(parsed).length, 0, 'source GEDCOM relatio
 
 const family = buildProofFamily(parsed);
 assert.equal(PROOF_BASE_EXPECTED_PEOPLE, 53, 'approved proof-tree base must remain 53 people');
-assert.equal(PROOF_EXPECTED_PEOPLE, 139, 'one-step breadth proof tree must remain 139 people');
+assert.equal(PROOF_BREADTH_EXPECTED_PEOPLE, 139, 'previous UI breadth checkpoint must remain 139 people');
+assert.equal(PROOF_EXPECTED_PEOPLE, 568, 'next UI family layer must remain 568 people');
 assert.equal(family.people.length, PROOF_EXPECTED_PEOPLE);
 assert.equal(family.metadata.basePeople, PROOF_BASE_EXPECTED_PEOPLE);
+assert.equal(family.metadata.previousUiPeople, PROOF_BREADTH_EXPECTED_PEOPLE);
 
 const expansionSiblings = family.people.filter(person => person.proofExpansionKind === 'sibling');
 const expansionSpouses = family.people.filter(person => person.proofExpansionKind === 'spouse');
-assert.equal(expansionSiblings.length, 53, 'one breadth step should add 53 GEDCOM-recorded siblings');
-assert.equal(expansionSpouses.length, 33, 'one breadth step should add 33 GEDCOM-recorded spouses');
-assert.equal(PROOF_BASE_EXPECTED_PEOPLE + expansionSiblings.length + expansionSpouses.length, family.people.length);
+const expansionChildren = family.people.filter(person => person.proofExpansionKind === 'child');
+const expansionChildSpouses = family.people.filter(person => person.proofExpansionKind === 'child-spouse');
+assert.equal(expansionSiblings.length, 53, 'first breadth step should preserve 53 GEDCOM-recorded siblings');
+assert.equal(expansionSpouses.length, 75, 'all currently displayed people should gain their recorded spouses without ancestor recursion');
+assert.equal(expansionChildren.length, 249, 'one added descendant layer should contain 249 children');
+assert.equal(expansionChildSpouses.length, 138, 'new child family units should include 138 recorded spouses/co-parents');
+assert.equal(
+  PROOF_BASE_EXPECTED_PEOPLE
+    + expansionSiblings.length
+    + expansionSpouses.length
+    + expansionChildren.length
+    + expansionChildSpouses.length,
+  family.people.length,
+);
 
 const ids = new Set(family.people.map(person => person.id));
 for (const relation of family.relationships) {
@@ -55,16 +69,33 @@ assert.equal(maikelLink?.pedigree, 'adopted', 'the working proof layer must pres
 const tod = family.people.find(person => person.id === PROOF_ROOT_ID);
 assert.ok(tod?.rawGedcom?.saved_records?.length > 0, 'saved Ancestry source records must survive the GEDCOM proof import');
 assert.ok(tod.rawGedcom.saved_records.some(record => /School Yearbooks/i.test(record.title)), 'known Tod source should be visible');
+assert.ok(tod.events.some(event => event.type === 'RESI' && /Gwinn/i.test(event.place)), 'residence geography must survive the GEDCOM proof import');
 
 for (const person of family.people) {
   if (!person.proofExpansionKind) continue;
-  assert.ok(['sibling', 'spouse'].includes(person.proofExpansionKind), 'expansion may only add one-step siblings or spouses');
+  assert.ok(
+    ['sibling', 'spouse', 'child', 'child-spouse'].includes(person.proofExpansionKind),
+    'proof expansion may only add the explicitly approved family-layer kinds',
+  );
 }
 
-// The proof tree intentionally does not pull in another generation of parents
-// just to explain every added sibling. When those parents are outside scope,
-// visible siblings are joined by their real GEDCOM family-of-origin rail. This
-// is evidence from FAM/CHIL membership, not an inferred or fabricated parent.
+for (const child of expansionChildren) {
+  assert.ok(
+    family.relationships.some(link => link.type === 'parent' && link.to === child.id),
+    `new child ${child.id} must be attached through a real GEDCOM parent relationship`,
+  );
+}
+for (const spouse of expansionChildSpouses) {
+  assert.ok(
+    family.relationships.some(link => link.type === 'spouse' && (link.from === spouse.id || link.to === spouse.id)),
+    `new child spouse ${spouse.id} must be attached through a real GEDCOM spouse relationship`,
+  );
+}
+
+// Parents outside the current UI scope are never invented. When multiple
+// visible people share an out-of-scope family of origin, a sibling rail is
+// allowed only because the source GEDCOM FAM record explicitly lists each as
+// CHIL. This documented rail also keeps descendant branches visibly connected.
 const adjacency = new Map(family.people.map(person => [person.id, new Set()]));
 for (const link of family.relationships) {
   adjacency.get(link.from)?.add(link.to);

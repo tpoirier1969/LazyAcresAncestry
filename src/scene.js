@@ -29,14 +29,18 @@ const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
 const OVERVIEW_GAP = 155;
 const ABSOLUTE_MAX_GAP = 520;
+export const RELATIONSHIP_LINE_WIDTH = 1.58;
+export const FAMILY_CHILD_STEM_MAX = PLAQUE.height;
+export const FAMILY_PARALLEL_GAP = 0.24;
+const FAMILY_CHILD_STEM_BASE = 0.30;
+const FAMILY_ROUTE_OVERLAP_MARGIN = 0.12;
+const FAMILY_ROUTE_SLOT_COUNT = 4;
 const RELATIONSHIP_COLORS = Object.freeze({
   couple: 'rgba(119,55,47,.97)',
   descent: 'rgba(132,62,52,.97)',
-  directDescent: 'rgba(112,47,40,.99)',
   rail: 'rgba(143,70,58,.94)',
   railAlt: 'rgba(124,58,51,.95)',
   railAlt2: 'rgba(153,79,63,.94)',
-  stem: 'rgba(151,78,64,.92)',
   cluster: 'rgba(143,86,73,.60)',
   halo: 'rgba(247,225,190,.50)',
   shadow: 'rgba(43,28,20,.42)',
@@ -61,23 +65,82 @@ export function siblingClusterGuide(points, railOffset = 0.58) {
   };
 }
 
-export function splitLineageChildren(children, people = []) {
-  const direct = new Set(
-    people
-      .filter(person => Number.isFinite(person.directAncestorDepth))
-      .map(person => person.id),
-  );
-  const lineage = [];
-  const collateral = [];
-  children.forEach(id => (direct.has(id) ? lineage : collateral).push(id));
-  return { lineage, collateral };
-}
-
 export function familyLaneBand(lane = 0) {
   const index = Math.max(0, Number(lane) || 0);
   if (index === 0) return 0;
   const magnitude = Math.ceil(index / 2);
   return index % 2 ? magnitude : -magnitude;
+}
+
+export function planFamilyRoutes(familyGroups, pointForId) {
+  const candidates = [];
+
+  familyGroups.forEach(group => {
+    const parents = group.parents.map(pointForId).filter(Boolean);
+    const children = group.children
+      .map(id => ({ id, point: pointForId(id) }))
+      .filter(entry => entry.point);
+    if (!parents.length || !children.length) return;
+
+    const source = averagePoint(parents);
+    const childYs = children.map(entry => entry.point.y);
+    const averageChildY = average(childYs);
+    const direction = source.y >= averageChildY ? 1 : -1;
+    const childAnchorY = direction > 0 ? Math.min(...childYs) : Math.max(...childYs);
+    const minX = Math.min(source.x, ...children.map(entry => entry.point.x));
+    const maxX = Math.max(source.x, ...children.map(entry => entry.point.x));
+
+    candidates.push({
+      ...group,
+      source,
+      children,
+      direction,
+      childAnchorY,
+      minX,
+      maxX,
+      preferredSlot: Math.max(0, Number(group.lane) || 0) % FAMILY_ROUTE_SLOT_COUNT,
+    });
+  });
+
+  candidates.sort((a, b) => (
+    a.childAnchorY - b.childAnchorY
+    || a.minX - b.minX
+    || a.maxX - b.maxX
+    || String(a.familyId).localeCompare(String(b.familyId))
+  ));
+
+  const planned = [];
+  candidates.forEach(route => {
+    const slotOrder = [
+      route.preferredSlot,
+      ...Array.from({ length: FAMILY_ROUTE_SLOT_COUNT }, (_, index) => index)
+        .filter(index => index !== route.preferredSlot),
+    ];
+
+    let selectedSlot = slotOrder[0];
+    let selectedRailY = railYForSlot(route, selectedSlot);
+    for (const slot of slotOrder) {
+      const railY = railYForSlot(route, slot);
+      const conflict = planned.some(other => (
+        intervalsOverlap(route.minX, route.maxX, other.minX, other.maxX, FAMILY_ROUTE_OVERLAP_MARGIN)
+        && Math.abs(railY - other.railY) < FAMILY_PARALLEL_GAP * 0.78
+      ));
+      if (!conflict) {
+        selectedSlot = slot;
+        selectedRailY = railY;
+        break;
+      }
+    }
+
+    planned.push({
+      ...route,
+      routeSlot: selectedSlot,
+      railY: selectedRailY,
+      railColor: familyRailColor(selectedSlot),
+    });
+  });
+
+  return planned;
 }
 
 export class GlobeScene {
@@ -92,7 +155,6 @@ export class GlobeScene {
     this.people = [];
     this.relationships = [];
     this.positions = new Map();
-    this.directAncestorIds = new Set();
     this.hitAreas = [];
     this.homeId = null;
     this.focusedId = null;
@@ -118,9 +180,6 @@ export class GlobeScene {
   setFamily(people, relationships = []) {
     this.people = people;
     this.relationships = relationships;
-    this.directAncestorIds = new Set(
-      people.filter(person => Number.isFinite(person.directAncestorDepth)).map(person => person.id),
-    );
     this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
     this.positions = layoutSample(people, RADIUS, relationships);
     this.requestDraw();
@@ -411,10 +470,14 @@ export class GlobeScene {
       knownIds,
       this.people,
     );
+    const familyRoutes = planFamilyRoutes(
+      familyGroups,
+      id => this.surfaceXY(this.positions.get(id)),
+    );
 
     siblingClusters.forEach(ids => this.drawImportedSiblingCluster(ids, camera));
     spousePairs.forEach(([a, b]) => this.drawCoupleBar(a, b, camera));
-    familyGroups.forEach(group => this.drawFamilyGroup(group, camera));
+    familyRoutes.forEach(route => this.drawFamilyRoute(route, camera));
   }
 
   drawCoupleBar(aId, bId, camera) {
@@ -422,82 +485,32 @@ export class GlobeScene {
     const b = this.surfaceXY(this.positions.get(bId));
     if (!a || !b) return;
     const y = (a.y + b.y) / 2;
-    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.85, RELATIONSHIP_COLORS.couple);
+    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, RELATIONSHIP_COLORS.couple);
   }
 
-  drawFamilyGroup(group, camera) {
-    const parents = group.parents.map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
-    const children = group.children
-      .map(id => ({ id, point: this.surfaceXY(this.positions.get(id)) }))
-      .filter(entry => entry.point);
-    if (!parents.length || !children.length) return;
-
-    const source = averagePoint(parents);
-    const averageChildY = children.reduce((sum, entry) => sum + entry.point.y, 0) / children.length;
-    const laneBand = familyLaneBand(group.lane);
-    const railY = source.y + (averageChildY - source.y) * 0.60 + laneBand * 0.24;
-    const minX = Math.min(source.x, ...children.map(entry => entry.point.x));
-    const maxX = Math.max(source.x, ...children.map(entry => entry.point.x));
-    const railColor = familyRailColor(group.lane);
+  drawFamilyRoute(route, camera) {
+    const { source, children, railY, minX, maxX, railColor } = route;
 
     this.drawSurfacePolyline(
       [[source.x, source.y], [source.x, railY]],
       camera,
-      1.92,
       railColor,
     );
     this.drawSurfacePolyline(
       [[minX, railY], [maxX, railY]],
       camera,
-      1.78,
       railColor,
     );
 
-    children.forEach(({ id, point }) => {
-      const direct = this.directAncestorIds.has(id);
+    children.forEach(({ point }) => {
       this.drawSurfacePolyline(
         [[point.x, railY], [point.x, point.y]],
         camera,
-        direct ? 2.30 : 1.62,
-        direct ? RELATIONSHIP_COLORS.directDescent : RELATIONSHIP_COLORS.stem,
+        railColor,
       );
     });
 
     this.drawSurfaceJunction({ x: source.x, y: railY }, camera, railColor);
-  }
-
-  drawDescent(parentIds, childId, camera, width = 1.95, stroke = RELATIONSHIP_COLORS.descent) {
-    if (!childId) return;
-    const child = this.surfaceXY(this.positions.get(childId));
-    const parents = parentIds.map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
-    if (!child || !parents.length) return;
-    const source = averagePoint(parents);
-    const bendY = source.y + (child.y - source.y) * 0.48;
-    this.drawSurfacePolyline(
-      [[source.x, source.y], [source.x, bendY], [child.x, bendY], [child.x, child.y]],
-      camera,
-      width,
-      stroke,
-    );
-  }
-
-  drawSiblingGroup(parentIds, childIds, camera) {
-    const parents = parentIds.map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
-    const children = childIds.map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
-    if (!parents.length || children.length < 2) return;
-    const source = averagePoint(parents);
-    const averageChildY = children.reduce((sum, point) => sum + point.y, 0) / children.length;
-    const railY = source.y + (averageChildY - source.y) * 0.48;
-    const minX = Math.min(...children.map(point => point.x));
-    const maxX = Math.max(...children.map(point => point.x));
-    this.drawSurfacePolyline([[source.x, source.y], [source.x, railY]], camera, 1.95, RELATIONSHIP_COLORS.descent);
-    this.drawSurfacePolyline([[minX, railY], [maxX, railY]], camera, 1.80, RELATIONSHIP_COLORS.rail);
-    children.forEach(child => this.drawSurfacePolyline(
-      [[child.x, railY], [child.x, child.y]],
-      camera,
-      1.66,
-      RELATIONSHIP_COLORS.stem,
-    ));
   }
 
   drawImportedSiblingCluster(ids, camera) {
@@ -507,11 +520,10 @@ export class GlobeScene {
     const guide = siblingClusterGuide(members);
     if (!guide) return;
 
-    this.drawSurfacePolyline(guide.rail, camera, 1.05, RELATIONSHIP_COLORS.cluster);
+    this.drawSurfacePolyline(guide.rail, camera, RELATIONSHIP_COLORS.cluster);
     guide.stems.forEach(stem => this.drawSurfacePolyline(
       stem,
       camera,
-      0.90,
       RELATIONSHIP_COLORS.cluster,
     ));
   }
@@ -525,16 +537,16 @@ export class GlobeScene {
     ctx.save();
     ctx.fillStyle = RELATIONSHIP_COLORS.halo;
     ctx.beginPath();
-    ctx.arc(q.x, q.y, 4.0, 0, Math.PI * 2);
+    ctx.arc(q.x, q.y, 3.45, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(q.x, q.y, 2.15, 0, Math.PI * 2);
+    ctx.arc(q.x, q.y, 1.85, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
-  drawSurfacePolyline(xyPoints, camera, width = 0.7, stroke = null) {
+  drawSurfacePolyline(xyPoints, camera, stroke = null) {
     const sampled = [];
     const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
     const steps = moving ? 6 : 12;
@@ -559,15 +571,15 @@ export class GlobeScene {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.strokeStyle = RELATIONSHIP_COLORS.halo;
-    ctx.lineWidth = width + (moving ? 0.85 : 1.35);
+    ctx.lineWidth = RELATIONSHIP_LINE_WIDTH + (moving ? 0.82 : 1.15);
     strokeSegments(ctx, sampled);
     ctx.strokeStyle = stroke || RELATIONSHIP_COLORS.descent;
-    ctx.lineWidth = width;
+    ctx.lineWidth = RELATIONSHIP_LINE_WIDTH;
     if (!moving) {
       ctx.shadowColor = RELATIONSHIP_COLORS.shadow;
-      ctx.shadowBlur = 2.4;
-      ctx.shadowOffsetX = 0.6;
-      ctx.shadowOffsetY = 1.1;
+      ctx.shadowBlur = 2.0;
+      ctx.shadowOffsetX = 0.5;
+      ctx.shadowOffsetY = 0.9;
     }
     strokeSegments(ctx, sampled);
     ctx.restore();
@@ -750,6 +762,18 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
   };
 }
 
+function railYForSlot(route, slot) {
+  const stemLength = Math.min(
+    FAMILY_CHILD_STEM_MAX,
+    FAMILY_CHILD_STEM_BASE + Math.max(0, slot) * FAMILY_PARALLEL_GAP,
+  );
+  return route.childAnchorY + route.direction * stemLength;
+}
+
+function intervalsOverlap(aMin, aMax, bMin, bMax, margin = 0) {
+  return aMax + margin >= bMin && bMax + margin >= aMin;
+}
+
 function drawSphereBase(ctx, camera, radius) {
   const bounds = projectedSphereVerticalBounds(camera, radius);
   if (!bounds) return;
@@ -805,7 +829,7 @@ function uniquePairs(links) {
 }
 
 function familyRailColor(lane) {
-  const band = Math.abs(familyLaneBand(lane)) % 3;
+  const band = Math.abs(Number(lane) || 0) % 3;
   if (band === 1) return RELATIONSHIP_COLORS.railAlt;
   if (band === 2) return RELATIONSHIP_COLORS.railAlt2;
   return RELATIONSHIP_COLORS.rail;
@@ -813,9 +837,13 @@ function familyRailColor(lane) {
 
 function averagePoint(points) {
   return {
-    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
-    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+    x: average(points.map(point => point.x)),
+    y: average(points.map(point => point.y)),
   };
+}
+
+function average(values) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function strokeSegments(ctx, points) {

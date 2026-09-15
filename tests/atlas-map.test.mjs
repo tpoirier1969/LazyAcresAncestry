@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   ATLAS_DETAIL_CREDIT,
   ATLAS_DETAIL_FADE_MS,
@@ -19,10 +20,9 @@ import {
   quantizeAtlasDetailCenter,
 } from '../src/atlas-map.js';
 
-assert.match(ATLAS_TEXTURE_URL, /^https:\/\/upload\.wikimedia\.org\//, 'atlas must use the detailed Wikimedia source family');
-assert.match(ATLAS_TEXTURE_URL, /2560px-Equirectangular-projection-topographic-world\.jpg$/, 'global base should use a bounded equirectangular derivative');
+assert.equal(ATLAS_TEXTURE_URL, 'assets/atlas-base.svg', 'base atlas must be bundled with the app so the globe cannot go blank when remote imagery fails');
+assert.equal(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, ATLAS_TEXTURE_URL, 'low-capability or failed relief loads must fall back to the bundled atlas');
 assert.match(ATLAS_RELIEF_TEXTURE_URL, /3840px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'global relief should use a bounded 4K-class texture');
-assert.equal(ATLAS_RELIEF_TEXTURE_URL, ATLAS_RELIEF_TEXTURE_FALLBACK_URL, 'all GPUs should share the bounded global relief texture budget');
 assert.equal(ATLAS_DETAIL_LEVELS.length, 4, 'progressive atlas should expose four regional detail levels');
 assert.deepEqual(ATLAS_DETAIL_LEVELS.map(level => level.id), ['local', 'subregional', 'regional', 'continental']);
 assert.ok(ATLAS_DETAIL_LEVELS[0].longitudeSpan < ATLAS_DETAIL_LEVELS[1].longitudeSpan);
@@ -30,6 +30,10 @@ assert.ok(ATLAS_DETAIL_LEVELS[1].longitudeSpan < ATLAS_DETAIL_LEVELS[2].longitud
 assert.ok(ATLAS_DETAIL_LEVELS[2].longitudeSpan < ATLAS_DETAIL_LEVELS[3].longitudeSpan);
 assert.ok(Math.max(...ATLAS_DETAIL_LEVELS.map(level => level.width)) <= 2560, 'regional detail textures must remain within the GPU memory budget');
 assert.ok(ATLAS_DETAIL_FADE_MS >= 250 && ATLAS_DETAIL_FADE_MS <= 600, 'LOD changes should cross-fade without keeping duplicate textures alive unnecessarily long');
+
+const localAtlas = fs.readFileSync(new URL(`../${ATLAS_TEXTURE_URL}`, import.meta.url), 'utf8');
+assert.match(localAtlas, /^<svg[\s\S]*<path/i, 'bundled atlas must contain actual map geometry');
+assert.ok(localAtlas.length > 4000, 'bundled atlas must be substantive rather than a blank placeholder');
 
 assert.equal(atlasDetailLevel(7)?.id, 'local');
 assert.equal(atlasDetailLevel(20)?.id, 'subregional');
@@ -62,10 +66,10 @@ assert.equal(atlasDetailBounds({ longitude: 179, latitude: 0 }, local), null, 's
 
 assert.match(ATLAS_DETAIL_SOURCE_PAGE, /^https:\/\/science\.nasa\.gov\//, 'NASA detail provenance page must remain recorded');
 assert(ATLAS_DETAIL_CREDIT.includes('NASA'), 'NASA detail credit must remain explicit');
-assert.match(ATLAS_TEXTURE_SOURCE_PAGE, /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/, 'atlas provenance page must remain recorded');
-assert(ATLAS_TEXTURE_CREDIT.includes('CC BY-SA 4.0'), 'atlas licensing credit must remain explicit');
-assert.match(ATLAS_TEXTURE_SHA1, /^[0-9a-f]{40}$/, 'atlas source checksum must remain recorded for provenance');
+assert.equal(ATLAS_TEXTURE_SOURCE_PAGE, '', 'bundled schematic atlas does not depend on a live source page');
+assert(ATLAS_TEXTURE_CREDIT.includes('Bundled Lazy Acres Ancestry'), 'bundled atlas provenance must remain explicit');
+assert.equal(ATLAS_TEXTURE_SHA1, 'bundled-local-atlas');
 assert.ok(ATLAS_HOME_ANCHOR.latitude > 45 && ATLAS_HOME_ANCHOR.latitude < 48, 'home anchor should remain in Michigan Upper Peninsula latitude');
 assert.ok(ATLAS_HOME_ANCHOR.longitude < -84 && ATLAS_HOME_ANCHOR.longitude > -91, 'home anchor should remain in Michigan Upper Peninsula longitude');
 
-console.log('progressive atlas LOD stays sharp while bounding global and regional GPU texture memory');
+console.log('progressive atlas has a guaranteed bundled base while bounding global and regional GPU texture memory');

@@ -16,6 +16,7 @@ import { layoutSample } from './layout.js';
 import { ATLAS_TEXTURE_URL } from './atlas-map.js';
 import { GlobeWebGLRenderer } from './globe-webgl.js';
 import { solveFocusedZoomAnchor } from './zoom-anchor.js';
+import { drawPersonGeography } from './person-geography.js';
 
 const POPULATION = 9099;
 const PLAQUE = { width: 1.20, height: 1.08 };
@@ -272,10 +273,11 @@ export class GlobeScene {
     if (!local) return;
     this.stopMotion();
     this.cancelFocus();
+    this.drag = null;
     this.focusedId = id;
 
-    const target = yawPitchToFront(local);
     const targetGap = resetZoom ? DEFAULT_GAP : this.cameraGap;
+    const target = this.focusTarget(local, targetGap);
     const behavior = cameraBehavior(this.cameraGap, MIN_GAP, OVERVIEW_GAP);
     const from = {
       yaw: this.yaw,
@@ -316,6 +318,23 @@ export class GlobeScene {
     this.focusFrame = requestAnimationFrame(tick);
   }
 
+  focusTarget(local, targetGap) {
+    const initial = yawPitchToFront(local);
+    const camera = this.cameraAt(targetGap);
+    const viewportHeight = this.canvas.height / (camera.dpr || 1);
+    const target = { x: camera.cx, y: viewportHeight / 2 };
+    const solved = solveFocusedZoomAnchor({
+      local,
+      yaw: initial.yaw,
+      pitch: initial.pitch,
+      camera,
+      radius: RADIUS,
+      target,
+      iterations: 12,
+    });
+    return solved.solved ? { yaw: solved.yaw, pitch: solved.pitch } : initial;
+  }
+
   focusedScreenPoint(camera = this.camera()) {
     const local = this.positions.get(this.focusedId);
     if (!local) return null;
@@ -344,6 +363,8 @@ export class GlobeScene {
       drawSphereBase(ctx, camera, RADIUS);
       drawSphereShade(ctx, camera, RADIUS);
     }
+    const focusedPerson = this.people.find(person => person.id === this.focusedId) || null;
+    drawPersonGeography(ctx, focusedPerson, camera, this.yaw, this.pitch, RADIUS);
     this.drawRelationships(camera);
     this.drawPeople(camera);
   }

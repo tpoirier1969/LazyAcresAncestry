@@ -20,6 +20,13 @@ const ROLE_LEVEL = Object.freeze({
   'sibling-descendant': -1,
 });
 
+export function generationGapForPopulation(count) {
+  const population = Math.max(1, Number(count) || 1);
+  if (population <= 44) return LAYOUT_GAPS.GENERATION_GAP;
+  const extra = Math.log2(population / 44) * 1.45;
+  return Math.min(9, LAYOUT_GAPS.GENERATION_GAP + extra);
+}
+
 export function layoutSample(people, radius, relationships = []) {
   const positions = new Map();
   if (!people.length) return positions;
@@ -45,13 +52,14 @@ export function layoutSample(people, radius, relationships = []) {
   connectFamilyUnits(unitsByLevel, unitByPerson, parentsByChild);
   const { blocksByLevel, blockByPerson } = buildFamilyBlocks(unitsByLevel);
   connectBlockNeighbors(parentLinks, blockByPerson);
-  const planar = placeFamilyBlocks(blocksByLevel, root.id);
+  const planar = placeFamilyBlocks(blocksByLevel, root.id, people.length);
+  centerDirectAncestorRows(planar, people, levels);
   const rootPoint = planar.get(root.id) || { x: 0, y: 0 };
 
   for (const person of people) {
     const point = planar.get(person.id);
     if (!point) continue;
-    positions.set(person.id, tangentPoint(point.x - rootPoint.x, point.y, radius));
+    positions.set(person.id, tangentPoint(point.x - rootPoint.x, point.y - rootPoint.y, radius));
   }
 
   return positions;
@@ -356,9 +364,10 @@ function blockPlacements(units) {
   return { entries, span };
 }
 
-function placeFamilyBlocks(blocksByLevel, rootId) {
+function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
   const planar = new Map();
   const levels = [...blocksByLevel.keys()].sort((a, b) => b - a);
+  const generationGap = generationGapForPopulation(peopleCount);
 
   const placeLevel = (level, neighborDirection) => {
     const blocks = blocksByLevel.get(level);
@@ -377,7 +386,7 @@ function placeFamilyBlocks(blocksByLevel, rootId) {
     });
 
     const centers = packedCenters(blocks);
-    const y = level * LAYOUT_GAPS.GENERATION_GAP;
+    const y = level * generationGap;
     blocks.forEach((block, index) => {
       const center = centers[index];
       for (const entry of block.placements.entries) planar.set(entry.personId, { x: center + entry.offset, y });
@@ -396,6 +405,27 @@ function placeFamilyBlocks(blocksByLevel, rootId) {
     for (const point of planar.values()) point.x -= rootX;
   }
   return planar;
+}
+
+function centerDirectAncestorRows(planar, people, levels) {
+  const idsByLevel = new Map();
+  people.forEach(person => {
+    if (!Number.isFinite(person.directAncestorDepth)) return;
+    const level = levels.get(person.id) ?? 0;
+    if (!idsByLevel.has(level)) idsByLevel.set(level, []);
+    idsByLevel.get(level).push(person.id);
+  });
+
+  idsByLevel.forEach((ids, level) => {
+    const anchorPoints = ids.map(id => planar.get(id)).filter(Boolean);
+    if (!anchorPoints.length) return;
+    const anchorX = average(anchorPoints.map(point => point.x));
+    people.forEach(person => {
+      if ((levels.get(person.id) ?? 0) !== level) return;
+      const point = planar.get(person.id);
+      if (point) point.x -= anchorX;
+    });
+  });
 }
 
 function packedCenters(blocks) {

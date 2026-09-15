@@ -8,21 +8,24 @@ export const ATLAS_TEXTURE_SHA1 = 'bundled-local-atlas';
 
 // The global relief layer is deliberately moderate resolution. Close views get
 // their sharpness from geographically narrow regional requests, so giant
-// whole-world textures do not monopolize GPU memory.
-export const ATLAS_RELIEF_TEXTURE_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/3840px-Solarsystemscope_texture_8k_earth_daymap.jpg';
+// whole-world textures do not monopolize GPU memory or compete with video decode.
+export const ATLAS_RELIEF_TEXTURE_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/2560px-Solarsystemscope_texture_8k_earth_daymap.jpg';
 // If a device cannot support the relief texture size, fall back to the local
 // atlas rather than another remote dependency.
 export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = ATLAS_TEXTURE_URL;
 export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_daymap.jpg';
 export const ATLAS_RELIEF_CREDIT = 'Solar System Scope, CC BY 4.0; based on NASA elevation and imagery data';
 
+// Detail resolution rises as the geographic window narrows. The largest image
+// is capped at 2048px because two regional textures coexist briefly during a
+// cross-fade. That preserves sharp close views without a large GPU-memory spike.
 export const ATLAS_DETAIL_LEVELS = Object.freeze([
-  Object.freeze({ id: 'local', maxGap: 12, longitudeSpan: 30, latitudeSpan: 20, width: 2560 }),
-  Object.freeze({ id: 'subregional', maxGap: 30, longitudeSpan: 48, latitudeSpan: 30, width: 2304 }),
-  Object.freeze({ id: 'regional', maxGap: 70, longitudeSpan: 78, latitudeSpan: 46, width: 2048 }),
-  Object.freeze({ id: 'continental', maxGap: 130, longitudeSpan: 120, latitudeSpan: 70, width: 1536 }),
+  Object.freeze({ id: 'local', maxGap: 12, longitudeSpan: 30, latitudeSpan: 20, width: 2048 }),
+  Object.freeze({ id: 'subregional', maxGap: 30, longitudeSpan: 48, latitudeSpan: 30, width: 1920 }),
+  Object.freeze({ id: 'regional', maxGap: 70, longitudeSpan: 78, latitudeSpan: 46, width: 1792 }),
+  Object.freeze({ id: 'continental', maxGap: 130, longitudeSpan: 120, latitudeSpan: 70, width: 1408 }),
 ]);
-export const ATLAS_DETAIL_FADE_MS = 360;
+export const ATLAS_DETAIL_FADE_MS = 300;
 export const ATLAS_DETAIL_SOURCE_PAGE = 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/';
 export const ATLAS_DETAIL_CREDIT = 'NASA Earth Observatory Blue Marble: Next Generation, served by NASA GIBS';
 const ATLAS_DETAIL_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi';
@@ -92,8 +95,8 @@ export function atlasDetailUrl(bounds, level) {
   if (!bounds || !level) return null;
   const longitudeSpan = bounds.east - bounds.west;
   const latitudeSpan = bounds.north - bounds.south;
-  const width = clamp(Math.round(level.width), 1024, 2560);
-  const height = clamp(Math.round(width * latitudeSpan / longitudeSpan), 768, 2560);
+  const width = clamp(Math.round(level.width), 1024, 2048);
+  const height = clamp(Math.round(width * latitudeSpan / longitudeSpan), 768, 2048);
   const params = new URLSearchParams({
     version: '1.1.1',
     service: 'WMS',

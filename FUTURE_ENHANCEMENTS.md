@@ -5,18 +5,21 @@ This file tracks requested work that is intentionally not part of the current pr
 ## Globe interaction and scale
 
 - Re-tune the default camera distance after the current zoom-dependent camera behavior is visually verified against the approved atlas reference.
-- Re-check plaque legibility, picking, connector weights, and texture filtering after the next dense-family stress test.
+- Re-check plaque legibility, picking, connector weights, and texture filtering after each dense-family stress test.
+- Until the UI is approved, each substantial UI revision should also expand the visible GEDCOM family scope by one deliberate family layer so the interface is tested against steadily increasing real genealogy density.
 
-## Personal and family geography
+## Personal geography
 
-- Add an evidence-backed **Personal Geography** overlay when a person is selected. Build it from normalized life events such as birth, residence/census, marriage, work, military service, immigration/emigration, death, burial, and explicitly documented travel.
-- Render geographic coverage as soft, rounded, organic contours / heat regions on the sphere. Do **not** use rectangular geographic blocks as the visible footprint.
+- Continue the evidence-backed **Personal Geography** overlay when a person is selected. Build it from normalized life events such as birth, residence/census, marriage, work, military service, immigration/emigration, death, burial, and explicitly documented travel.
+- Do **not** add a family-region or branch-region aggregate overlay. The map should show the selected person's documented geography only.
+- Keep each lived-region footprint tightly centered on the resolved city/town rather than painting broad county, state, country, or continental areas when the evidence is more precise.
+- Use soft feathered person-region swatches with no hard geographic outline.
+- When two documented lived locations establish movement, connect them with a thin restrained travel swatch/path. Do not turn that connector into a broad corridor or density region.
 - Weight and style the footprint by what the evidence actually establishes. A documented residence can contribute more strongly than a one-time event, and a town-level fact should be tighter than a county/state/country-level fact.
-- Keep documented locations, inferred locations, and uncertain geocoding visually and structurally distinct. Never invent a travel route merely because two sequential records occur in different places.
-- Add a related **Family Region** mode that aggregates the documented geography of a selected family/branch into broader rounded density regions.
-- Later add a time control so a family region can be viewed through time, revealing migration and geographic concentration without treating genealogy layout positions as literal locations.
+- Keep documented locations, inferred locations, and uncertain geocoding visually and structurally distinct. Never invent a route merely because two records happen to exist; route rendering should remain a simple visual connection between documented locations unless actual travel evidence is available.
+- Later add a time control so a person's geography can be viewed through time, revealing movement without treating genealogy layout positions as literal locations.
 - Normalize places once and cache reviewed coordinates, geographic precision, source provenance, and confidence so repeated historical place names do not require repeated geocoding.
-- Implement the visible overlay as a sphere-aware WebGL texture/mask so it rotates, foreshortens, clips at the horizon, and remains locked to the atlas surface.
+- Move the visible geography overlay to a sphere-aware WebGL texture/mask when density requires it so it rotates, foreshortens, clips at the horizon, and remains locked to the atlas surface.
 
 ## Home person
 
@@ -33,11 +36,11 @@ This file tracks requested work that is intentionally not part of the current pr
 
 ## GEDCOM source records and complete family graph
 
-- Re-import the full GEDCOM source/citation structures rather than only the current prototype birth, death, and alternate-name subset.
-- Restore the complete parent/spouse graph and all stable GEDCOM IDs needed for Donna's ancestry, deeper generations, siblings, and descendant branches.
+- Normalize the full GEDCOM source/citation structures into the ancestry-prefixed working data model while preserving the original GEDCOM unchanged as source evidence.
+- Preserve the complete parent/spouse graph and all stable GEDCOM IDs needed for deeper generations, siblings, descendants, and spouse/co-parent family units.
 - Preserve saved record titles, citation/page text, repositories, source identifiers, URLs when present, and their links to specific people/facts.
 - Keep source records distinct from family notes and data-quality warnings.
-- After the complete graph is restored, run the requested high-density visual test: siblings for visible family groups, Donna's side to the same generation depth, one additional ancestral generation with siblings, and descendants for the displayed families.
+- Before expanding from the prototype into the full family population, create and review a corrected working copy of the GEDCOM that fixes only defensible errors while preserving all non-error records.
 
 ## Media and galleries
 

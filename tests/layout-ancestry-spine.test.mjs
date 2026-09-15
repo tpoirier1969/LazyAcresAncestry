@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { generationGapForPopulation, layoutSample, LAYOUT_GAPS } from '../src/layout.js';
 
 assert.equal(generationGapForPopulation(44), LAYOUT_GAPS.GENERATION_GAP);
-assert.ok(generationGapForPopulation(139) > 5, '139-person proof tree needs visibly stronger generation separation');
-assert.ok(generationGapForPopulation(9099) <= 9, 'population spacing must remain bounded on the sphere');
+assert.ok(generationGapForPopulation(139) > 4 && generationGapForPopulation(139) < 4.6, '139-person proof tree should separate generations without wasting large vertical bands');
+assert.ok(generationGapForPopulation(9099) <= 6.2, 'population spacing must remain bounded on the sphere');
 
 const people = [
   { id: 'root', name: 'Root', role: 'root', branch: 'center', directAncestorDepth: 0, birth: { date: '1969' } },
@@ -46,4 +46,4 @@ assert.ok(Math.abs(average([xy('dad').x, xy('mom').x])) < 0.02, 'direct parents 
 assert.ok(Math.abs(average(['pgf', 'pgm', 'mgf', 'mgm'].map(id => xy(id).x))) < 0.02, 'direct grandparent generation stays centered on the ancestry spine');
 assert.ok(((xy('pgf').x + xy('pgm').x) / 2) < ((xy('mgf').x + xy('mgm').x) / 2), 'paternal and maternal grandparent families keep their left-to-right identity');
 
-console.log('direct ancestry spine stays centered while larger proof trees receive stronger generation spacing');
+console.log('direct ancestry spine stays centered with compact, readable proof-tree generation spacing');

@@ -15,6 +15,7 @@ import { rigidPlaquePlacement } from './plaque-projection.js';
 import { layoutSample } from './layout.js';
 import { ATLAS_TEXTURE_URL } from './atlas-map.js';
 import { GlobeWebGLRenderer } from './globe-webgl.js';
+import { solveFocusedZoomAnchor } from './zoom-anchor.js';
 
 const POPULATION = 9099;
 const PLAQUE = { width: 1.20, height: 1.08 };
@@ -59,6 +60,7 @@ export class GlobeScene {
     this.targetYaw = this.yaw;
     this.targetPitch = this.pitch;
     this.targetCameraGap = this.cameraGap;
+    this.zoomAnchor = null;
     this.drag = null;
     this.needsDraw = false;
     this.motionFrame = null;
@@ -168,8 +170,18 @@ export class GlobeScene {
       const direction = Math.sign(event.deltaY);
       if (!direction) return;
 
-      // Wheel zoom changes distance only. It never changes selection, rotates
-      // to Home, or translates the globe away from the center of the viewport.
+      const focused = this.focusedScreenPoint();
+      if (focused && this.focusedId) {
+        this.zoomAnchor = {
+          id: this.focusedId,
+          x: focused.x,
+          y: focused.y,
+        };
+      }
+
+      // Zoom changes camera distance while rotating the globe only as much as
+      // necessary to keep the currently focused person at the same screen
+      // coordinate. The globe itself remains centered in the viewport.
       this.targetCameraGap = clamp(
         this.targetCameraGap * Math.exp(direction * 0.13),
         MIN_GAP,
@@ -178,11 +190,33 @@ export class GlobeScene {
 
       if (this.reduceMotion) {
         this.cameraGap = this.targetCameraGap;
+        this.applyZoomAnchor();
+        this.zoomAnchor = null;
         this.requestDraw();
       } else {
         this.requestMotion();
       }
     }, { passive: false });
+  }
+
+  applyZoomAnchor(camera = this.camera()) {
+    if (!this.zoomAnchor || this.zoomAnchor.id !== this.focusedId) return false;
+    const local = this.positions.get(this.zoomAnchor.id);
+    if (!local) return false;
+    const solved = solveFocusedZoomAnchor({
+      local,
+      yaw: this.yaw,
+      pitch: this.pitch,
+      camera,
+      radius: RADIUS,
+      target: this.zoomAnchor,
+    });
+    if (!solved.solved) return false;
+    this.yaw = solved.yaw;
+    this.pitch = solved.pitch;
+    this.targetYaw = solved.yaw;
+    this.targetPitch = solved.pitch;
+    return true;
   }
 
   requestMotion() {
@@ -196,6 +230,7 @@ export class GlobeScene {
       this.yaw += yawDelta * behavior.motionEase;
       this.pitch += pitchDelta * behavior.motionEase;
       this.cameraGap += gapDelta * 0.14;
+      if (this.zoomAnchor) this.applyZoomAnchor();
 
       const settled = Math.abs(yawDelta) < 0.00028
         && Math.abs(pitchDelta) < 0.00028
@@ -205,6 +240,8 @@ export class GlobeScene {
         this.yaw = this.targetYaw;
         this.pitch = this.targetPitch;
         this.cameraGap = this.targetCameraGap;
+        if (this.zoomAnchor) this.applyZoomAnchor(this.cameraAt(this.cameraGap));
+        this.zoomAnchor = null;
         this.motionFrame = null;
         this.requestDraw();
         return;
@@ -219,6 +256,7 @@ export class GlobeScene {
   stopMotion() {
     if (this.motionFrame) cancelAnimationFrame(this.motionFrame);
     this.motionFrame = null;
+    this.zoomAnchor = null;
     this.targetYaw = this.yaw;
     this.targetPitch = this.pitch;
     this.targetCameraGap = this.cameraGap;
@@ -514,14 +552,14 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
     groupedChildren.get(key).children.push(childId);
   });
 
-  // Cluster rails are only a fallback for old prototype people whose actual
-  // parents are absent. Once the GEDCOM parent graph is present, drawing both
-  // would duplicate and visually contradict the real family connectors.
+  // Cluster rails are only a fallback for people whose actual parents are
+  // outside the current proof-tree scope. They group documented siblings by
+  // GEDCOM family-of-origin without inventing parent identities.
   const peopleWithParents = new Set(parentLinks.map(link => link.to));
   const clusters = new Map();
   people.forEach(person => {
     if (!isKnown(person.id) || !person.cluster || peopleWithParents.has(person.id)) return;
-    if (!['grandparent', 'grandparent-sibling'].includes(person.role)) return;
+    if (!['grandparent', 'grandparent-sibling', 'one-step-sibling'].includes(person.role)) return;
     if (!clusters.has(person.cluster)) clusters.set(person.cluster, []);
     clusters.get(person.cluster).push(person.id);
   });

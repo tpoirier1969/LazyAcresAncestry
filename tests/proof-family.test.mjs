@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { parseGedcomFamilies, validateGedcomFamilyGraph } from '../src/gedcom-family-parser.js';
 import {
   buildProofFamily,
+  PROOF_BASE_EXPECTED_PEOPLE,
   PROOF_EXPECTED_PEOPLE,
   PROOF_ROOT_ID,
   PROOF_SIBLING_CHILD_ID,
@@ -15,8 +16,16 @@ const parsed = parseGedcomFamilies(text);
 assert.equal(validateGedcomFamilyGraph(parsed).length, 0, 'source GEDCOM relationships should resolve to real family/person records');
 
 const family = buildProofFamily(parsed);
-assert.equal(family.people.length, PROOF_EXPECTED_PEOPLE, 'proof tree must remain intentionally small');
-assert.equal(family.people.length, 53);
+assert.equal(PROOF_BASE_EXPECTED_PEOPLE, 53, 'approved proof-tree base must remain 53 people');
+assert.equal(PROOF_EXPECTED_PEOPLE, 139, 'one-step breadth proof tree must remain 139 people');
+assert.equal(family.people.length, PROOF_EXPECTED_PEOPLE);
+assert.equal(family.metadata.basePeople, PROOF_BASE_EXPECTED_PEOPLE);
+
+const expansionSiblings = family.people.filter(person => person.proofExpansionKind === 'sibling');
+const expansionSpouses = family.people.filter(person => person.proofExpansionKind === 'spouse');
+assert.equal(expansionSiblings.length, 53, 'one breadth step should add 53 GEDCOM-recorded siblings');
+assert.equal(expansionSpouses.length, 33, 'one breadth step should add 33 GEDCOM-recorded spouses');
+assert.equal(PROOF_BASE_EXPECTED_PEOPLE + expansionSiblings.length + expansionSpouses.length, family.people.length);
 
 const ids = new Set(family.people.map(person => person.id));
 for (const relation of family.relationships) {
@@ -47,6 +56,11 @@ const tod = family.people.find(person => person.id === PROOF_ROOT_ID);
 assert.ok(tod?.rawGedcom?.saved_records?.length > 0, 'saved Ancestry source records must survive the GEDCOM proof import');
 assert.ok(tod.rawGedcom.saved_records.some(record => /School Yearbooks/i.test(record.title)), 'known Tod source should be visible');
 
+for (const person of family.people) {
+  if (!person.proofExpansionKind) continue;
+  assert.ok(['sibling', 'spouse'].includes(person.proofExpansionKind), 'expansion may only add one-step siblings or spouses');
+}
+
 const connected = new Set([PROOF_ROOT_ID]);
 let changed = true;
 while (changed) {
@@ -56,6 +70,6 @@ while (changed) {
     if (connected.has(link.to) && !connected.has(link.from)) { connected.add(link.from); changed = true; }
   }
 }
-assert.equal(connected.size, family.people.length, 'every proof-tree person must connect to the home person');
+assert.equal(connected.size, family.people.length, 'every proof-tree person must connect to the home person through displayed GEDCOM relationships');
 
 console.log('proof-family.test.mjs passed');

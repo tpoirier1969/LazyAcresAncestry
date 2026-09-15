@@ -6,13 +6,12 @@ export const ATLAS_TEXTURE_SOURCE_PAGE = '';
 export const ATLAS_TEXTURE_CREDIT = 'Bundled Lazy Acres Ancestry parchment/graticule base';
 export const ATLAS_TEXTURE_SHA1 = 'bundled-local-atlas';
 
-// The real geographic image is global and stays active at every zoom level.
-// Using one persistent relief texture avoids the visible rectangular LOD patches
-// and the apparent map disappearance that occurred while regional textures were
-// being swapped in and out during zooming.
-export const ATLAS_RELIEF_TEXTURE_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/2560px-Solarsystemscope_texture_8k_earth_daymap.jpg';
-export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/1920px-Solarsystemscope_texture_8k_earth_daymap.jpg';
-export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_daymap.jpg';
+// Keep one real geographic image active at every zoom level. Use Wikimedia's
+// actual 2048px original rather than an invented thumbnail size so the relief
+// layer cannot silently fail back to parchment.
+export const ATLAS_RELIEF_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg';
+export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg/1280px-Solarsystemscope_texture_2k_earth_daymap.jpg';
+export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_2k_earth_daymap.jpg';
 export const ATLAS_RELIEF_CREDIT = 'Solar System Scope, CC BY 4.0; based on NASA elevation and imagery data';
 
 // Rectangular regional WMS layers are intentionally disabled. Their straight

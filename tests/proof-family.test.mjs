@@ -40,6 +40,17 @@ const rootParents = family.relationships
   .sort();
 assert.deepEqual(rootParents, ['I40538615623', 'I40538616542'].sort(), 'Tod must have exactly his recorded mother and father');
 
+for (const parentId of rootParents) {
+  const grandparents = family.relationships
+    .filter(link => link.type === 'parent' && link.to === parentId)
+    .map(link => link.from);
+  assert.equal(grandparents.length, 2, `${parentId} must retain both recorded parents in the displayed proof tree`);
+  grandparents.forEach(grandparentId => {
+    const grandparent = family.people.find(person => person.id === grandparentId);
+    assert.equal(grandparent?.directAncestorDepth, 2, `${grandparentId} must remain marked as a direct grandparent`);
+  });
+}
+
 const amyChildren = family.relationships
   .filter(link => link.type === 'parent' && link.from === PROOF_SIBLING_ID)
   .map(link => link.to);
@@ -61,10 +72,6 @@ for (const person of family.people) {
   assert.ok(['sibling', 'spouse'].includes(person.proofExpansionKind), 'expansion may only add one-step siblings or spouses');
 }
 
-// The proof tree intentionally does not pull in another generation of parents
-// just to explain every added sibling. When those parents are outside scope,
-// visible siblings are joined by their real GEDCOM family-of-origin rail. This
-// is evidence from FAM/CHIL membership, not an inferred or fabricated parent.
 const adjacency = new Map(family.people.map(person => [person.id, new Set()]));
 for (const link of family.relationships) {
   adjacency.get(link.from)?.add(link.to);

@@ -19,6 +19,11 @@ import { solveFocusedZoomAnchor } from './zoom-anchor.js';
 
 const POPULATION = 9099;
 const PLAQUE = { width: 1.20, height: 1.08 };
+const RELATIONSHIP_LINE_WIDTH = 1.55;
+const RELATIONSHIP_HALO_EXTRA = 0.95;
+const FAMILY_RAIL_BASE_DROP = PLAQUE.height * 0.48;
+const FAMILY_RAIL_LANE_GAP = PLAQUE.height * 0.22;
+const FAMILY_RAIL_MAX_DROP = PLAQUE.height * 0.94;
 const RADIUS = Math.max(225, requiredSphereRadius({
   count: POPULATION,
   plaqueWidth: 1,
@@ -74,10 +79,20 @@ export function splitLineageChildren(children, people = []) {
 }
 
 export function familyLaneBand(lane = 0) {
-  const index = Math.max(0, Number(lane) || 0);
-  if (index === 0) return 0;
-  const magnitude = Math.ceil(index / 2);
-  return index % 2 ? magnitude : -magnitude;
+  return Math.max(0, Math.floor(Number(lane) || 0));
+}
+
+export function familyRailY(sourceY, childY, lane = 0) {
+  const direction = Math.sign(sourceY - childY) || 1;
+  const distance = Math.min(
+    FAMILY_RAIL_MAX_DROP,
+    FAMILY_RAIL_BASE_DROP + familyLaneBand(lane) * FAMILY_RAIL_LANE_GAP,
+  );
+  return childY + direction * distance;
+}
+
+export function relationshipLineWidth() {
+  return RELATIONSHIP_LINE_WIDTH;
 }
 
 export class GlobeScene {
@@ -422,7 +437,7 @@ export class GlobeScene {
     const b = this.surfaceXY(this.positions.get(bId));
     if (!a || !b) return;
     const y = (a.y + b.y) / 2;
-    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.85, RELATIONSHIP_COLORS.couple);
+    this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, RELATIONSHIP_LINE_WIDTH, RELATIONSHIP_COLORS.couple);
   }
 
   drawFamilyGroup(group, camera) {
@@ -434,8 +449,7 @@ export class GlobeScene {
 
     const source = averagePoint(parents);
     const averageChildY = children.reduce((sum, entry) => sum + entry.point.y, 0) / children.length;
-    const laneBand = familyLaneBand(group.lane);
-    const railY = source.y + (averageChildY - source.y) * 0.60 + laneBand * 0.24;
+    const railY = familyRailY(source.y, averageChildY, group.lane);
     const minX = Math.min(source.x, ...children.map(entry => entry.point.x));
     const maxX = Math.max(source.x, ...children.map(entry => entry.point.x));
     const railColor = familyRailColor(group.lane);
@@ -443,13 +457,13 @@ export class GlobeScene {
     this.drawSurfacePolyline(
       [[source.x, source.y], [source.x, railY]],
       camera,
-      1.92,
+      RELATIONSHIP_LINE_WIDTH,
       railColor,
     );
     this.drawSurfacePolyline(
       [[minX, railY], [maxX, railY]],
       camera,
-      1.78,
+      RELATIONSHIP_LINE_WIDTH,
       railColor,
     );
 
@@ -458,7 +472,7 @@ export class GlobeScene {
       this.drawSurfacePolyline(
         [[point.x, railY], [point.x, point.y]],
         camera,
-        direct ? 2.30 : 1.62,
+        RELATIONSHIP_LINE_WIDTH,
         direct ? RELATIONSHIP_COLORS.directDescent : RELATIONSHIP_COLORS.stem,
       );
     });
@@ -466,17 +480,17 @@ export class GlobeScene {
     this.drawSurfaceJunction({ x: source.x, y: railY }, camera, railColor);
   }
 
-  drawDescent(parentIds, childId, camera, width = 1.95, stroke = RELATIONSHIP_COLORS.descent) {
+  drawDescent(parentIds, childId, camera, width = RELATIONSHIP_LINE_WIDTH, stroke = RELATIONSHIP_COLORS.descent) {
     if (!childId) return;
     const child = this.surfaceXY(this.positions.get(childId));
     const parents = parentIds.map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
     if (!child || !parents.length) return;
     const source = averagePoint(parents);
-    const bendY = source.y + (child.y - source.y) * 0.48;
+    const bendY = familyRailY(source.y, child.y, 0);
     this.drawSurfacePolyline(
       [[source.x, source.y], [source.x, bendY], [child.x, bendY], [child.x, child.y]],
       camera,
-      width,
+      RELATIONSHIP_LINE_WIDTH,
       stroke,
     );
   }
@@ -487,15 +501,15 @@ export class GlobeScene {
     if (!parents.length || children.length < 2) return;
     const source = averagePoint(parents);
     const averageChildY = children.reduce((sum, point) => sum + point.y, 0) / children.length;
-    const railY = source.y + (averageChildY - source.y) * 0.48;
+    const railY = familyRailY(source.y, averageChildY, 0);
     const minX = Math.min(...children.map(point => point.x));
     const maxX = Math.max(...children.map(point => point.x));
-    this.drawSurfacePolyline([[source.x, source.y], [source.x, railY]], camera, 1.95, RELATIONSHIP_COLORS.descent);
-    this.drawSurfacePolyline([[minX, railY], [maxX, railY]], camera, 1.80, RELATIONSHIP_COLORS.rail);
+    this.drawSurfacePolyline([[source.x, source.y], [source.x, railY]], camera, RELATIONSHIP_LINE_WIDTH, RELATIONSHIP_COLORS.descent);
+    this.drawSurfacePolyline([[minX, railY], [maxX, railY]], camera, RELATIONSHIP_LINE_WIDTH, RELATIONSHIP_COLORS.rail);
     children.forEach(child => this.drawSurfacePolyline(
       [[child.x, railY], [child.x, child.y]],
       camera,
-      1.66,
+      RELATIONSHIP_LINE_WIDTH,
       RELATIONSHIP_COLORS.stem,
     ));
   }
@@ -507,11 +521,11 @@ export class GlobeScene {
     const guide = siblingClusterGuide(members);
     if (!guide) return;
 
-    this.drawSurfacePolyline(guide.rail, camera, 1.05, RELATIONSHIP_COLORS.cluster);
+    this.drawSurfacePolyline(guide.rail, camera, RELATIONSHIP_LINE_WIDTH, RELATIONSHIP_COLORS.cluster);
     guide.stems.forEach(stem => this.drawSurfacePolyline(
       stem,
       camera,
-      0.90,
+      RELATIONSHIP_LINE_WIDTH,
       RELATIONSHIP_COLORS.cluster,
     ));
   }
@@ -525,16 +539,16 @@ export class GlobeScene {
     ctx.save();
     ctx.fillStyle = RELATIONSHIP_COLORS.halo;
     ctx.beginPath();
-    ctx.arc(q.x, q.y, 4.0, 0, Math.PI * 2);
+    ctx.arc(q.x, q.y, 3.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(q.x, q.y, 2.15, 0, Math.PI * 2);
+    ctx.arc(q.x, q.y, 1.7, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
-  drawSurfacePolyline(xyPoints, camera, width = 0.7, stroke = null) {
+  drawSurfacePolyline(xyPoints, camera, width = RELATIONSHIP_LINE_WIDTH, stroke = null) {
     const sampled = [];
     const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
     const steps = moving ? 6 : 12;
@@ -555,19 +569,20 @@ export class GlobeScene {
     }
 
     const ctx = this.ctx;
+    const screenWidth = relationshipLineWidth();
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.strokeStyle = RELATIONSHIP_COLORS.halo;
-    ctx.lineWidth = width + (moving ? 0.85 : 1.35);
+    ctx.lineWidth = screenWidth + RELATIONSHIP_HALO_EXTRA;
     strokeSegments(ctx, sampled);
     ctx.strokeStyle = stroke || RELATIONSHIP_COLORS.descent;
-    ctx.lineWidth = width;
+    ctx.lineWidth = screenWidth;
     if (!moving) {
       ctx.shadowColor = RELATIONSHIP_COLORS.shadow;
-      ctx.shadowBlur = 2.4;
-      ctx.shadowOffsetX = 0.6;
-      ctx.shadowOffsetY = 1.1;
+      ctx.shadowBlur = 1.8;
+      ctx.shadowOffsetX = 0.45;
+      ctx.shadowOffsetY = 0.75;
     }
     strokeSegments(ctx, sampled);
     ctx.restore();
@@ -805,7 +820,7 @@ function uniquePairs(links) {
 }
 
 function familyRailColor(lane) {
-  const band = Math.abs(familyLaneBand(lane)) % 3;
+  const band = familyLaneBand(lane) % 3;
   if (band === 1) return RELATIONSHIP_COLORS.railAlt;
   if (band === 2) return RELATIONSHIP_COLORS.railAlt2;
   return RELATIONSHIP_COLORS.rail;

@@ -23,8 +23,8 @@ const ROLE_LEVEL = Object.freeze({
 export function generationGapForPopulation(count) {
   const population = Math.max(1, Number(count) || 1);
   if (population <= 44) return LAYOUT_GAPS.GENERATION_GAP;
-  const extra = Math.log2(population / 44) * 1.45;
-  return Math.min(9, LAYOUT_GAPS.GENERATION_GAP + extra);
+  const extra = Math.log2(population / 44) * 0.55;
+  return Math.min(6.2, LAYOUT_GAPS.GENERATION_GAP + extra);
 }
 
 export function layoutSample(people, radius, relationships = []) {

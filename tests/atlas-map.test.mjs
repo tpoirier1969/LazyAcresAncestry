@@ -18,8 +18,16 @@ import {
 } from '../src/atlas-map.js';
 
 assert.equal(ATLAS_TEXTURE_URL, 'assets/atlas-base.svg', 'base atlas must remain bundled with the app');
-assert.match(ATLAS_RELIEF_TEXTURE_URL, /2560px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'normal global relief should use the bounded 2560px texture');
-assert.match(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, /1920px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'lower-capability devices should still receive a real geographic global map rather than schematic continent overlays');
+assert.equal(
+  ATLAS_RELIEF_TEXTURE_URL,
+  'https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg',
+  'normal global relief must use Wikimedia\'s published 2048px original rather than an invented thumbnail size',
+);
+assert.match(
+  ATLAS_RELIEF_TEXTURE_FALLBACK_URL,
+  /1280px-Solarsystemscope_texture_2k_earth_daymap\.jpg$/,
+  'lower-capability devices should receive a published 1280px geographic map',
+);
 assert.equal(ATLAS_DETAIL_LEVELS.length, 0, 'rectangular regional WMS overlays must remain disabled until they can be sphere-masked without visible bounds');
 assert.equal(atlasDetailLevel(7), null);
 assert.equal(atlasDetailLevel(100), null);
@@ -41,4 +49,4 @@ assert.equal(ATLAS_TEXTURE_SHA1, 'bundled-local-atlas');
 assert.ok(ATLAS_HOME_ANCHOR.latitude > 45 && ATLAS_HOME_ANCHOR.latitude < 48, 'home anchor should remain in Michigan Upper Peninsula latitude');
 assert.ok(ATLAS_HOME_ANCHOR.longitude < -84 && ATLAS_HOME_ANCHOR.longitude > -91, 'home anchor should remain in Michigan Upper Peninsula longitude');
 
-console.log('atlas uses one stable global geography layer and no visible regional area overlays');
+console.log('atlas uses one stable published global geography layer and no visible regional area overlays');

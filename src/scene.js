@@ -32,14 +32,15 @@ const ABSOLUTE_MAX_GAP = 520;
 const RELATIONSHIP_COLORS = Object.freeze({
   couple: 'rgba(119,55,47,.97)',
   descent: 'rgba(132,62,52,.97)',
+  directDescent: 'rgba(112,47,40,.99)',
   rail: 'rgba(143,70,58,.94)',
   stem: 'rgba(151,78,64,.92)',
-  cluster: 'rgba(143,86,73,.66)',
+  cluster: 'rgba(143,86,73,.60)',
   halo: 'rgba(247,225,190,.50)',
   shadow: 'rgba(43,28,20,.42)',
 });
 
-export function siblingClusterGuide(points, railOffset = 0.58, parentStub = 0.34) {
+export function siblingClusterGuide(points, railOffset = 0.58) {
   if (!Array.isArray(points) || points.length < 2) return null;
   const sorted = points
     .filter(point => Number.isFinite(point?.x) && Number.isFinite(point?.y))
@@ -50,14 +51,24 @@ export function siblingClusterGuide(points, railOffset = 0.58, parentStub = 0.34
   const railY = averageY + railOffset;
   const minX = sorted[0].x;
   const maxX = sorted[sorted.length - 1].x;
-  const midX = (minX + maxX) / 2;
   return {
     rail: [[minX, railY], [maxX, railY]],
     stems: sorted.map(point => [[point.x, point.y], [point.x, railY]]),
-    omittedParentsStub: [[midX, railY], [midX, railY + parentStub]],
     railY,
     averageY,
   };
+}
+
+export function splitLineageChildren(children, people = []) {
+  const direct = new Set(
+    people
+      .filter(person => Number.isFinite(person.directAncestorDepth))
+      .map(person => person.id),
+  );
+  const lineage = [];
+  const collateral = [];
+  children.forEach(id => (direct.has(id) ? lineage : collateral).push(id));
+  return { lineage, collateral };
 }
 
 export class GlobeScene {
@@ -106,9 +117,6 @@ export class GlobeScene {
   get diameter() { return RADIUS * 2; }
 
   resize() {
-    // A 3x canvas roughly doubles framebuffer memory over 2x and competes with
-    // browser video decode for GPU resources. 2x remains sharp on high-DPI
-    // displays while keeping direct-manipulation interaction much lighter.
     const dpr = Math.min(devicePixelRatio || 1, 2);
     const rect = this.canvas.getBoundingClientRect();
     this.canvas.width = Math.max(1, Math.round(rect.width * dpr));
@@ -126,10 +134,6 @@ export class GlobeScene {
     const centerZ = RADIUS + gap;
     const behavior = cameraBehavior(gap, MIN_GAP, OVERVIEW_GAP);
 
-    // The globe is never translated in screen space. First project it with a
-    // zero vertical principal point, then compensate for the zoom-dependent
-    // camera tilt so the exact projected sphere silhouette remains centered in
-    // the viewport. This invariant applies to every zoom, drag and focus state.
     const probe = {
       cx: w / 2,
       cy: 0,
@@ -203,9 +207,6 @@ export class GlobeScene {
         };
       }
 
-      // Zoom changes camera distance while rotating the globe only as much as
-      // necessary to keep the currently focused person at the same screen
-      // coordinate. The globe itself remains centered in the viewport.
       this.targetCameraGap = clamp(
         this.targetCameraGap * Math.exp(direction * 0.13),
         MIN_GAP,
@@ -291,15 +292,33 @@ export class GlobeScene {
     this.focusFrame = null;
   }
 
-  focus(id, { resetZoom = false } = {}) {
+  focus(id, { resetZoom = false, targetPoint = null } = {}) {
     const local = this.positions.get(id);
     if (!local) return;
     this.stopMotion();
     this.cancelFocus();
     this.focusedId = id;
 
-    const target = yawPitchToFront(local);
     const targetGap = resetZoom ? DEFAULT_GAP : this.cameraGap;
+    const targetCamera = this.cameraAt(targetGap);
+    const dpr = targetCamera.dpr || 1;
+    const viewportWidth = this.canvas.width / dpr;
+    const viewportHeight = this.canvas.height / dpr;
+    const desiredPoint = {
+      x: clamp(Number(targetPoint?.x) || targetCamera.cx, 0, viewportWidth),
+      y: clamp(Number(targetPoint?.y) || viewportHeight / 2, 0, viewportHeight),
+    };
+    const front = yawPitchToFront(local);
+    const centered = solveFocusedZoomAnchor({
+      local,
+      yaw: front.yaw,
+      pitch: front.pitch,
+      camera: targetCamera,
+      radius: RADIUS,
+      target: desiredPoint,
+      iterations: 10,
+    });
+    const target = centered.solved ? centered : front;
     const behavior = cameraBehavior(this.cameraGap, MIN_GAP, OVERVIEW_GAP);
     const from = {
       yaw: this.yaw,
@@ -382,8 +401,16 @@ export class GlobeScene {
     siblingClusters.forEach(ids => this.drawImportedSiblingCluster(ids, camera));
     spousePairs.forEach(([a, b]) => this.drawCoupleBar(a, b, camera));
     parentSets.forEach(group => {
-      if (group.children.length > 1) this.drawSiblingGroup(group.parents, group.children, camera);
-      else this.drawDescent(group.parents, group.children[0], camera);
+      const { lineage, collateral } = splitLineageChildren(group.children, this.people);
+      lineage.forEach(child => this.drawDescent(
+        group.parents,
+        child,
+        camera,
+        2.35,
+        RELATIONSHIP_COLORS.directDescent,
+      ));
+      if (collateral.length > 1) this.drawSiblingGroup(group.parents, collateral, camera);
+      else if (collateral.length === 1) this.drawDescent(group.parents, collateral[0], camera);
     });
   }
 
@@ -395,7 +422,7 @@ export class GlobeScene {
     this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.85, RELATIONSHIP_COLORS.couple);
   }
 
-  drawDescent(parentIds, childId, camera) {
+  drawDescent(parentIds, childId, camera, width = 1.95, stroke = RELATIONSHIP_COLORS.descent) {
     if (!childId) return;
     const child = this.surfaceXY(this.positions.get(childId));
     const parents = parentIds.map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
@@ -405,8 +432,8 @@ export class GlobeScene {
     this.drawSurfacePolyline(
       [[source.x, source.y], [source.x, bendY], [child.x, bendY], [child.x, child.y]],
       camera,
-      1.95,
-      RELATIONSHIP_COLORS.descent,
+      width,
+      stroke,
     );
   }
 
@@ -436,22 +463,13 @@ export class GlobeScene {
     const guide = siblingClusterGuide(members);
     if (!guide) return;
 
-    // This is not a descendant rail. It says the visible people share parents
-    // whose generation is outside the current proof-tree scope. Draw it toward
-    // that omitted older generation so it cannot be mistaken for more children.
-    this.drawSurfacePolyline(guide.rail, camera, 1.12, RELATIONSHIP_COLORS.cluster);
+    this.drawSurfacePolyline(guide.rail, camera, 1.05, RELATIONSHIP_COLORS.cluster);
     guide.stems.forEach(stem => this.drawSurfacePolyline(
       stem,
       camera,
-      0.96,
+      0.90,
       RELATIONSHIP_COLORS.cluster,
     ));
-    this.drawSurfacePolyline(
-      guide.omittedParentsStub,
-      camera,
-      0.88,
-      RELATIONSHIP_COLORS.cluster,
-    );
   }
 
   drawSurfacePolyline(xyPoints, camera, width = 0.7, stroke = null) {
@@ -582,9 +600,6 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
     groupedChildren.get(key).children.push(childId);
   });
 
-  // Cluster rails are only a fallback for people whose actual parents are
-  // outside the current proof-tree scope. They group documented siblings by
-  // GEDCOM family-of-origin without inventing parent identities.
   const peopleWithParents = new Set(parentLinks.map(link => link.to));
   const clusters = new Map();
   people.forEach(person => {

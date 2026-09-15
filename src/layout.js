@@ -17,6 +17,7 @@ const ROLE_LEVEL = Object.freeze({
   root: 0,
   spouse: 0,
   sibling: 0,
+  'sibling-descendant': -1,
 });
 
 export function layoutSample(people, radius, relationships = []) {
@@ -78,12 +79,13 @@ function assignGenerations(people, rootId, parentLinks, spouseLinks) {
   seed(rootId, 0);
   propagateLevels(adjacency, levels, queue);
 
-  // The bundled prototype intentionally lacks some older parents. Role levels
-  // keep those people on a sensible generation only when the relationship
-  // graph cannot reach them. The expanded GEDCOM graph derives its levels from
-  // recorded relationships.
+  // Explicit generation hints are used only where the scoped proof tree omits
+  // the parents that would otherwise establish a person's generation. They do
+  // not create relationships; the GEDCOM family graph remains authoritative.
   people.forEach(person => {
-    if (!levels.has(person.id) && ROLE_LEVEL[person.role] != null) {
+    if (!levels.has(person.id) && Number.isFinite(person.generationHint)) {
+      seed(person.id, person.generationHint);
+    } else if (!levels.has(person.id) && ROLE_LEVEL[person.role] != null) {
       seed(person.id, ROLE_LEVEL[person.role]);
     }
   });
@@ -196,6 +198,7 @@ function buildGenerationUnits(people, levels, parentsByChild, spouseAdjacency, d
       const branches = members.map(member => byId.get(member)?.branch).filter(Boolean);
       const birthYears = members.map(member => birthYear(byId.get(member))).filter(Number.isFinite);
       const labels = members.map(member => byId.get(member)?.name || member).sort();
+      const clusters = members.map(member => byId.get(member)?.cluster).filter(Boolean);
       const unit = {
         id: `${level}:${units.length}`,
         level,
@@ -205,6 +208,7 @@ function buildGenerationUnits(people, levels, parentsByChild, spouseAdjacency, d
         layoutParentUnits: new Set(),
         childUnits: new Set(),
         branch: mostCommon(branches),
+        cluster: mostCommon(clusters),
         birthYear: birthYears.length ? Math.min(...birthYears) : 9999,
         label: labels[0] || '',
       };
@@ -266,10 +270,6 @@ function connectFamilyUnits(unitsByLevel, unitByPerson, parentsByChild) {
         }
       }
 
-      // A spouse component can connect two otherwise separate ancestral lines.
-      // Use the member closest to the selected home lineage as the grouping
-      // anchor, but keep every recorded parent/child relationship for the
-      // barycentric placement sweeps below.
       for (const parent of parentsByChild.get(unit.anchorMember) || []) {
         const parentUnit = unitByPerson.get(parent);
         if (parentUnit && parentUnit.level === unit.level + 1) {
@@ -291,7 +291,9 @@ function buildFamilyBlocks(unitsByLevel) {
     const groups = new Map();
     for (const unit of units) {
       const parentKey = [...unit.layoutParentUnits].sort().join('|');
-      const key = parentKey ? `family:${parentKey}` : `unit:${unit.id}`;
+      const key = parentKey
+        ? `family:${parentKey}`
+        : unit.cluster ? `origin:${unit.cluster}` : `unit:${unit.id}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(unit);
     }
@@ -300,11 +302,13 @@ function buildFamilyBlocks(unitsByLevel) {
       groupUnits.sort(compareSeed);
       const placements = blockPlacements(groupUnits);
       const branches = groupUnits.map(unit => unit.branch).filter(Boolean);
+      const clusters = groupUnits.map(unit => unit.cluster).filter(Boolean);
       const block = {
         id: `${level}:${key}`,
         level,
         units: groupUnits,
         branch: mostCommon(branches),
+        cluster: mostCommon(clusters),
         birthYear: Math.min(...groupUnits.map(unit => unit.birthYear)),
         label: groupUnits.map(unit => unit.label).sort()[0] || '',
         placements,
@@ -360,9 +364,7 @@ function placeFamilyBlocks(blocksByLevel, rootId) {
     const blocks = blocksByLevel.get(level);
     blocks.forEach(block => {
       const ids = neighborDirection === 'up' ? block.upNeighborIds : block.downNeighborIds;
-      const xs = [...ids]
-        .map(id => planar.get(id)?.x)
-        .filter(Number.isFinite);
+      const xs = [...ids].map(id => planar.get(id)?.x).filter(Number.isFinite);
       block.desiredX = xs.length ? average(xs) : null;
     });
 
@@ -378,19 +380,11 @@ function placeFamilyBlocks(blocksByLevel, rootId) {
     const y = level * LAYOUT_GAPS.GENERATION_GAP;
     blocks.forEach((block, index) => {
       const center = centers[index];
-      for (const entry of block.placements.entries) {
-        planar.set(entry.personId, { x: center + entry.offset, y });
-      }
+      for (const entry of block.placements.entries) planar.set(entry.personId, { x: center + entry.offset, y });
     });
   };
 
-  // Seed from the oldest visible generation and walk toward descendants.
   for (const level of levels) placeLevel(level, 'up');
-
-  // Alternate upward/downward barycentric sweeps. A sibling family remains a
-  // compact block while each generation is pulled toward the exact people it
-  // connects to. This is the important distinction from the old one-row-per-
-  // generation layout, which allowed long rails to cross unrelated families.
   for (let pass = 0; pass < 4; pass += 1) {
     for (const level of [...levels].reverse()) placeLevel(level, 'down');
     for (const level of levels) placeLevel(level, 'up');
@@ -418,19 +412,13 @@ function packedCenters(blocks) {
 
   const forward = [desired[0]];
   for (let index = 1; index < blocks.length; index += 1) {
-    forward[index] = Math.max(
-      desired[index],
-      forward[index - 1] + blockSeparation(blocks[index - 1], blocks[index]),
-    );
+    forward[index] = Math.max(desired[index], forward[index - 1] + blockSeparation(blocks[index - 1], blocks[index]));
   }
 
   const backward = new Array(blocks.length);
   backward[blocks.length - 1] = desired[blocks.length - 1];
   for (let index = blocks.length - 2; index >= 0; index -= 1) {
-    backward[index] = Math.min(
-      desired[index],
-      backward[index + 1] - blockSeparation(blocks[index], blocks[index + 1]),
-    );
+    backward[index] = Math.min(desired[index], backward[index + 1] - blockSeparation(blocks[index], blocks[index + 1]));
   }
 
   return forward.map((value, index) => (value + backward[index]) / 2);
@@ -444,6 +432,9 @@ function compareSeed(a, b) {
   const branchA = BRANCH_ORDER[a.branch] ?? 3;
   const branchB = BRANCH_ORDER[b.branch] ?? 3;
   if (branchA !== branchB) return branchA - branchB;
+  const clusterA = String(a.cluster || '');
+  const clusterB = String(b.cluster || '');
+  if (clusterA !== clusterB) return clusterA.localeCompare(clusterB);
   if (a.birthYear !== b.birthYear) return a.birthYear - b.birthYear;
   return a.label.localeCompare(b.label);
 }

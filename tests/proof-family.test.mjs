@@ -61,15 +61,54 @@ for (const person of family.people) {
   assert.ok(['sibling', 'spouse'].includes(person.proofExpansionKind), 'expansion may only add one-step siblings or spouses');
 }
 
-const connected = new Set([PROOF_ROOT_ID]);
-let changed = true;
-while (changed) {
-  changed = false;
-  for (const link of family.relationships) {
-    if (connected.has(link.from) && !connected.has(link.to)) { connected.add(link.to); changed = true; }
-    if (connected.has(link.to) && !connected.has(link.from)) { connected.add(link.from); changed = true; }
+// The proof tree intentionally does not pull in another generation of parents
+// just to explain every added sibling. When those parents are outside scope,
+// visible siblings are joined by their real GEDCOM family-of-origin rail. This
+// is evidence from FAM/CHIL membership, not an inferred or fabricated parent.
+const adjacency = new Map(family.people.map(person => [person.id, new Set()]));
+for (const link of family.relationships) {
+  adjacency.get(link.from)?.add(link.to);
+  adjacency.get(link.to)?.add(link.from);
+}
+
+const peopleWithDisplayedParents = new Set(
+  family.relationships.filter(link => link.type === 'parent').map(link => link.to),
+);
+const originGroups = new Map();
+for (const person of family.people) {
+  if (!person.cluster || peopleWithDisplayedParents.has(person.id)) continue;
+  const sourceFamily = parsed.families.get(person.cluster);
+  assert.ok(sourceFamily, `sibling rail ${person.cluster} must resolve to a GEDCOM family`);
+  assert.ok(sourceFamily.children.includes(person.id), `${person.id} must actually be a CHIL member of ${person.cluster}`);
+  if (!originGroups.has(person.cluster)) originGroups.set(person.cluster, []);
+  originGroups.get(person.cluster).push(person.id);
+}
+
+for (const members of originGroups.values()) {
+  const uniqueMembers = [...new Set(members)];
+  if (uniqueMembers.length < 2) continue;
+  for (let index = 1; index < uniqueMembers.length; index += 1) {
+    const a = uniqueMembers[index - 1];
+    const b = uniqueMembers[index];
+    adjacency.get(a)?.add(b);
+    adjacency.get(b)?.add(a);
   }
 }
-assert.equal(connected.size, family.people.length, 'every proof-tree person must connect to the home person through displayed GEDCOM relationships');
+
+const connected = new Set([PROOF_ROOT_ID]);
+const queue = [PROOF_ROOT_ID];
+while (queue.length) {
+  const id = queue.shift();
+  for (const neighbor of adjacency.get(id) || []) {
+    if (connected.has(neighbor)) continue;
+    connected.add(neighbor);
+    queue.push(neighbor);
+  }
+}
+assert.equal(
+  connected.size,
+  family.people.length,
+  'every proof-tree person must connect to home through a displayed GEDCOM relationship or documented family-of-origin sibling rail',
+);
 
 console.log('proof-family.test.mjs passed');

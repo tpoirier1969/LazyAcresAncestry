@@ -22,7 +22,7 @@ import {
 
 assert.equal(ATLAS_TEXTURE_URL, 'assets/atlas-base.svg', 'base atlas must be bundled with the app so the globe cannot go blank when remote imagery fails');
 assert.equal(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, ATLAS_TEXTURE_URL, 'low-capability or failed relief loads must fall back to the bundled atlas');
-assert.match(ATLAS_RELIEF_TEXTURE_URL, /3840px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'global relief should use a bounded 4K-class texture');
+assert.equal(ATLAS_RELIEF_TEXTURE_URL, ATLAS_TEXTURE_URL, 'wide views should use the bundled atlas instead of a global photo-relief halo');
 assert.equal(ATLAS_DETAIL_LEVELS.length, 4, 'progressive atlas should expose four regional detail levels');
 assert.deepEqual(ATLAS_DETAIL_LEVELS.map(level => level.id), ['local', 'subregional', 'regional', 'continental']);
 assert.ok(ATLAS_DETAIL_LEVELS[0].longitudeSpan < ATLAS_DETAIL_LEVELS[1].longitudeSpan);
@@ -39,7 +39,7 @@ assert.equal(atlasDetailLevel(7)?.id, 'local');
 assert.equal(atlasDetailLevel(20)?.id, 'subregional');
 assert.equal(atlasDetailLevel(50)?.id, 'regional');
 assert.equal(atlasDetailLevel(100)?.id, 'continental');
-assert.equal(atlasDetailLevel(180), null, 'far globe overview should rely on the global texture');
+assert.equal(atlasDetailLevel(180), null, 'far globe overview should rely on the bundled global atlas');
 assert.equal(atlasDetailStrength(100), 1);
 assert.ok(atlasDetailStrength(140) > 0 && atlasDetailStrength(140) < 1, 'regional layer should fade away smoothly beyond its far LOD');
 assert.equal(atlasDetailStrength(155), 0);
@@ -72,4 +72,4 @@ assert.equal(ATLAS_TEXTURE_SHA1, 'bundled-local-atlas');
 assert.ok(ATLAS_HOME_ANCHOR.latitude > 45 && ATLAS_HOME_ANCHOR.latitude < 48, 'home anchor should remain in Michigan Upper Peninsula latitude');
 assert.ok(ATLAS_HOME_ANCHOR.longitude < -84 && ATLAS_HOME_ANCHOR.longitude > -91, 'home anchor should remain in Michigan Upper Peninsula longitude');
 
-console.log('progressive atlas has a guaranteed bundled base while bounding global and regional GPU texture memory');
+console.log('progressive atlas keeps a guaranteed bundled wide view and bounded regional GPU detail');

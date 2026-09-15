@@ -559,7 +559,7 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
   const clusters = new Map();
   people.forEach(person => {
     if (!isKnown(person.id) || !person.cluster || peopleWithParents.has(person.id)) return;
-    if (!['grandparent', 'grandparent-sibling', 'one-step-sibling'].includes(person.role)) return;
+    if (!['great-grandparent', 'grandparent', 'grandparent-sibling', 'one-step-sibling'].includes(person.role)) return;
     if (!clusters.has(person.cluster)) clusters.set(person.cluster, []);
     clusters.get(person.cluster).push(person.id);
   });

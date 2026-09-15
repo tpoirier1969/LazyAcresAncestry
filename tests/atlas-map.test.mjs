@@ -22,14 +22,14 @@ import {
 
 assert.equal(ATLAS_TEXTURE_URL, 'assets/atlas-base.svg', 'base atlas must be bundled with the app so the globe cannot go blank when remote imagery fails');
 assert.equal(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, ATLAS_TEXTURE_URL, 'low-capability or failed relief loads must fall back to the bundled atlas');
-assert.match(ATLAS_RELIEF_TEXTURE_URL, /3840px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'global relief should use a bounded 4K-class texture');
+assert.match(ATLAS_RELIEF_TEXTURE_URL, /2560px-Solarsystemscope_texture_8k_earth_daymap\.jpg$/, 'global relief should stay moderate because close views use regional LOD imagery');
 assert.equal(ATLAS_DETAIL_LEVELS.length, 4, 'progressive atlas should expose four regional detail levels');
 assert.deepEqual(ATLAS_DETAIL_LEVELS.map(level => level.id), ['local', 'subregional', 'regional', 'continental']);
 assert.ok(ATLAS_DETAIL_LEVELS[0].longitudeSpan < ATLAS_DETAIL_LEVELS[1].longitudeSpan);
 assert.ok(ATLAS_DETAIL_LEVELS[1].longitudeSpan < ATLAS_DETAIL_LEVELS[2].longitudeSpan);
 assert.ok(ATLAS_DETAIL_LEVELS[2].longitudeSpan < ATLAS_DETAIL_LEVELS[3].longitudeSpan);
-assert.ok(Math.max(...ATLAS_DETAIL_LEVELS.map(level => level.width)) <= 2560, 'regional detail textures must remain within the GPU memory budget');
-assert.ok(ATLAS_DETAIL_FADE_MS >= 250 && ATLAS_DETAIL_FADE_MS <= 600, 'LOD changes should cross-fade without keeping duplicate textures alive unnecessarily long');
+assert.ok(Math.max(...ATLAS_DETAIL_LEVELS.map(level => level.width)) <= 2048, 'regional detail textures must stay inside the reduced GPU memory budget');
+assert.ok(ATLAS_DETAIL_FADE_MS >= 250 && ATLAS_DETAIL_FADE_MS <= 400, 'LOD changes should cross-fade without keeping duplicate textures alive unnecessarily long');
 
 const localAtlas = fs.readFileSync(new URL(`../${ATLAS_TEXTURE_URL}`, import.meta.url), 'utf8');
 assert.match(localAtlas, /^<svg[\s\S]*<path/i, 'bundled atlas must contain actual map geometry');
@@ -59,7 +59,7 @@ assert.ok(ATLAS_HOME_ANCHOR.latitude > homeBounds.south && ATLAS_HOME_ANCHOR.lat
 const homeUrl = new URL(atlasDetailUrl(homeBounds, local));
 assert.equal(homeUrl.hostname, 'gibs.earthdata.nasa.gov');
 assert.equal(homeUrl.searchParams.get('layers'), 'BlueMarble_NextGeneration');
-assert.equal(homeUrl.searchParams.get('width'), '2560', 'closest map view should request a sharp but bounded regional image');
+assert.equal(homeUrl.searchParams.get('width'), '2048', 'closest map view should request a sharp but bounded regional image');
 assert.ok(Number(homeUrl.searchParams.get('height')) >= 768);
 assert.match(atlasDetailKey(homeBounds, local), /^local:/);
 assert.equal(atlasDetailBounds({ longitude: 179, latitude: 0 }, local), null, 'single regional WMS requests must fall back to global detail at the antimeridian');
@@ -72,4 +72,4 @@ assert.equal(ATLAS_TEXTURE_SHA1, 'bundled-local-atlas');
 assert.ok(ATLAS_HOME_ANCHOR.latitude > 45 && ATLAS_HOME_ANCHOR.latitude < 48, 'home anchor should remain in Michigan Upper Peninsula latitude');
 assert.ok(ATLAS_HOME_ANCHOR.longitude < -84 && ATLAS_HOME_ANCHOR.longitude > -91, 'home anchor should remain in Michigan Upper Peninsula longitude');
 
-console.log('progressive atlas has a guaranteed bundled base while bounding global and regional GPU texture memory');
+console.log('progressive atlas keeps a bundled base while reducing global and regional GPU texture memory');

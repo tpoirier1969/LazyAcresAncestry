@@ -5,7 +5,7 @@ export const LAYOUT_GAPS = Object.freeze({
   SIBLING_GAP: 1.62,
   MIN_PERSON_CLEARANCE: 1.26,
   BETWEEN_FAMILY_GAP: 2.10,
-  GENERATION_GAP: 3.35,
+  GENERATION_GAP: 2.85,
 });
 
 const BRANCH_ORDER = Object.freeze({ paternal: 0, center: 1, maternal: 2 });
@@ -23,8 +23,8 @@ const ROLE_LEVEL = Object.freeze({
 export function generationGapForPopulation(count) {
   const population = Math.max(1, Number(count) || 1);
   if (population <= 44) return LAYOUT_GAPS.GENERATION_GAP;
-  const extra = Math.log2(population / 44) * 0.55;
-  return Math.min(6.2, LAYOUT_GAPS.GENERATION_GAP + extra);
+  const extra = Math.log2(population / 44) * 0.35;
+  return Math.min(4.5, LAYOUT_GAPS.GENERATION_GAP + extra);
 }
 
 export function layoutSample(people, radius, relationships = []) {

@@ -1,22 +1,21 @@
-export const ATLAS_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Equirectangular-projection-topographic-world.jpg/2560px-Equirectangular-projection-topographic-world.jpg';
-export const ATLAS_TEXTURE_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Equirectangular-projection-topographic-world.jpg';
-export const ATLAS_TEXTURE_CREDIT = 'Gundan / mapswire.com, CC BY-SA 4.0';
-export const ATLAS_TEXTURE_SHA1 = '2d069905a76447a5de0c11bb02628fb8d8323528';
+// The low-resolution atlas is bundled with the application so the sphere can
+// never degrade to a blank beige surface when a third-party image host is
+// blocked or offline. Higher-resolution imagery remains progressive enhancement.
+export const ATLAS_TEXTURE_URL = 'assets/atlas-base.svg';
+export const ATLAS_TEXTURE_SOURCE_PAGE = '';
+export const ATLAS_TEXTURE_CREDIT = 'Bundled Lazy Acres Ancestry schematic atlas; coastline reference derived from public-domain Natural Earth/Wikimedia material';
+export const ATLAS_TEXTURE_SHA1 = 'bundled-local-atlas';
 
-// The global layers are deliberately moderate resolution. Close views get
+// The global relief layer is deliberately moderate resolution. Close views get
 // their sharpness from geographically narrow regional requests, so giant
-// whole-world textures only consume GPU memory and compete with other browser
-// hardware acceleration such as video playback.
+// whole-world textures do not monopolize GPU memory.
 export const ATLAS_RELIEF_TEXTURE_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/04/Solarsystemscope_texture_8k_earth_daymap.jpg/3840px-Solarsystemscope_texture_8k_earth_daymap.jpg';
-export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = ATLAS_RELIEF_TEXTURE_URL;
+// If a device cannot support the relief texture size, fall back to the local
+// atlas rather than another remote dependency.
+export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = ATLAS_TEXTURE_URL;
 export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_daymap.jpg';
 export const ATLAS_RELIEF_CREDIT = 'Solar System Scope, CC BY 4.0; based on NASA elevation and imagery data';
 
-// Close atlas views use progressively smaller geographic windows rather than
-// stretching one world bitmap beyond its useful resolution. The renderer asks
-// NASA GIBS for only the region facing the camera and cross-fades between
-// successive requests. Widths are deliberately bounded so two transition
-// textures can coexist without creating a large GPU-memory spike.
 export const ATLAS_DETAIL_LEVELS = Object.freeze([
   Object.freeze({ id: 'local', maxGap: 12, longitudeSpan: 30, latitudeSpan: 20, width: 2560 }),
   Object.freeze({ id: 'subregional', maxGap: 30, longitudeSpan: 48, latitudeSpan: 30, width: 2304 }),
@@ -48,9 +47,6 @@ export function atlasDetailStrength(cameraGap) {
 
 export function quantizeAtlasDetailCenter(center, level) {
   if (!center || !level) return null;
-  // Keep the current regional image until the camera has moved a meaningful
-  // fraction of its coverage. This prevents pan/zoom from decoding and
-  // uploading another multi-megapixel texture every few degrees.
   const longitudeStep = Math.max(1, level.longitudeSpan * 0.22);
   const latitudeStep = Math.max(1, level.latitudeSpan * 0.22);
   return {
@@ -80,8 +76,6 @@ export function atlasDetailBounds(center, level) {
 
   const west = quantized.longitude - longitudeSpan / 2;
   const east = quantized.longitude + longitudeSpan / 2;
-  // A single WMS rectangle cannot wrap through the antimeridian. The global
-  // layer remains the deliberate fallback in that narrow circumstance.
   if (west < -180 || east > 180) return null;
 
   return {
@@ -138,9 +132,6 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-// The home person is geographically anchored in the central Upper Peninsula.
-// This is a visual home reference, not a claim that genealogy layout positions
-// encode every person's birthplace or residence.
 export const ATLAS_HOME_ANCHOR = Object.freeze({
   latitude: 46.55,
   longitude: -87.45,

@@ -34,6 +34,8 @@ const RELATIONSHIP_COLORS = Object.freeze({
   descent: 'rgba(132,62,52,.97)',
   directDescent: 'rgba(112,47,40,.99)',
   rail: 'rgba(143,70,58,.94)',
+  railAlt: 'rgba(124,58,51,.95)',
+  railAlt2: 'rgba(153,79,63,.94)',
   stem: 'rgba(151,78,64,.92)',
   cluster: 'rgba(143,86,73,.60)',
   halo: 'rgba(247,225,190,.50)',
@@ -71,6 +73,13 @@ export function splitLineageChildren(children, people = []) {
   return { lineage, collateral };
 }
 
+export function familyLaneBand(lane = 0) {
+  const index = Math.max(0, Number(lane) || 0);
+  if (index === 0) return 0;
+  const magnitude = Math.ceil(index / 2);
+  return index % 2 ? magnitude : -magnitude;
+}
+
 export class GlobeScene {
   constructor(canvas, onSelect) {
     this.canvas = canvas;
@@ -83,6 +92,7 @@ export class GlobeScene {
     this.people = [];
     this.relationships = [];
     this.positions = new Map();
+    this.directAncestorIds = new Set();
     this.hitAreas = [];
     this.homeId = null;
     this.focusedId = null;
@@ -108,6 +118,9 @@ export class GlobeScene {
   setFamily(people, relationships = []) {
     this.people = people;
     this.relationships = relationships;
+    this.directAncestorIds = new Set(
+      people.filter(person => Number.isFinite(person.directAncestorDepth)).map(person => person.id),
+    );
     this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
     this.positions = layoutSample(people, RADIUS, relationships);
     this.requestDraw();
@@ -393,25 +406,15 @@ export class GlobeScene {
 
   drawRelationships(camera) {
     const knownIds = new Set(this.positions.keys());
-    const { spousePairs, parentSets, siblingClusters } = buildRelationshipGroups(
+    const { spousePairs, familyGroups, siblingClusters } = buildRelationshipGroups(
       this.relationships,
       knownIds,
       this.people,
     );
+
     siblingClusters.forEach(ids => this.drawImportedSiblingCluster(ids, camera));
     spousePairs.forEach(([a, b]) => this.drawCoupleBar(a, b, camera));
-    parentSets.forEach(group => {
-      const { lineage, collateral } = splitLineageChildren(group.children, this.people);
-      lineage.forEach(child => this.drawDescent(
-        group.parents,
-        child,
-        camera,
-        2.35,
-        RELATIONSHIP_COLORS.directDescent,
-      ));
-      if (collateral.length > 1) this.drawSiblingGroup(group.parents, collateral, camera);
-      else if (collateral.length === 1) this.drawDescent(group.parents, collateral[0], camera);
-    });
+    familyGroups.forEach(group => this.drawFamilyGroup(group, camera));
   }
 
   drawCoupleBar(aId, bId, camera) {
@@ -420,6 +423,47 @@ export class GlobeScene {
     if (!a || !b) return;
     const y = (a.y + b.y) / 2;
     this.drawSurfacePolyline([[a.x, y], [b.x, y]], camera, 1.85, RELATIONSHIP_COLORS.couple);
+  }
+
+  drawFamilyGroup(group, camera) {
+    const parents = group.parents.map(id => this.surfaceXY(this.positions.get(id))).filter(Boolean);
+    const children = group.children
+      .map(id => ({ id, point: this.surfaceXY(this.positions.get(id)) }))
+      .filter(entry => entry.point);
+    if (!parents.length || !children.length) return;
+
+    const source = averagePoint(parents);
+    const averageChildY = children.reduce((sum, entry) => sum + entry.point.y, 0) / children.length;
+    const laneBand = familyLaneBand(group.lane);
+    const railY = source.y + (averageChildY - source.y) * 0.60 + laneBand * 0.24;
+    const minX = Math.min(source.x, ...children.map(entry => entry.point.x));
+    const maxX = Math.max(source.x, ...children.map(entry => entry.point.x));
+    const railColor = familyRailColor(group.lane);
+
+    this.drawSurfacePolyline(
+      [[source.x, source.y], [source.x, railY]],
+      camera,
+      1.92,
+      railColor,
+    );
+    this.drawSurfacePolyline(
+      [[minX, railY], [maxX, railY]],
+      camera,
+      1.78,
+      railColor,
+    );
+
+    children.forEach(({ id, point }) => {
+      const direct = this.directAncestorIds.has(id);
+      this.drawSurfacePolyline(
+        [[point.x, railY], [point.x, point.y]],
+        camera,
+        direct ? 2.30 : 1.62,
+        direct ? RELATIONSHIP_COLORS.directDescent : RELATIONSHIP_COLORS.stem,
+      );
+    });
+
+    this.drawSurfaceJunction({ x: source.x, y: railY }, camera, railColor);
   }
 
   drawDescent(parentIds, childId, camera, width = 1.95, stroke = RELATIONSHIP_COLORS.descent) {
@@ -470,6 +514,24 @@ export class GlobeScene {
       0.90,
       RELATIONSHIP_COLORS.cluster,
     ));
+  }
+
+  drawSurfaceJunction(point, camera, color) {
+    const local = tangentPoint(point.x, point.y, RADIUS);
+    const unit = rotatePoint(local, this.yaw, this.pitch);
+    const q = projectSpherePoint(unit, camera, RADIUS + 0.018);
+    if (!isVisible(unit, q)) return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = RELATIONSHIP_COLORS.halo;
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, 4.0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, 2.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   drawSurfacePolyline(xyPoints, camera, width = 0.7, stroke = null) {
@@ -583,9 +645,9 @@ export class GlobeScene {
 export function buildRelationshipGroups(relationships, knownIds = null, people = []) {
   const isKnown = id => Boolean(id) && (!knownIds || knownIds.has(id));
   const parentLinks = relationships.filter(link => link.type === 'parent' && isKnown(link.from) && isKnown(link.to));
-  const spousePairs = uniquePairs(
-    relationships.filter(link => link.type === 'spouse' && isKnown(link.from) && isKnown(link.to)),
-  );
+  const spouseLinks = relationships.filter(link => link.type === 'spouse' && isKnown(link.from) && isKnown(link.to));
+  const spousePairs = uniquePairs(spouseLinks);
+
   const parentsByChild = new Map();
   parentLinks.forEach(link => {
     if (!parentsByChild.has(link.to)) parentsByChild.set(link.to, new Set());
@@ -598,6 +660,71 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
     const key = parentIds.join('|');
     if (!groupedChildren.has(key)) groupedChildren.set(key, { parents: parentIds, children: [] });
     groupedChildren.get(key).children.push(childId);
+  });
+
+  const familyMap = new Map();
+  const ensureFamily = familyId => {
+    const key = familyId || null;
+    if (!key) return null;
+    if (!familyMap.has(key)) {
+      familyMap.set(key, {
+        familyId: key,
+        parents: new Set(),
+        children: new Set(),
+        lane: 0,
+      });
+    }
+    return familyMap.get(key);
+  };
+
+  spouseLinks.forEach(link => {
+    const family = ensureFamily(link.familyId);
+    if (!family) return;
+    family.parents.add(link.from);
+    family.parents.add(link.to);
+  });
+  parentLinks.forEach(link => {
+    const family = ensureFamily(link.familyId);
+    if (!family) return;
+    family.parents.add(link.from);
+    family.children.add(link.to);
+  });
+
+  const familyGroups = [...familyMap.values()]
+    .filter(group => group.parents.size && group.children.size)
+    .map(group => ({
+      familyId: group.familyId,
+      parents: [...group.parents].sort(),
+      children: [...group.children].sort(),
+      lane: 0,
+    }));
+
+  const childrenCoveredByFamily = new Set(familyGroups.flatMap(group => group.children));
+  [...groupedChildren.values()].forEach((group, index) => {
+    const children = [...new Set(group.children)].filter(id => !childrenCoveredByFamily.has(id)).sort();
+    if (!children.length) return;
+    familyGroups.push({
+      familyId: `fallback:${group.parents.join('|')}:${index}`,
+      parents: group.parents,
+      children,
+      lane: 0,
+    });
+  });
+
+  familyGroups.sort((a, b) => a.familyId.localeCompare(b.familyId));
+  const usedLanesByParent = new Map();
+  familyGroups.forEach(group => {
+    const used = new Set();
+    group.parents.forEach(parentId => {
+      for (const lane of usedLanesByParent.get(parentId) || []) used.add(lane);
+    });
+    let lane = 0;
+    while (used.has(lane)) lane += 1;
+    group.lane = lane;
+    group.parents.forEach(parentId => {
+      if (!usedLanesByParent.has(parentId)) usedLanesByParent.set(parentId, new Set());
+      usedLanesByParent.get(parentId).add(lane);
+    });
   });
 
   const peopleWithParents = new Set(parentLinks.map(link => link.to));
@@ -618,6 +745,7 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
       parents: group.parents,
       children: [...new Set(group.children)].sort(),
     })),
+    familyGroups,
     siblingClusters,
   };
 }
@@ -674,6 +802,13 @@ function uniquePairs(links) {
     out.push([link.from, link.to]);
   });
   return out;
+}
+
+function familyRailColor(lane) {
+  const band = Math.abs(familyLaneBand(lane)) % 3;
+  if (band === 1) return RELATIONSHIP_COLORS.railAlt;
+  if (band === 2) return RELATIONSHIP_COLORS.railAlt2;
+  return RELATIONSHIP_COLORS.rail;
 }
 
 function averagePoint(points) {

@@ -89,8 +89,22 @@ function selectPerson(id, options = {}) {
   const person = byId.get(id);
   if (!person) return;
   selectedPerson = person;
-  scene.focus(id, options);
   showPerson(person);
+  scene.focus(id, {
+    ...options,
+    targetPoint: visibleMapFocusPoint(),
+  });
+}
+
+function visibleMapFocusPoint() {
+  const rect = canvas.getBoundingClientRect();
+  const leftInset = rail?.offsetWidth || 0;
+  const rightInset = details.classList.contains('open') ? (details.offsetWidth + 18) : 0;
+  const usableWidth = Math.max(1, rect.width - leftInset - rightInset);
+  return {
+    x: leftInset + usableWidth / 2,
+    y: rect.height / 2,
+  };
 }
 
 function showPerson(person) {
@@ -116,7 +130,7 @@ function showPerson(person) {
     </dl>
     ${renderGedcomDetails(person)}
     ${person.note ? `<p class="data-note"><strong>Data-quality note:</strong> ${escapeHtml(person.note)}</p>` : ''}
-    <p class="panel-note">Click another person to rotate that branch into the viewing apex. <strong>Return to ${escapeHtml(homePerson?.name || 'home')}</strong> restores the home view.</p>`;
+    <p class="panel-note">Click another person to bring them to the center of the visible map. <strong>Return to ${escapeHtml(homePerson?.name || 'home')}</strong> restores the home view.</p>`;
   openPanel();
   document.getElementById('galleryBtn').addEventListener('click', () => showGallery(person));
   document.getElementById('notesBtn').addEventListener('click', () => showNotes(person));

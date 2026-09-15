@@ -1,40 +1,72 @@
+import { plaqueMetalForSex } from './plaque-metal.js';
+
 const CACHE = new Map();
 const IMAGES = new Map();
 
 export function plaqueTexture(person, size = 520) {
-  const key = `${person.id}|${person.photo || ''}|${person.name}|${person.birth?.date || ''}|${person.death?.date || ''}|${size}`;
+  const metal = plaqueMetalForSex(person.sex);
+  const key = [
+    person.id,
+    person.photo || '',
+    person.name || '',
+    person.sex || 'U',
+    person.birth?.date || '',
+    person.death?.date || '',
+    size,
+  ].join('|');
   if (CACHE.has(key)) return CACHE.get(key);
+
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = Math.round(size * 0.90);
   const ctx = canvas.getContext('2d');
-  drawWoodPlaque(ctx, canvas.width, canvas.height);
-  drawPortrait(ctx, canvas.width, canvas.height, person);
-  drawText(ctx, canvas.width, canvas.height, person);
+  drawWoodPlaque(ctx, canvas.width, canvas.height, metal);
+  drawPortrait(ctx, canvas.width, canvas.height, person, metal);
+  drawText(ctx, canvas.width, canvas.height, person, metal);
   CACHE.set(key, canvas);
   return canvas;
 }
 
-function drawPortrait(ctx, w, h, person) {
-  const cx = w * 0.5, cy = h * 0.315, rx = w * 0.225, ry = h * 0.305;
-  drawGoldFrame(ctx, cx, cy, rx, ry, w);
+function drawPortrait(ctx, w, h, person, metal) {
+  const cx = w * 0.5;
+  const cy = h * 0.315;
+  const rx = w * 0.225;
+  const ry = h * 0.305;
+  drawMetalFrame(ctx, cx, cy, rx, ry, w, metal);
 
   ctx.save();
   ctx.beginPath();
   ctx.ellipse(cx, cy, rx * 0.845, ry * 0.845, 0, 0, Math.PI * 2);
   ctx.clip();
   const image = person.photo ? loadImage(person.photo) : null;
-  if (image?.complete && image.naturalWidth) drawCover(ctx, image, cx - rx * 0.845, cy - ry * 0.845, rx * 1.69, ry * 1.69);
-  else drawFallbackPortrait(ctx, cx, cy, rx * 0.845, ry * 0.845, person.sex);
+  if (image?.complete && image.naturalWidth) {
+    drawCover(ctx, image, cx - rx * 0.845, cy - ry * 0.845, rx * 1.69, ry * 1.69);
+  } else {
+    drawFallbackPortrait(ctx, cx, cy, rx * 0.845, ry * 0.845, person.sex);
+  }
 
-  const vignette = ctx.createRadialGradient(cx - rx * 0.12, cy - ry * 0.15, rx * 0.18, cx, cy, rx * 1.16);
+  const vignette = ctx.createRadialGradient(
+    cx - rx * 0.12,
+    cy - ry * 0.15,
+    rx * 0.18,
+    cx,
+    cy,
+    rx * 1.16,
+  );
   vignette.addColorStop(0.48, 'rgba(35,22,12,0)');
   vignette.addColorStop(0.82, 'rgba(40,24,12,.08)');
   vignette.addColorStop(1, 'rgba(24,13,7,.40)');
   ctx.fillStyle = vignette;
   ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
 
-  const glass = ctx.createRadialGradient(cx - rx * 0.48, cy - ry * 0.58, 0, cx - rx * 0.02, cy - ry * 0.02, rx * 1.38);
+  const glass = ctx.createRadialGradient(
+    cx - rx * 0.48,
+    cy - ry * 0.58,
+    0,
+    cx - rx * 0.02,
+    cy - ry * 0.02,
+    rx * 1.38,
+  );
   glass.addColorStop(0, 'rgba(255,255,244,.64)');
   glass.addColorStop(0.17, 'rgba(255,255,250,.20)');
   glass.addColorStop(0.48, 'rgba(255,255,255,.015)');
@@ -57,44 +89,57 @@ function drawPortrait(ctx, w, h, person) {
   ctx.restore();
 }
 
-function drawGoldFrame(ctx, cx, cy, rx, ry, w) {
+function drawMetalFrame(ctx, cx, cy, rx, ry, w, metal) {
   ctx.save();
   ctx.shadowColor = 'rgba(55,31,12,.48)';
   ctx.shadowBlur = w * 0.032;
   ctx.shadowOffsetY = w * 0.016;
-  const gold = ctx.createLinearGradient(cx - rx, cy - ry, cx + rx, cy + ry);
-  gold.addColorStop(0, '#654016');
-  gold.addColorStop(0.18, '#c9953c');
-  gold.addColorStop(0.42, '#f1d47c');
-  gold.addColorStop(0.65, '#b27a28');
-  gold.addColorStop(0.84, '#e1bc62');
-  gold.addColorStop(1, '#513214');
-  ctx.fillStyle = gold;
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx * 1.10, ry * 1.075, 0, 0, Math.PI * 2); ctx.fill();
+
+  const gradient = ctx.createLinearGradient(cx - rx, cy - ry, cx + rx, cy + ry);
+  gradient.addColorStop(0, metal.dark);
+  gradient.addColorStop(0.18, metal.mid);
+  gradient.addColorStop(0.42, metal.bright);
+  gradient.addColorStop(0.65, metal.mid);
+  gradient.addColorStop(0.84, metal.light);
+  gradient.addColorStop(1, metal.edge);
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 1.10, ry * 1.075, 0, 0, Math.PI * 2);
+  ctx.fill();
+
   ctx.globalCompositeOperation = 'destination-out';
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.855, ry * 0.855, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 0.855, ry * 0.855, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
 
-  ctx.strokeStyle = 'rgba(255,235,169,.86)';
+  ctx.strokeStyle = metal.bright;
+  ctx.globalAlpha = 0.78;
   ctx.lineWidth = Math.max(1.8, w * 0.0045);
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx * 1.015, ry * 0.995, 0, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = 'rgba(74,45,15,.72)';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 1.015, ry * 0.995, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = metal.edge;
   ctx.lineWidth = Math.max(1.2, w * 0.003);
-  ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.90, ry * 0.90, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * 0.90, ry * 0.90, 0, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
 
-  drawOrnament(ctx, cx, cy - ry * 1.02, 0, w);
-  drawOrnament(ctx, cx, cy + ry * 1.02, Math.PI, w);
-  drawOrnament(ctx, cx - rx * 1.02, cy, -Math.PI / 2, w * 0.72);
-  drawOrnament(ctx, cx + rx * 1.02, cy, Math.PI / 2, w * 0.72);
+  drawOrnament(ctx, cx, cy - ry * 1.02, 0, w, metal);
+  drawOrnament(ctx, cx, cy + ry * 1.02, Math.PI, w, metal);
+  drawOrnament(ctx, cx - rx * 1.02, cy, -Math.PI / 2, w * 0.72, metal);
+  drawOrnament(ctx, cx + rx * 1.02, cy, Math.PI / 2, w * 0.72, metal);
 }
 
-function drawOrnament(ctx, x, y, rotation, w) {
+function drawOrnament(ctx, x, y, rotation, w, metal) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rotation);
-  ctx.strokeStyle = '#704718';
-  ctx.fillStyle = '#c59035';
+  ctx.strokeStyle = metal.edge;
+  ctx.fillStyle = metal.mid;
   ctx.lineWidth = Math.max(2, w * 0.005);
   ctx.beginPath();
   ctx.moveTo(0, -w * 0.028);
@@ -102,21 +147,34 @@ function drawOrnament(ctx, x, y, rotation, w) {
   ctx.bezierCurveTo(-w * 0.024, w * 0.018, -w * 0.014, w * 0.045, 0, w * 0.060);
   ctx.bezierCurveTo(w * 0.014, w * 0.045, w * 0.024, w * 0.018, w * 0.055, w * 0.025);
   ctx.bezierCurveTo(w * 0.038, w * 0.006, w * 0.018, -w * 0.010, 0, -w * 0.028);
-  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
   ctx.restore();
 }
 
 function drawFallbackPortrait(ctx, cx, cy, rx, ry, sex) {
   const paper = ctx.createRadialGradient(cx - rx * 0.35, cy - ry * 0.45, 4, cx, cy, rx * 1.25);
-  paper.addColorStop(0, '#ead8ae'); paper.addColorStop(0.62, '#9c805a'); paper.addColorStop(1, '#4d3e2e');
-  ctx.fillStyle = paper; ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
+  paper.addColorStop(0, '#ead8ae');
+  paper.addColorStop(0.62, '#9c805a');
+  paper.addColorStop(1, '#4d3e2e');
+  ctx.fillStyle = paper;
+  ctx.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
   ctx.fillStyle = 'rgba(49,39,29,.82)';
-  ctx.beginPath(); ctx.ellipse(cx, cy - ry * 0.16, rx * 0.29, ry * 0.30, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(cx, cy + ry * 0.72, rx * 0.74, ry * 0.58, 0, Math.PI, Math.PI * 2); ctx.fill();
-  if (sex === 'F') { ctx.beginPath(); ctx.ellipse(cx, cy - ry * 0.2, rx * 0.42, ry * 0.39, 0, Math.PI, Math.PI * 2); ctx.fill(); }
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - ry * 0.16, rx * 0.29, ry * 0.30, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + ry * 0.72, rx * 0.74, ry * 0.58, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+  if (String(sex).toUpperCase() === 'F') {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - ry * 0.2, rx * 0.42, ry * 0.39, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
-function drawWoodPlaque(ctx, w, h) {
+function drawWoodPlaque(ctx, w, h, metal) {
   const x = w * 0.06;
   const y = h * 0.625;
   const width = w * 0.88;
@@ -143,11 +201,11 @@ function drawWoodPlaque(ctx, w, h) {
   ctx.stroke();
 
   roundedRectPath(ctx, x + w * 0.014, y + h * 0.018, width - w * 0.028, height - h * 0.036, radius * 0.72);
-  ctx.strokeStyle = 'rgba(214,159,78,.50)';
+  ctx.strokeStyle = metal.rule;
   ctx.lineWidth = Math.max(1.2, w * 0.0035);
   ctx.stroke();
 
-  ctx.globalAlpha = 0.22;
+  ctx.globalAlpha = 0.20;
   ctx.strokeStyle = '#d4a66e';
   ctx.lineWidth = Math.max(0.8, w * 0.0024);
   for (let i = 0; i < 5; i += 1) {
@@ -155,32 +213,35 @@ function drawWoodPlaque(ctx, w, h) {
     ctx.beginPath();
     ctx.moveTo(x + capWidth * 0.70, gy);
     ctx.bezierCurveTo(
-      x + width * 0.34, gy - h * 0.010,
-      x + width * 0.62, gy + h * 0.012,
-      x + width - capWidth * 0.70, gy - h * 0.004,
+      x + width * 0.34,
+      gy - h * 0.010,
+      x + width * 0.62,
+      gy + h * 0.012,
+      x + width - capWidth * 0.70,
+      gy - h * 0.004,
     );
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
 
-  drawBrassCap(ctx, x - capWidth * 0.45, y - h * 0.006, capWidth, height + h * 0.012, w);
-  drawBrassCap(ctx, x + width - capWidth * 0.55, y - h * 0.006, capWidth, height + h * 0.012, w);
+  drawMetalCap(ctx, x - capWidth * 0.45, y - h * 0.006, capWidth, height + h * 0.012, w, metal);
+  drawMetalCap(ctx, x + width - capWidth * 0.55, y - h * 0.006, capWidth, height + h * 0.012, w, metal);
   ctx.restore();
 }
 
-function drawBrassCap(ctx, x, y, width, height, w) {
+function drawMetalCap(ctx, x, y, width, height, w, metal) {
   const radius = width * 0.32;
   roundedRectPath(ctx, x, y, width, height, radius);
-  const brass = ctx.createLinearGradient(x, y, x + width, y);
-  brass.addColorStop(0, '#604018');
-  brass.addColorStop(0.18, '#a97829');
-  brass.addColorStop(0.43, '#e3c36d');
-  brass.addColorStop(0.62, '#9d6d22');
-  brass.addColorStop(0.84, '#d4aa4b');
-  brass.addColorStop(1, '#513515');
-  ctx.fillStyle = brass;
+  const gradient = ctx.createLinearGradient(x, y, x + width, y);
+  gradient.addColorStop(0, metal.dark);
+  gradient.addColorStop(0.18, metal.mid);
+  gradient.addColorStop(0.43, metal.bright);
+  gradient.addColorStop(0.62, metal.mid);
+  gradient.addColorStop(0.84, metal.light);
+  gradient.addColorStop(1, metal.edge);
+  ctx.fillStyle = gradient;
   ctx.fill();
-  ctx.strokeStyle = '#4e3215';
+  ctx.strokeStyle = metal.edge;
   ctx.lineWidth = Math.max(1.6, w * 0.0045);
   ctx.stroke();
 
@@ -189,14 +250,14 @@ function drawBrassCap(ctx, x, y, width, height, w) {
     const cx = x + width * 0.5;
     const cy = y + height * position;
     const rivet = ctx.createRadialGradient(cx - rivetRadius * 0.3, cy - rivetRadius * 0.3, 1, cx, cy, rivetRadius);
-    rivet.addColorStop(0, '#f5dda0');
-    rivet.addColorStop(0.45, '#c38b32');
-    rivet.addColorStop(1, '#5f3c15');
+    rivet.addColorStop(0, metal.bright);
+    rivet.addColorStop(0.45, metal.mid);
+    rivet.addColorStop(1, metal.dark);
     ctx.fillStyle = rivet;
     ctx.beginPath();
     ctx.arc(cx, cy, rivetRadius, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(58,35,12,.78)';
+    ctx.strokeStyle = metal.edge;
     ctx.lineWidth = Math.max(1, w * 0.0025);
     ctx.stroke();
   });
@@ -217,7 +278,7 @@ function roundedRectPath(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-function drawText(ctx, w, h, person) {
+function drawText(ctx, w, h, person, metal) {
   const maxWidth = w * 0.74;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -241,11 +302,32 @@ function drawText(ctx, w, h, person) {
     ctx.fillText(line, w * 0.5, firstNameY + index * nameLineHeight);
   });
 
+  ctx.save();
+  ctx.shadowColor = 'transparent';
+  ctx.strokeStyle = metal.rule;
+  ctx.lineWidth = Math.max(1.2, w * 0.0031);
+  ctx.beginPath();
+  ctx.moveTo(w * 0.22, h * 0.805);
+  ctx.lineTo(w * 0.78, h * 0.805);
+  ctx.stroke();
+  ctx.restore();
+
   const dates = `${person.birth?.date || '?'}${person.death?.date ? ` – ${person.death.date}` : ' –'}`;
-  const dateSize = fitSingleLine(ctx, dates, maxWidth, w * 0.052, w * 0.040, 600);
-  ctx.fillStyle = '#e4cc94';
-  ctx.font = `600 ${dateSize}px Georgia, serif`;
-  ctx.fillText(dates, w * 0.5, h * 0.858);
+  const date = fitWrappedText(ctx, dates, {
+    maxWidth,
+    maxLines: 2,
+    startSize: w * 0.057,
+    minSize: w * 0.043,
+    weight: 600,
+  });
+  ctx.fillStyle = '#ead5a0';
+  ctx.font = `600 ${date.fontSize}px Georgia, serif`;
+  const dateLineHeight = date.fontSize * 1.02;
+  const dateCenterY = h * 0.864;
+  const firstDateY = dateCenterY - ((date.lines.length - 1) * dateLineHeight) / 2;
+  date.lines.forEach((line, index) => {
+    ctx.fillText(line, w * 0.5, firstDateY + index * dateLineHeight);
+  });
 }
 
 function fitWrappedText(ctx, text, { maxWidth, maxLines, startSize, minSize, weight }) {
@@ -275,22 +357,11 @@ function fitWrappedText(ctx, text, { maxWidth, maxLines, startSize, minSize, wei
   return { lines, fontSize: fallbackSize };
 }
 
-function fitSingleLine(ctx, text, maxWidth, startSize, minSize, weight) {
-  let fontSize = startSize;
-  ctx.font = `${weight} ${fontSize}px Georgia, serif`;
-  while (ctx.measureText(text).width > maxWidth && fontSize > minSize) {
-    fontSize -= 1;
-    ctx.font = `${weight} ${fontSize}px Georgia, serif`;
-  }
-  return fontSize;
-}
-
 function wrapWords(ctx, text, maxWidth) {
   const words = String(text || '').trim().split(/\s+/).filter(Boolean);
   if (!words.length) return [''];
   const lines = [];
   let line = '';
-
   for (const word of words) {
     const candidate = line ? `${line} ${word}` : word;
     if (!line || ctx.measureText(candidate).width <= maxWidth) {
@@ -308,7 +379,10 @@ function loadImage(src) {
   if (IMAGES.has(src)) return IMAGES.get(src);
   const image = new Image();
   image.decoding = 'async';
-  image.onload = () => { CACHE.clear(); window.dispatchEvent(new Event('ancestry-photo-loaded')); };
+  image.onload = () => {
+    CACHE.clear();
+    window.dispatchEvent(new Event('ancestry-photo-loaded'));
+  };
   image.src = src;
   IMAGES.set(src, image);
   return image;
@@ -316,7 +390,8 @@ function loadImage(src) {
 
 function drawCover(ctx, image, x, y, w, h) {
   const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
-  const sw = w / scale, sh = h / scale;
+  const sw = w / scale;
+  const sh = h / scale;
   const sx = (image.naturalWidth - sw) / 2;
   const sy = Math.max(0, (image.naturalHeight - sh) * 0.25);
   ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);

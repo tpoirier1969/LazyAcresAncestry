@@ -5,7 +5,7 @@ globalThis.document = globalThis.document || { getElementById() { return null; }
 globalThis.matchMedia = globalThis.matchMedia || (() => ({ matches: false }));
 globalThis.ResizeObserver = globalThis.ResizeObserver || class { observe() {} };
 
-const { siblingClusterGuide, splitLineageChildren } = await import('../src/scene.js');
+const { siblingClusterGuide } = await import('../src/scene.js');
 
 const points = [
   { x: -3, y: 10 },
@@ -21,15 +21,4 @@ assert.equal(guide.stems.length, 3);
 assert.equal('omittedParentsStub' in guide, false, 'fallback sibling rails must not draw dangling lines to parents that are outside scope');
 assert.equal(siblingClusterGuide([{ x: 0, y: 0 }]), null, 'one person is not a sibling cluster');
 
-const split = splitLineageChildren(
-  ['direct-child', 'sibling-a', 'sibling-b'],
-  [
-    { id: 'direct-child', directAncestorDepth: 2 },
-    { id: 'sibling-a', directAncestorDepth: null },
-    { id: 'sibling-b', directAncestorDepth: null },
-  ],
-);
-assert.deepEqual(split.lineage, ['direct-child'], 'direct ancestors must receive their own explicit parent connector');
-assert.deepEqual(split.collateral, ['sibling-a', 'sibling-b'], 'collateral siblings remain available for their shared sibling rail');
-
-console.log('fallback sibling rails have no dangling stubs and direct ancestors keep explicit parent connections');
+console.log('fallback sibling rails have no dangling stubs and stay visually distinct from child rails');

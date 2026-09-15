@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
-import { ATLAS_HOME_ANCHOR, atlasDetailBounds, atlasDetailLevel } from '../src/atlas-map.js';
+import { ATLAS_HOME_ANCHOR } from '../src/atlas-map.js';
 import {
   ATLAS_FLIP_Y,
   atlasLocalToPoint,
   atlasPointToLocal,
-  atlasUvBounds,
   buildSphereMesh,
   viewingAtlasPoint,
 } from '../src/globe-webgl.js';
@@ -25,7 +24,7 @@ const homeBack = atlasLocalToPoint(home);
 assert.ok(Math.abs(homeBack.longitude - ATLAS_HOME_ANCHOR.longitude) < 1e-8);
 assert.ok(Math.abs(homeBack.latitude - ATLAS_HOME_ANCHOR.latitude) < 1e-8);
 const homeView = viewingAtlasPoint(0, 0);
-assert.ok(Math.abs(homeView.longitude - ATLAS_HOME_ANCHOR.longitude) < 1e-8, 'unrotated view should request map detail around the geographic home anchor');
+assert.ok(Math.abs(homeView.longitude - ATLAS_HOME_ANCHOR.longitude) < 1e-8, 'unrotated view should center the global map on the geographic home anchor');
 assert.ok(Math.abs(homeView.latitude - ATLAS_HOME_ANCHOR.latitude) < 1e-8);
 
 const referencePoints = [
@@ -47,13 +46,6 @@ const southOfHome = atlasPointToLocal(ATLAS_HOME_ANCHOR.longitude, ATLAS_HOME_AN
 assert.ok(eastOfHome.x > 0 && westOfHome.x < 0, 'east/west must remain right/left around the home anchor');
 assert.ok(northOfHome.y > 0 && southOfHome.y < 0, 'north/south must remain up/down around the home anchor');
 
-const homeDetailBounds = atlasDetailBounds(ATLAS_HOME_ANCHOR, atlasDetailLevel(7));
-const regional = atlasUvBounds(homeDetailBounds);
-assert.ok(regional.left < regional.right && regional.top < regional.bottom, 'dynamic regional atlas UV rectangle must preserve west/east and north/south order');
-const homeU = (ATLAS_HOME_ANCHOR.longitude + 180) / 360;
-const homeV = (90 - ATLAS_HOME_ANCHOR.latitude) / 180;
-assert.ok(homeU > regional.left && homeU < regional.right && homeV > regional.top && homeV < regional.bottom, 'Upper Peninsula home anchor must fall inside its close-view dynamic detail layer');
-
 const vertex = index => {
   const offset = index * 5;
   return {
@@ -74,4 +66,4 @@ for (let i = 0; i < mesh.vertexCount; i += 1) {
 const productionMesh = buildSphereMesh();
 assert.ok(productionMesh.vertexCount < 65536, 'default atlas mesh must remain safe for Uint16 element indices');
 
-console.log('WebGL atlas inverse geography, dynamic LOD bounds, orientation, and mesh ok');
+console.log('WebGL atlas inverse geography, orientation, and global mesh remain stable without rectangular regional patches');

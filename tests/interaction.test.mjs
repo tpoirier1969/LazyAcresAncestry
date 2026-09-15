@@ -23,8 +23,8 @@ const canvas = {
 const { GlobeScene } = await import('../src/scene.js');
 const scene = new GlobeScene(canvas, () => {});
 scene.setFamily([
-  { id: 'HOME', name: 'Home', role: 'root', branch: 'center', birth: { date: '1969' } },
-  { id: 'PARENT', name: 'Parent', role: 'parent', branch: 'paternal', birth: { date: '1940' } },
+  { id: 'HOME', name: 'Home', role: 'root', branch: 'center', birth: { date: '1969' }, events: [] },
+  { id: 'PARENT', name: 'Parent', role: 'parent', branch: 'paternal', birth: { date: '1940' }, events: [] },
 ], [
   { type: 'parent', from: 'PARENT', to: 'HOME' },
 ]);
@@ -44,8 +44,13 @@ function assertFocusAt(target, message, tolerance = 0.75) {
   assert.ok(Math.abs(point.y - target.y) <= tolerance, `${message}: focused y moved ${Math.abs(point.y - target.y).toFixed(3)}px`);
 }
 
+function assertFocusedCentered(message, tolerance = 0.75) {
+  assertFocusAt({ x: 600, y: 400 }, message, tolerance);
+}
+
 scene.focus('PARENT');
 assert.equal(scene.focusedId, 'PARENT');
+assertFocusedCentered('click/focus must put the newly selected person at viewport center');
 const focusedTarget = scene.focusedScreenPoint();
 assert(focusedTarget, 'focused parent should be visible before zoom');
 assertSphereCentered('after focusing another person');
@@ -86,6 +91,7 @@ assertSphereCentered('zoom after manual rotation');
 scene.focus('HOME', { resetZoom: true });
 assert.equal(scene.focusedId, 'HOME', 'Home remains an explicit focus action');
 assert.ok(scene.cameraGap > 3.8, 'explicit Home action may restore the normal home camera distance');
+assertFocusedCentered('explicit Home focus must also center the selected person');
 assertSphereCentered('after returning Home');
 
-console.log('wheel zoom preserves the focused screen coordinate while the projected globe center remains fixed');
+console.log('focus centers the selected person, wheel zoom preserves that screen coordinate, and the globe stays centered');

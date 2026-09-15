@@ -5,7 +5,8 @@ export const PROOF_SPOUSE_ID = 'I352435523781';
 export const PROOF_SIBLING_ID = 'I40538616398';
 export const PROOF_SIBLING_CHILD_ID = 'I40538616392';
 export const PROOF_BASE_EXPECTED_PEOPLE = 53;
-export const PROOF_EXPECTED_PEOPLE = 139;
+export const PROOF_BREADTH_EXPECTED_PEOPLE = 139;
+export const PROOF_EXPECTED_PEOPLE = 568;
 
 const DISPLAY_NAME_OVERRIDES = Object.freeze({
   I40538615623: 'Mary Alene Hillman',
@@ -92,10 +93,11 @@ export function buildProofFamily(parsed) {
   const inheritedBranch = new Map(baseBranch);
   const generationHint = new Map(baseGeneration);
   const expansionCluster = new Map();
+  const spouseFamilyIndex = buildSpouseFamilyIndex(families);
 
-  // One deliberate breadth step only. For every person in the approved 53-person
-  // proof tree, add the siblings in their GEDCOM family-of-origin and every
-  // recorded spouse. Do not recurse into the newly added people's relatives.
+  // First breadth step: siblings and spouses of the approved 53-person proof
+  // tree. This is the v0.4.10 scope and remains a named checkpoint so each UI
+  // revision can deliberately expand one family layer at a time.
   for (const seedId of baseIncluded) {
     const seed = requirePerson(individuals, seedId);
     const seedBranch = baseBranch.get(seedId) || 'center';
@@ -114,8 +116,8 @@ export function buildProofFamily(parsed) {
       }
     }
 
-    for (const family of families.values()) {
-      const spouseId = family.husb === seedId ? family.wife : family.wife === seedId ? family.husb : null;
+    for (const family of spouseFamilyIndex.get(seedId) || []) {
+      const spouseId = spouseFromFamily(seedId, family);
       if (!spouseId || !individuals.has(spouseId) || baseIncluded.has(spouseId)) continue;
       included.add(spouseId);
       if (!expansionKind.has(spouseId)) expansionKind.set(spouseId, 'spouse');
@@ -124,19 +126,73 @@ export function buildProofFamily(parsed) {
     }
   }
 
+  if (included.size !== PROOF_BREADTH_EXPECTED_PEOPLE) {
+    throw new Error(`Proof-tree breadth checkpoint expected ${PROOF_BREADTH_EXPECTED_PEOPLE} people but produced ${included.size}`);
+  }
+
+  // Next UI stress-test layer: for everybody who was visible in v0.4.10, add
+  // every recorded spouse/co-parent and one generation of their children. Then
+  // add spouses of those newly added children so the family unit is intelligible.
+  // Do not recurse into grandchildren or into spouse-side ancestry.
+  const currentLayer = new Set(included);
+  const newChildren = new Set();
+
+  for (const seedId of currentLayer) {
+    const seedBranch = inheritedBranch.get(seedId) || 'center';
+    const seedGeneration = generationHint.get(seedId) ?? 0;
+
+    for (const family of spouseFamilyIndex.get(seedId) || []) {
+      const spouseId = spouseFromFamily(seedId, family);
+      if (spouseId && individuals.has(spouseId) && !included.has(spouseId)) {
+        included.add(spouseId);
+        expansionKind.set(spouseId, 'spouse');
+        inheritedBranch.set(spouseId, seedBranch);
+        generationHint.set(spouseId, seedGeneration);
+      }
+
+      for (const childId of family.children || []) {
+        if (!individuals.has(childId) || included.has(childId)) continue;
+        included.add(childId);
+        newChildren.add(childId);
+        expansionKind.set(childId, 'child');
+        inheritedBranch.set(childId, seedBranch);
+        generationHint.set(childId, seedGeneration - 1);
+        expansionCluster.set(childId, family.id);
+      }
+    }
+  }
+
+  for (const childId of newChildren) {
+    const childBranch = inheritedBranch.get(childId) || 'center';
+    const childGeneration = generationHint.get(childId) ?? -1;
+    for (const family of spouseFamilyIndex.get(childId) || []) {
+      const spouseId = spouseFromFamily(childId, family);
+      if (!spouseId || !individuals.has(spouseId) || included.has(spouseId)) continue;
+      included.add(spouseId);
+      expansionKind.set(spouseId, 'child-spouse');
+      inheritedBranch.set(spouseId, childBranch);
+      generationHint.set(spouseId, childGeneration);
+    }
+  }
+
+  if (included.size !== PROOF_EXPECTED_PEOPLE) {
+    throw new Error(`Expanded proof tree expected ${PROOF_EXPECTED_PEOPLE} people but produced ${included.size}`);
+  }
+
   const people = [...included].map(id => {
     const individual = requirePerson(individuals, id);
     const isBase = baseIncluded.has(id);
+    const kind = expansionKind.get(id) || null;
     const role = isBase
       ? roleForBase(id, parents, grandparents, greatGrandparents)
-      : expansionKind.get(id) === 'spouse' ? 'one-step-spouse' : 'one-step-sibling';
+      : roleForExpansion(kind);
     const branch = inheritedBranch.get(id) || branchForBase(id, paternal, maternal);
     const familyOfOrigin = firstFamilyOfOrigin(individual);
-    // Keep the real GEDCOM family-of-origin available as a layout grouping key.
-    // If those parents are outside this proof scope the renderer may use the
-    // family ID to keep visible siblings together, but it never invents a
-    // parent relationship.
-    const cluster = isBase ? familyOfOrigin : expansionCluster.get(id) || null;
+    // A real GEDCOM family-of-origin is retained as a grouping key even when
+    // that person's parents are outside the current display scope. The
+    // renderer may draw a sibling rail from this FAM/CHIL evidence, but it may
+    // never invent an unnamed parent relationship.
+    const cluster = familyOfOrigin || expansionCluster.get(id) || null;
     return {
       id,
       name: DISPLAY_NAME_OVERRIDES[id] || individual.name || id,
@@ -144,13 +200,14 @@ export function buildProofFamily(parsed) {
       sex: individual.sex || 'U',
       birth: { ...individual.birth },
       death: { ...individual.death },
+      events: (individual.events || []).map(event => ({ ...event })),
       living: !individual.death?.date,
       role,
       branch,
       cluster,
       generationHint: generationHint.get(id) ?? 0,
       directAncestorDepth: directDepth.has(id) ? directDepth.get(id) : null,
-      proofExpansionKind: expansionKind.get(id) || null,
+      proofExpansionKind: kind,
       note: id === PROOF_SIBLING_CHILD_ID
         ? 'User-confirmed adopted child. The source GEDCOM family record does not include an adoption/pedigree tag.'
         : null,
@@ -194,7 +251,7 @@ export function buildProofFamily(parsed) {
   scopedRelationships.sort(relationshipOrder);
 
   return {
-    source: `Original GEDCOM proof tree + one-step siblings/spouses · ${people.length} people`,
+    source: `Original GEDCOM proof tree + siblings/spouses + one child generation · ${people.length} people`,
     people,
     families: scopedFamilies,
     relationships: scopedRelationships,
@@ -202,9 +259,27 @@ export function buildProofFamily(parsed) {
       relationshipAuthority: 'GEDCOM FAM records only',
       expectedPeople: PROOF_EXPECTED_PEOPLE,
       basePeople: PROOF_BASE_EXPECTED_PEOPLE,
-      scope: 'approved 53-person proof tree plus one non-recursive breadth step of each displayed person’s recorded siblings and spouses',
+      previousUiPeople: PROOF_BREADTH_EXPECTED_PEOPLE,
+      scope: 'approved 53-person proof tree, one sibling/spouse breadth step, then one generation of children plus the spouses/co-parents needed to show those family units',
     },
   };
+}
+
+function buildSpouseFamilyIndex(families) {
+  const index = new Map();
+  for (const family of families.values()) {
+    for (const personId of [family.husb, family.wife].filter(Boolean)) {
+      if (!index.has(personId)) index.set(personId, []);
+      index.get(personId).push(family);
+    }
+  }
+  return index;
+}
+
+function spouseFromFamily(personId, family) {
+  if (family.husb === personId) return family.wife;
+  if (family.wife === personId) return family.husb;
+  return null;
 }
 
 function firstFamilyOfOrigin(individual) {
@@ -233,6 +308,13 @@ function roleForBase(id, parents, grandparents, greatGrandparents) {
   if (grandparents.includes(id)) return 'grandparent';
   if (greatGrandparents.includes(id)) return 'great-grandparent';
   return 'grandparent-sibling';
+}
+
+function roleForExpansion(kind) {
+  if (kind === 'sibling') return 'one-step-sibling';
+  if (kind === 'child') return 'one-generation-child';
+  if (kind === 'child-spouse') return 'one-generation-child-spouse';
+  return 'one-step-spouse';
 }
 
 function branchForBase(id, paternal, maternal) {

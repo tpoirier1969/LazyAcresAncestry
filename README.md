@@ -14,16 +14,19 @@ The working globe radius is **225 physical layout units**. Person plaques keep f
 
 ## Scalable tree view
 
-v0.4.27 changes the large-tree interaction from “show everybody and collapse afterward” to **start compact and expand where needed**.
+v0.4.28 keeps the compact expandable tree model but makes the initial working view **lineage-first instead of cousin-first**.
 
 - The complete 1,645-person genealogy remains the authoritative in-memory tree.
-- Initial display is limited to the **600 people with the shortest relationship-path distance from the current target person**.
-- Search still covers the full logical tree. Focusing a person outside the current 600-person window recenters the visible window around that person rather than unloading genealogy data.
+- Initial display is capped at **600 people**, but slots are assigned by genealogical priority rather than simple graph distance.
+- The current target, direct ancestors, and direct descendants form the primary vertical spine and are selected before collateral branches.
+- Spouses/co-parents needed to keep those direct-line families intelligible are preferred before cousin branches.
+- Automatic collateral display is limited to relatives within a three-generation common-ancestor envelope: siblings, close aunts/uncles and nieces/nephews, first cousins, and second cousins. Third-cousin and more distant branches start hidden.
+- Search still covers the full logical tree. Focusing a person outside the current working window rebuilds the lineage-first window around that person rather than unloading genealogy data.
 - Hidden descendants are exposed with small **family-branch chevrons drawn directly on the tree**. One family gets one branch control, rather than duplicate controls on both parents.
 - A downward chevron reveals the next child generation for that family. The newly revealed children bring their spouses into view so family units remain intelligible.
 - An upward chevron folds a manually expanded family branch back up. Nested manual expansions below that family fold with it.
 - Expansion is deliberately incremental. One click does not recursively dump every deeper descendant onto the sphere; newly revealed generations expose their own branch arrows.
-- **Reset expansions** returns to the target person’s nearest-600 baseline.
+- **Reset expansions** returns to the target person’s lineage-first baseline.
 - A compact status readout reports how many people are currently shown out of the complete logical population.
 - Density warnings are based on readable plaques in the current viewport, not the total GEDCOM size.
 
@@ -120,8 +123,8 @@ Name typography remains dominant. Date typography uses a preferred size of about
 - Small parchment/brick chevrons are drawn at family branch junctions where more descendants are hidden.
 - Downward chevron: reveal that family’s next child generation.
 - Upward chevron: fold that manually expanded family branch back up, including nested manual expansions below it.
-- `Reset expansions` restores the nearest-600 baseline around the current target person.
-- Search may retarget the nearest-600 window when the requested person is not currently visible.
+- `Reset expansions` restores the lineage-first baseline around the current target person.
+- Search may retarget the lineage-first window when the requested person is not currently visible.
 - Dense-view warnings are based on plaques actually readable in the current viewport.
 - `Return to Tod` restores the home person.
 - People can be searched and filtered by family side, century, relationship distance, and name.
@@ -149,11 +152,11 @@ Cross-site links are not inferred from titles alone.
 - `src/camera-behavior.js` owns the zoom-to-view-angle curve, curved zoom-to-pan-speed response, focus framing, and motion timing.
 - `src/layout.js` owns canonical GEDCOM-family-aware base placement, generation assignment, direct-ancestor spine centering, and collateral-family alignment.
 - `src/layout-spacing.js` owns scalable family-block spreading and hard same-row plaque clearance.
-- `src/tree-view.js` owns the nearest-600 visibility window, family-level expansion state derivation, branch boundaries, and descendant-family collapse logic.
+- `src/tree-view.js` owns the lineage-first visible-window policy, second-cousin collateral boundary, family-level expansion state derivation, branch boundaries, and descendant-family collapse logic.
 - `src/globe-webgl.js` owns the WebGL UV sphere, atlas texture rendering, and hidden-surface handling.
 - `src/atlas-map.js` owns the rendered atlas, lightweight neutral relief input, and preserved fallback assets.
 - `src/scene-core.js` owns the low-level camera, projection, Canvas plaque drawing, evidence-based relationship grouping, route geometry, surface sampling, and hover mechanics.
-- `src/scene.js` owns the scalable scene layer: family spacing integration, background route worker, nearest-window application, inline family branch controls, viewport-density warnings, and moving level-of-detail policy.
+- `src/scene.js` owns the scalable scene layer: family spacing integration, background route worker, lineage-window application, inline family branch controls, viewport-density warnings, and moving level-of-detail policy.
 - `src/relationship-worker.js` performs expensive family-route planning off the UI thread.
 - `src/plaque.js` owns portrait medallions, wood nameplates, and canonical plaque typography.
 - `src/plaque-metal.js` owns the male/female/unspecified metal palettes.
@@ -181,7 +184,9 @@ Regression coverage includes:
 - exact reproduction of the established 430-person seed population;
 - independent verification that every descendant of those 430 seeds is present and unrelated supporting branches are not pulled in;
 - layout of the recursively expanded population;
-- nearest-person visible-window selection with a 600-person default cap;
+- lineage-first visible-window selection with a 600-person cap;
+- deep direct ancestors and descendants surviving beyond the collateral cutoff;
+- automatic inclusion of first and second cousins while third-cousin and more distant branches start hidden;
 - incremental family-level generation expansion without recursively exposing all deeper descendants;
 - one expansion control per GEDCOM family branch, including expand-to-collapse state changes;
 - nested expanded-family cleanup when an ancestor branch is folded back up;

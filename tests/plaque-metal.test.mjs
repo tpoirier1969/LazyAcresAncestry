@@ -18,11 +18,20 @@ assert.ok(
   parseInt(PLAQUE_METALS.F.mid.slice(1, 3), 16) > parseInt(PLAQUE_METALS.F.mid.slice(3, 5), 16),
   'female midtone should carry a clear red-brown bias',
 );
+assert.equal(PLAQUE_METALS.F.edge, PLAQUE_METALS.F.line, 'female frame edge and ornament line should share the silver treatment');
+assert.ok(
+  parseInt(PLAQUE_METALS.F.edge.slice(1, 3), 16) > 190,
+  'female frame edge should be a light silver rather than a black outline',
+);
+assert.ok(
+  parseInt(PLAQUE_METALS.F.mid.slice(1, 3), 16) >= 0xad,
+  'female rose metal should remain slightly more saturated and lighter at overview scale',
+);
 
 for (const metal of Object.values(PLAQUE_METALS)) {
-  for (const key of ['dark', 'mid', 'light', 'bright', 'edge', 'rule']) {
+  for (const key of ['dark', 'mid', 'light', 'bright', 'edge', 'line', 'rule']) {
     assert.ok(metal[key], `${metal.id} must define ${key}`);
   }
 }
 
-console.log('plaque metal palettes distinguish oil-rubbed bronze, rose bronze, and pewter treatments');
+console.log('plaque metal palettes distinguish dark bronze, brighter rose-silver, and neutral pewter treatments');

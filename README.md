@@ -4,20 +4,34 @@ Interactive spherical genealogy atlas built from the supplied Ancestry GEDCOM.
 
 ## Current prototype
 
-The displayed genealogy now starts from the established **430-person** map population and recursively follows **every GEDCOM-recorded descendant** of every one of those people. Missing spouses/co-parents are included only when needed to show a descendant family correctly. A newly introduced supporting co-parent does not open unrelated spouse families unless that person was already one of the original 430 people or is also reached legitimately through a descendant path.
+The displayed genealogy starts from the established **430-person** map population and recursively follows **every GEDCOM-recorded descendant** of every one of those people. Missing spouses/co-parents are included only when needed to show a descendant family correctly. A newly introduced supporting co-parent does not open unrelated spouse families unless that person was already one of the original 430 people or is also reached legitimately through a descendant path.
 
-This replaces the previous one-generation child stress test. The final displayed population is derived dynamically from the GEDCOM descendant closure rather than being held to a manually chosen final count.
+The current GEDCOM produces **1,645 displayed people**: the 430-person established seed population, 792 deeper descendants, and 423 supporting spouses/co-parents. The final displayed population is derived dynamically from the GEDCOM descendant closure rather than being held to a manually chosen final count.
 
 The renderer remains Canvas/WebGL based rather than creating one DOM element per person. Person plaques and relationship lines stay in Canvas/WebGL; hover details use one reusable tooltip.
 
 The working globe radius is **225 physical layout units**. Person plaques keep fixed physical dimensions on the sphere; apparent size and foreshortening come from projection rather than generation-specific sizing.
 
+## Large-tree rendering
+
+v0.4.22 addresses the first renderer bottlenecks exposed by the 1,645-person descendant tree.
+
+- Family relationship topology and route planning are cached when the family data changes instead of being rebuilt on every animation frame.
+- Large-tree route planning is deferred until after the first browser paint, allowing the atlas and interface to appear before the expensive routing pass finishes.
+- Relationship conflict scoring keeps cached segment geometry and first rejects route pairs whose planar bounds cannot interact, avoiding needless segment-by-segment comparisons across distant families.
+- Person plaques are projected for all people but expensive plaque texture/projection drawing is limited to people on the visible hemisphere and near the current viewport.
+- Relationship polylines get a cheap coarse visibility pass before high-resolution spherical sampling. Off-screen/far-side lines are skipped rather than receiving hundreds of unnecessary surface samples.
+- The 8192 × 4096 rendered atlas is uploaded once. The shader's relief slot now uses a tiny 2 × 2 neutral texture instead of decoding and uploading the same 8K artwork a second time.
+
+These changes preserve the complete descendant population. They fix renderer scaling rather than reducing genealogy scope to conceal the performance problem.
+
 ## Rendered antique atlas
 
-The canonical globe background is now a **rendered antique map** rather than the coded fictional landmass drawing from v0.4.20.
+The canonical globe background is a **rendered antique map** rather than the coded fictional landmass drawing from v0.4.20.
 
 - `assets/atlas-base.svg` keeps the 8192 × 4096 texture contract but embeds the rendered antique artwork as the map image.
 - The current artwork is deliberately pale and low contrast so the map recedes behind plaques and genealogy lines.
+- `assets/atlas-relief-neutral.svg` is a tiny neutral shader input; it prevents the rendered 8K atlas from being loaded into GPU memory twice.
 - The prior coded fictional atlas is preserved separately as `assets/atlas-base-coded-fallback.svg`.
 - The older neutral parchment/graticule treatment remains preserved as `assets/atlas-base-fallback.svg`.
 - Real Earth relief and regional WMS overlays remain disabled so the rendered antique treatment is not interrupted by sharp modern imagery.
@@ -30,7 +44,7 @@ The current rendered artwork is a working visual direction, not a claim of geogr
 - `src/globe-webgl.js` renders the atlas on a true GPU UV sphere with perspective-correct texture mapping, depth testing, hidden-surface removal, mipmapping where supported, and anisotropic filtering where available.
 - The normal production sphere mesh is 360 × 180 segments, near the practical 16-bit index limit used by the current path.
 - The WebGL globe and genealogy overlay share the same runtime yaw, camera pitch, focal length, radius, and camera distance, keeping plaques and relationship geometry locked to the surface.
-- Relationship lines do not follow mesh triangles. Their points are calculated analytically on the sphere and sampled adaptively according to projected size. Close and long lines therefore receive many more samples than distant short lines.
+- Relationship lines do not follow mesh triangles. Their points are calculated analytically on the sphere and sampled adaptively according to projected size. Close and long visible lines therefore receive many more samples than distant short lines.
 
 ## Family spacing model
 
@@ -91,7 +105,7 @@ Name typography remains dominant. Date typography sits between the earlier too-l
 
 ## GEDCOM descendant scope
 
-`src/proof-family.js` now owns a two-stage scope:
+`src/proof-family.js` owns a two-stage scope:
 
 1. reproduce the established 430-person map exactly, preserving the earlier proof/breadth/child rules;
 2. freeze those 430 people as the descendant seed population and recursively follow every recorded child from them until no further descendants remain.
@@ -112,8 +126,8 @@ Cross-site links are not inferred from titles alone. FamilySearch or archive lin
 - `src/camera-behavior.js` owns the zoom-to-view-angle curve, curved zoom-to-pan-speed response, focus framing, and motion timing.
 - `src/layout.js` owns GEDCOM-family-aware placement, family spacing, direct-ancestor spine centering, and collateral-family alignment.
 - `src/globe-webgl.js` owns the WebGL UV sphere, atlas texture rendering, and hidden-surface handling.
-- `src/atlas-map.js` owns the rendered atlas and preserved fallback assets.
-- `src/scene.js` owns interaction, runtime camera/sphere state, evidence-based relationship grouping, adaptive route planning, descent-corridor scoring, zoom-dependent line weights, adaptive surface-line sampling, hover intent, and the Canvas person overlay.
+- `src/atlas-map.js` owns the rendered atlas, lightweight neutral relief input, and preserved fallback assets.
+- `src/scene.js` owns interaction, runtime camera/sphere state, evidence-based relationship grouping, cached/deferred adaptive route planning, descent-corridor scoring, zoom-dependent line weights, viewport-culling, adaptive surface-line sampling, hover intent, and the Canvas person overlay.
 - `src/plaque.js` owns portrait medallions, wood nameplates, and canonical plaque typography.
 - `src/plaque-metal.js` owns the male/female/unspecified metal palettes.
 - `src/plaque-projection.js` projects rigid plaque artwork onto each person's tangent plane.
@@ -150,7 +164,7 @@ Regression coverage includes:
 - 1.25-second hover intent;
 - close-to-overview panning curves and camera angle behavior;
 - plaque projection and typography;
-- rendered-atlas ownership and preservation of both prior fallback treatments;
+- rendered-atlas ownership, lightweight neutral relief, and preservation of both prior fallback treatments;
 - deterministic Ancestry `_APID` record links.
 
 ## Hosting

@@ -10,10 +10,14 @@ export const ATLAS_TEXTURE_SHA1 = 'bundled-rendered-atlas-v1';
 
 export const ATLAS_FALLBACK_TEXTURE_URL = 'assets/atlas-base-fallback.svg';
 export const ATLAS_CODED_FALLBACK_TEXTURE_URL = 'assets/atlas-base-coded-fallback.svg';
-export const ATLAS_RELIEF_TEXTURE_URL = 'assets/atlas-base.svg';
-export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'assets/atlas-base.svg';
+// The illustrated atlas is already the complete visual treatment. Do not decode
+// and upload the same 8192x4096 image a second time as a relief texture; a tiny
+// neutral luminance texture keeps the shader contract without doubling atlas
+// memory or startup work.
+export const ATLAS_RELIEF_TEXTURE_URL = 'assets/atlas-relief-neutral.svg';
+export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'assets/atlas-relief-neutral.svg';
 export const ATLAS_RELIEF_SOURCE_PAGE = '';
-export const ATLAS_RELIEF_CREDIT = 'Bundled rendered atlas detail layer';
+export const ATLAS_RELIEF_CREDIT = 'Neutral relief texture; rendered atlas supplies all visible cartographic detail';
 
 // Rectangular regional WMS layers remain disabled. The bundled artwork is the
 // sole visual atlas layer, avoiding a sharp modern-photo patch over the faded

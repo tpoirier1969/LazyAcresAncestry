@@ -4,26 +4,26 @@ Interactive spherical genealogy atlas built from the supplied Ancestry GEDCOM.
 
 ## Current prototype
 
-The current proof/stress population contains **430 people**. It starts with the approved 53-person proof tree, adds the established non-recursive sibling/spouse breadth step to reach 139 people, then adds every GEDCOM-recorded child of those 139 people plus the otherwise-missing co-parents required to keep those displayed child families complete. The child/co-parent expansion is deliberately non-recursive.
+The displayed genealogy now starts from the established **430-person** map population and recursively follows **every GEDCOM-recorded descendant** of every one of those people. Missing spouses/co-parents are included only when needed to show a descendant family correctly. A newly introduced supporting co-parent does not open unrelated spouse families unless that person was already one of the original 430 people or is also reached legitimately through a descendant path.
 
-The 430-person set is intentionally difficult. It contains real cases where one person has children in more than one GEDCOM family, so layout and routing have to keep those families visually distinct rather than relying on a tidy ancestor-only tree.
+This replaces the previous one-generation child stress test. The final displayed population is derived dynamically from the GEDCOM descendant closure rather than being held to a manually chosen final count.
 
-The renderer remains scalable to the full genealogy without one DOM element per person. Person plaques and relationship lines stay in Canvas/WebGL; hover details use one reusable tooltip.
+The renderer remains Canvas/WebGL based rather than creating one DOM element per person. Person plaques and relationship lines stay in Canvas/WebGL; hover details use one reusable tooltip.
 
 The working globe radius is **225 physical layout units**. Person plaques keep fixed physical dimensions on the sphere; apparent size and foreshortening come from projection rather than generation-specific sizing.
 
-## Fictional antique atlas
+## Rendered antique atlas
 
-The globe now uses a deliberately **fictional antique atlas** instead of recognizable modern Earth geography.
+The canonical globe background is now a **rendered antique map** rather than the coded fictional landmass drawing from v0.4.20.
 
-- `assets/atlas-base.svg` is an **8192 × 4096 vector atlas** with invented coastlines and islands, pale parchment land, blue-green seas, pseudo-Latin cartographic labels, ships, a sea creature, and a compass rose.
-- The map is intentionally not geographically recognizable. It is decorative context for genealogy, not a migration or event-location map.
-- Because the canonical atlas is vector artwork on an 8192 × 4096 canvas, it can be rasterized sharply as the sphere grows rather than locking the project to today's globe size.
-- `assets/atlas-base-fallback.svg` preserves the previous neutral parchment/graticule map unchanged as a fallback asset.
-- Real Earth relief and regional WMS overlays are disabled in fictional-atlas mode so recognizable geography cannot bleed through the invented map.
-- The display treatment is deliberately lighter and more saturated than the previous atlas so bronze plaques and brick relationship lines do not sit in a uniformly muddy beige field.
+- `assets/atlas-base.svg` keeps the 8192 × 4096 texture contract but embeds the rendered antique artwork as the map image.
+- The current artwork is deliberately pale and low contrast so the map recedes behind plaques and genealogy lines.
+- The prior coded fictional atlas is preserved separately as `assets/atlas-base-coded-fallback.svg`.
+- The older neutral parchment/graticule treatment remains preserved as `assets/atlas-base-fallback.svg`.
+- Real Earth relief and regional WMS overlays remain disabled so the rendered antique treatment is not interrupted by sharp modern imagery.
+- `src/atlas-map.js` owns the canonical atlas choice and fallback metadata.
 
-`src/atlas-map.js` is the canonical owner of atlas assets and provenance. Its home anchor is now only a default orientation for the fictional sphere, not a claim that a person is placed over a real geographic location.
+The current rendered artwork is a working visual direction, not a claim of geographic precision. It resembles antique world cartography and is being evaluated primarily as a quiet background for the family tree.
 
 ## Globe renderer
 
@@ -39,12 +39,12 @@ Visible placement is owned by `src/layout.js` and uses named physical rules:
 - `COUPLE_GAP` is the tightest spacing because spouses read as a unit.
 - `SIBLING_GAP` separates siblings in one GEDCOM family.
 - `MIN_PERSON_CLEARANCE` is the hard minimum center-to-center clearance.
-- `BETWEEN_FAMILY_GAP` is deliberately larger than sibling spacing and now gives descendant-bearing neighboring family blocks a small extra allowance.
+- `BETWEEN_FAMILY_GAP` is deliberately larger than sibling spacing and gives descendant-bearing neighboring family blocks extra allowance.
 - `GENERATION_GAP` provides consistent vertical generation spacing.
 
-Layout grouping follows the actual GEDCOM family-of-origin identity. Children from different spouse families remain separate contiguous blocks even when they share one parent.
+Layout grouping follows actual GEDCOM family identity. Children from different spouse families remain separate contiguous blocks even when they share one parent.
 
-Direct ancestors remain centered on the home ancestry spine, but that centering is now applied only to the actual direct-ancestor people. It no longer shifts every collateral person in the same generation. This prevents a collateral single-child family from being dragged sideways merely because the home ancestry row needs centering.
+Direct ancestors remain centered on the home ancestry spine, but centering applies only to the direct-ancestor people. Collateral families are not shifted sideways merely because the home ancestry row needs centering.
 
 ## Relationship routing
 
@@ -52,15 +52,15 @@ Couple and descent connectors use conventional genealogy grammar: partner bar, d
 
 Relationship weight changes continuously with zoom. Close inspection retains the stronger stroke; overview views taper toward a thinner readable line so a dense tree does not become a red lattice.
 
-Routing now actively scores visual congestion:
+Routing scores visual congestion:
 
 - overlapping horizontal family rails are strongly penalized;
-- near-parallel vertical stems are penalized much more heavily than before;
+- near-parallel vertical stems are penalized heavily;
 - vertical stems crossing busy horizontal rails are strongly penalized;
 - available generation space is used for alternate rail heights;
-- multi-child family trunks may slide a bounded distance along the parent/couple bar to find a clearer **descent corridor**;
+- multi-child family trunks may slide a bounded distance along the parent/couple bar to find a clearer descent corridor;
 - the couple midpoint remains preferred, so trunk movement occurs only when it materially reduces conflicts;
-- family blocks receive modestly more horizontal breathing room before the router accepts an ugly crowded descent.
+- family blocks receive modestly more horizontal breathing room before the router accepts a crowded descent.
 
 For one-child families, tiny decorative doglegs are suppressed. If the child lies beneath the couple span and the horizontal correction is small, the family uses a straight vertical descent. A meaningful offset still retains normal family routing.
 
@@ -74,12 +74,12 @@ Person plaques are rigid physical objects in the local tangent plane of the glob
 
 The current visual treatment uses dark wood nameplates with aged-metal trim. Male plaques use darker oil-rubbed bronze, female plaques use warmer rose bronze, and unspecified sex uses aged pewter.
 
-Name typography remains dominant. Date typography in v0.4.20 sits between the earlier too-large treatment and the later too-small treatment: the preferred date size is about **4.9% of plaque width**, with a **3.5%** minimum for long wrapped dates. Date color is also slightly brighter for legibility.
+Name typography remains dominant. Date typography sits between the earlier too-large and later too-small treatments: the preferred date size is about **4.9% of plaque width**, with a **3.5%** minimum for long wrapped dates.
 
 ## Interaction
 
 - Drag rotates the globe.
-- Drag sensitivity uses a curved zoom response. Tight inspection is slightly slower than before, while wide overview speed remains at the approved maximum for efficient traversal.
+- Drag sensitivity uses a curved zoom response. Tight inspection is slower, while wide overview speed remains efficient.
 - Wheel/trackpad movement changes camera distance across the supported near/far range.
 - Camera angle changes continuously with zoom through a smooth curve rather than jumping between modes.
 - Wheel zoom preserves the selected person's screen coordinate.
@@ -89,9 +89,18 @@ Name typography remains dominant. Date typography in v0.4.20 sits between the ea
 - `Return to Tod` restores the home person.
 - People can be searched and filtered by family side, century, relationship distance, and name.
 
-## GEDCOM and saved records
+## GEDCOM descendant scope
+
+`src/proof-family.js` now owns a two-stage scope:
+
+1. reproduce the established 430-person map exactly, preserving the earlier proof/breadth/child rules;
+2. freeze those 430 people as the descendant seed population and recursively follow every recorded child from them until no further descendants remain.
+
+The recursive traversal is intentionally directional. Children continue the traversal. A missing spouse/co-parent may be displayed to keep a family intact, but that supporting person's unrelated unions do not automatically open unless the person was part of the original seed or is also reached through a descendant line.
 
 GEDCOM identifiers remain stable external identifiers throughout the app.
+
+## GEDCOM and saved records
 
 Ancestry GEDCOM exports can preserve `_APID` identifiers on citations. When one is present and valid, the parser reconstructs the corresponding Ancestry discovery-record URL and Person Details exposes it through **Open record**. Ancestry may still require sign-in or the appropriate subscription. Records without a deterministic provider identifier remain descriptive rather than receiving a guessed URL.
 
@@ -103,7 +112,7 @@ Cross-site links are not inferred from titles alone. FamilySearch or archive lin
 - `src/camera-behavior.js` owns the zoom-to-view-angle curve, curved zoom-to-pan-speed response, focus framing, and motion timing.
 - `src/layout.js` owns GEDCOM-family-aware placement, family spacing, direct-ancestor spine centering, and collateral-family alignment.
 - `src/globe-webgl.js` owns the WebGL UV sphere, atlas texture rendering, and hidden-surface handling.
-- `src/atlas-map.js` owns canonical atlas assets, fallback asset metadata, and fictional atlas orientation.
+- `src/atlas-map.js` owns the rendered atlas and preserved fallback assets.
 - `src/scene.js` owns interaction, runtime camera/sphere state, evidence-based relationship grouping, adaptive route planning, descent-corridor scoring, zoom-dependent line weights, adaptive surface-line sampling, hover intent, and the Canvas person overlay.
 - `src/plaque.js` owns portrait medallions, wood nameplates, and canonical plaque typography.
 - `src/plaque-metal.js` owns the male/female/unspecified metal palettes.
@@ -111,24 +120,26 @@ Cross-site links are not inferred from titles alone. FamilySearch or archive lin
 - `src/relationships.js` derives human-readable kinship labels.
 - `src/gedcom.js` normalizes alternate names and saved records for details/hover UI.
 - `src/gedcom-family-parser.js` parses GEDCOM families, preserves source/citation identifiers, and resolves supported Ancestry `_APID` links.
-- `src/proof-family.js` owns the deterministic 430-person proof/stress scope.
+- `src/proof-family.js` owns the established 430-person seed plus recursive descendant closure.
 - `src/data.js` loads and validates the GEDCOM and attaches prototype media.
 - `src/version.js` is the sole current application-version source.
 
 ## Data and storage
 
-The current proof app reads the supplied GEDCOM directly and validates its family graph before building the displayed population. Prototype family notes remain in browser local storage; data-quality notes remain separate from ordinary family notes.
+The app reads the supplied GEDCOM directly and validates its family graph before building the displayed population. Prototype family notes remain in browser local storage; data-quality notes remain separate from ordinary family notes.
 
 Any future Supabase objects for this app must use the `lazy_acres_ancestry_` prefix because the personal Supabase project is shared with other applications. The intended permanent media archive remains Cloudflare R2.
 
 ## Testing
 
-GitHub Actions syntax-checks every `src/*.js` module and runs every `tests/*.test.mjs` file.
+GitHub Actions syntax-checks every `src/*.js` module and runs every `tests/*.test.mjs` file on canonical `main`.
 
 Regression coverage includes:
 
 - GEDCOM parsing and relationship authority;
-- the deterministic 430-person proof population;
+- exact reproduction of the established 430-person seed population;
+- independent verification that every descendant of those 430 seeds is present and unrelated supporting branches are not pulled in;
+- layout of the recursively expanded population;
 - distinct GEDCOM family blocks when parents have multiple spouse families;
 - direct-ancestor spine centering without shifting collateral single-child families;
 - near-parallel and crossing route avoidance;
@@ -139,7 +150,7 @@ Regression coverage includes:
 - 1.25-second hover intent;
 - close-to-overview panning curves and camera angle behavior;
 - plaque projection and typography;
-- fictional-atlas ownership and preservation of the prior fallback atlas;
+- rendered-atlas ownership and preservation of both prior fallback treatments;
 - deterministic Ancestry `_APID` record links.
 
 ## Hosting

@@ -14,10 +14,11 @@ The working globe radius is **225 physical layout units**. Person plaques keep f
 
 ## Scalable tree view
 
-v0.4.25 changes the large-tree model from “draw everything all the time” to **full genealogy in memory, curated genealogy on screen**.
+v0.4.26 keeps the large-tree model as **full genealogy in memory, curated genealogy on screen**, and makes the controls easier to understand and find.
 
 - The complete 1,645-person descendant closure remains the authoritative in-memory tree.
 - The focused person can collapse or expand their descendant branch without deleting or unloading genealogy data.
+- The collapse control stays visible at all times. When the focused person has no recorded descendants, the disabled control explains that state instead of disappearing.
 - Search can still reach a person hidden inside a collapsed branch; focusing a hidden result restores the needed tree view.
 - An **Expand all** control reports how many people are currently hidden.
 - A density warning appears when the current viewport contains enough readable plaques to become visually crowded.
@@ -34,8 +35,8 @@ The large-tree renderer now includes several scale controls exposed by the 1,645
 - Relationship conflict scoring keeps cached segment geometry and rejects route pairs whose planar bounds cannot interact before detailed segment comparisons.
 - Person plaques are projected for all relevant people but expensive plaque drawing is limited to the visible hemisphere and nearby viewport.
 - Relationship polylines get a cheap coarse visibility pass before high-resolution spherical sampling.
-- During camera motion, relationship geometry is temporarily omitted and very small plaques are culled so dragging and focus motion are not forced to render the full settled-view detail every frame.
-- At wide overview distances the relationship lattice is hidden; it returns as the user moves close enough for family structure to be readable.
+- During camera motion, relationship lines remain visible but switch to the cheaper moving sample density and omit expensive shadows. Very small plaques can still be culled while moving.
+- Relationship lines remain present at wide overview distances rather than disappearing behind a hard zoom threshold.
 - The 8192 × 4096 rendered atlas is uploaded once. The shader relief slot uses a tiny neutral texture instead of decoding and uploading the same 8K artwork twice.
 
 These changes preserve the complete descendant population. They improve renderer scaling rather than reducing genealogy scope to conceal performance problems.
@@ -65,7 +66,7 @@ The current rendered artwork is a working visual direction, not a claim of geogr
 
 Base placement is owned by `src/layout.js` and uses named physical rules for couple spacing, sibling spacing, minimum person clearance, between-family spacing, and generation spacing.
 
-v0.4.25 adds `src/layout-spacing.js` as the scalable family-view spacing pass. It operates on the canonical base layout rather than replacing GEDCOM relationship authority.
+`src/layout-spacing.js` adds the scalable family-view spacing pass. It operates on the canonical base layout rather than replacing GEDCOM relationship authority.
 
 - spouses remain compact visual units;
 - sibling units from the same recorded family stay contiguous;
@@ -91,7 +92,7 @@ Routing scores visual congestion:
 
 For one-child families, tiny decorative doglegs are suppressed. If the child lies beneath the couple span and the horizontal correction is small, the family uses a straight vertical descent.
 
-At overview scale, relationship geometry is intentionally reduced rather than allowing distant sibling rails to dominate the map. Full settled routing returns at closer family-reading distances.
+At overview scale, line weight and sampling are reduced, but relationship geometry remains continuous during pan, zoom, and overview so the family structure does not blink in and out.
 
 Connectors remain evidence-based. Layout can change placement, but it cannot invent a parent, spouse, or sibling relationship.
 
@@ -110,10 +111,11 @@ Name typography remains dominant. Date typography uses a preferred size of about
 - Wheel/trackpad movement changes camera distance across the supported near/far range.
 - Camera angle changes continuously with zoom through a smooth curve rather than jumping between modes.
 - Wheel zoom preserves the selected person's screen coordinate.
-- During motion, expensive settled-view relationship detail and tiny plaques are culled; full detail returns when motion stops.
+- During motion, relationship lines stay visible using the cheaper moving sample density while very small plaques may be culled.
 - Desktop hover requires **1.25 seconds** of continuous intent before the compact person card appears.
 - Click a person to focus that branch and open full Person Details.
-- When the focused person has recorded children, **Collapse descendants** hides the descendant closure below that person while leaving the focused person and spouse visible.
+- The branch control is always visible. When the focused person has recorded children, **Collapse descendants** hides the descendant closure below that person while leaving the focused person and spouse visible.
+- When a focused person has no recorded children, the control remains visible but disabled and says **No descendants to collapse**.
 - **Expand descendants** restores that focused branch; **Expand all** restores every collapsed branch.
 - Dense-view warnings are based on plaques actually readable in the current viewport.
 - `Return to Tod` restores the home person.
@@ -177,6 +179,8 @@ Regression coverage includes:
 - family-aware same-row spacing and non-interleaving origin-family blocks;
 - direct-ancestor spine centering without shifting collateral single-child families;
 - recursive descendant collapse while preserving the selected anchor, its spouse, ancestors, and unrelated branches;
+- relationship-line continuity during camera motion and overview;
+- persistent, discoverable branch-collapse controls;
 - near-parallel and crossing route avoidance;
 - bounded descent-corridor trunk shifting;
 - suppression of tiny single-child doglegs;

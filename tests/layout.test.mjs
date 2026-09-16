@@ -86,4 +86,42 @@ for (const person of people) {
   assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y), `${person.id} must receive a finite layout position`);
 }
 
+const multiFamilyPeople = [
+  { id: 'C1', name: 'Child One', role: 'root', branch: 'center', birth: { date: '1969' } },
+  { id: 'C2', name: 'Child Two', role: 'sibling', branch: 'center', birth: { date: '1971' } },
+  { id: 'C3', name: 'Child Three', role: 'sibling', branch: 'center', birth: { date: '1973' } },
+  { id: 'C4', name: 'Child Four', role: 'sibling', branch: 'center', birth: { date: '1975' } },
+  { id: 'A', name: 'Shared Parent', role: 'parent', branch: 'center', birth: { date: '1940' } },
+  { id: 'B', name: 'First Spouse', role: 'parent', branch: 'center', birth: { date: '1941' } },
+  { id: 'D', name: 'Second Spouse', role: 'parent', branch: 'center', birth: { date: '1942' } },
+];
+const multiFamilyRelationships = [
+  { type: 'spouse', from: 'A', to: 'B', familyId: 'F1' },
+  { type: 'parent', from: 'A', to: 'C1', familyId: 'F1' },
+  { type: 'parent', from: 'B', to: 'C1', familyId: 'F1' },
+  { type: 'parent', from: 'A', to: 'C2', familyId: 'F1' },
+  { type: 'parent', from: 'B', to: 'C2', familyId: 'F1' },
+  { type: 'spouse', from: 'A', to: 'D', familyId: 'F2' },
+  { type: 'parent', from: 'A', to: 'C3', familyId: 'F2' },
+  { type: 'parent', from: 'D', to: 'C3', familyId: 'F2' },
+  { type: 'parent', from: 'A', to: 'C4', familyId: 'F2' },
+  { type: 'parent', from: 'D', to: 'C4', familyId: 'F2' },
+];
+const multiPositions = layoutSample(multiFamilyPeople, radius, multiFamilyRelationships);
+const multiXY = id => inverse(multiPositions.get(id));
+const familyRange = ids => {
+  const xs = ids.map(id => multiXY(id).x).sort((a, b) => a - b);
+  return { min: xs[0], max: xs[xs.length - 1] };
+};
+const family1 = familyRange(['C1', 'C2']);
+const family2 = familyRange(['C3', 'C4']);
+const familyGap = family1.max < family2.min
+  ? family2.min - family1.max
+  : family2.max < family1.min
+    ? family1.min - family2.max
+    : -1;
+assert.ok(familyGap >= LAYOUT_GAPS.BETWEEN_FAMILY_GAP - 0.05, 'children from two GEDCOM families sharing a parent must remain separate contiguous family blocks');
+close(Math.abs(multiXY('C1').x - multiXY('C2').x), LAYOUT_GAPS.SIBLING_GAP, 'siblings in F1 should use sibling spacing');
+close(Math.abs(multiXY('C3').x - multiXY('C4').x), LAYOUT_GAPS.SIBLING_GAP, 'siblings in F2 should use sibling spacing');
+
 console.log('GEDCOM family-block multi-generation layout ok');

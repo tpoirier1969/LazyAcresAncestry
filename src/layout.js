@@ -4,7 +4,7 @@ export const LAYOUT_GAPS = Object.freeze({
   COUPLE_GAP: 1.34,
   SIBLING_GAP: 1.62,
   MIN_PERSON_CLEARANCE: 1.26,
-  BETWEEN_FAMILY_GAP: 2.10,
+  BETWEEN_FAMILY_GAP: 2.28,
   GENERATION_GAP: 2.60,
 });
 
@@ -54,9 +54,12 @@ export function layoutSample(people, radius, relationships = []) {
   const { blocksByLevel, blockByPerson } = buildFamilyBlocks(unitsByLevel);
   connectBlockNeighbors(parentLinks, blockByPerson);
   const planar = placeFamilyBlocks(blocksByLevel, root.id, people.length);
-  centerDirectAncestorRows(planar, people, levels);
   const rootPoint = planar.get(root.id) || { x: 0, y: 0 };
 
+  // Do not independently recenter each generation after family placement. That
+  // old cosmetic pass could pull a parent row away from the child positions the
+  // iterative family layout had just aligned, creating off-center descents such
+  // as a single child's line attaching near the edge of the parents' bar.
   for (const person of people) {
     const point = planar.get(person.id);
     if (!point) continue;
@@ -415,27 +418,6 @@ function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
   return planar;
 }
 
-function centerDirectAncestorRows(planar, people, levels) {
-  const idsByLevel = new Map();
-  people.forEach(person => {
-    if (!Number.isFinite(person.directAncestorDepth)) return;
-    const level = levels.get(person.id) ?? 0;
-    if (!idsByLevel.has(level)) idsByLevel.set(level, []);
-    idsByLevel.get(level).push(person.id);
-  });
-
-  idsByLevel.forEach((ids, level) => {
-    const anchorPoints = ids.map(id => planar.get(id)).filter(Boolean);
-    if (!anchorPoints.length) return;
-    const anchorX = average(anchorPoints.map(point => point.x));
-    people.forEach(person => {
-      if ((levels.get(person.id) ?? 0) !== level) return;
-      const point = planar.get(person.id);
-      if (point) point.x -= anchorX;
-    });
-  });
-}
-
 function packedCenters(blocks) {
   if (!blocks.length) return [];
   const desired = [];
@@ -463,7 +445,8 @@ function packedCenters(blocks) {
 }
 
 function blockSeparation(a, b) {
-  return a.span / 2 + b.span / 2 + LAYOUT_GAPS.BETWEEN_FAMILY_GAP;
+  const descendantPressure = (a.downNeighborIds.size ? 0.12 : 0) + (b.downNeighborIds.size ? 0.12 : 0);
+  return a.span / 2 + b.span / 2 + LAYOUT_GAPS.BETWEEN_FAMILY_GAP + descendantPressure;
 }
 
 function compareSeed(a, b) {

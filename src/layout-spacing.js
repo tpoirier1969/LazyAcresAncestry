@@ -29,6 +29,10 @@ export function spreadFamilyLayout(positions, people, relationships, radius) {
 
   rowIds.forEach(ids => {
     if (ids.length < 2) return;
+    const anchorIds = ids.filter(id => Number.isFinite(byId.get(id)?.directAncestorDepth));
+    const anchorBefore = anchorIds.length
+      ? average(anchorIds.map(id => planar.get(id).x))
+      : null;
     const rowSet = new Set(ids);
     const components = buildSpouseComponents(ids, rowSet, spouseAdjacency, planar, byId, originFamily);
     const blocks = buildOriginBlocks(components);
@@ -50,6 +54,12 @@ export function spreadFamilyLayout(positions, people, relationships, radius) {
     });
 
     enforceMinimumGap(ids, planar, FAMILY_VIEW_SPACING.MIN_PERSON_GAP);
+
+    if (anchorIds.length) {
+      const anchorAfter = average(anchorIds.map(id => planar.get(id).x));
+      const shift = anchorBefore - anchorAfter;
+      ids.forEach(id => { planar.get(id).x += shift; });
+    }
   });
 
   const out = new Map();

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { parseGedcomFamilies, validateGedcomFamilyGraph } from '../src/gedcom-family-parser.js';
+import { layoutSample } from '../src/layout.js';
 import {
   buildProofFamily,
   PROOF_BASE_EXPECTED_PEOPLE,
@@ -58,6 +59,26 @@ for (const seed of preChildSeeds) {
   }
 }
 
+const displayedChildFamiliesByParent = new Map();
+for (const sourceFamily of family.families) {
+  if (!sourceFamily.children.length) continue;
+  for (const parentId of [sourceFamily.husb, sourceFamily.wife].filter(Boolean)) {
+    if (!displayedChildFamiliesByParent.has(parentId)) displayedChildFamiliesByParent.set(parentId, new Set());
+    displayedChildFamiliesByParent.get(parentId).add(sourceFamily.id);
+  }
+}
+const multiFamilyParents = [...displayedChildFamiliesByParent.entries()]
+  .filter(([, familyIds]) => familyIds.size > 1);
+assert.ok(multiFamilyParents.length > 0, 'expanded population must contain real parents with children in multiple GEDCOM families so separation rules are genuinely stress-tested');
+
+const positions = layoutSample(family.people, 225, family.relationships);
+assert.equal(positions.size, family.people.length, 'the family-aware layout must place every person in the 430-person stress population');
+for (const person of family.people) {
+  const point = positions.get(person.id);
+  assert.ok(point, `${person.id} must receive a layout position`);
+  assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z), `${person.id} layout position must remain finite`);
+}
+
 const rootParents = family.relationships
   .filter(link => link.type === 'parent' && link.to === PROOF_ROOT_ID)
   .map(link => link.from)
@@ -82,6 +103,7 @@ assert.deepEqual(amyChildren, [PROOF_SIBLING_CHILD_ID], 'Amy must have exactly o
 
 const maikelLink = family.relationships.find(link => (
   link.type === 'parent'
+  && link.familyId === 'F2583'
   && link.from === PROOF_SIBLING_ID
   && link.to === PROOF_SIBLING_CHILD_ID
 ));
@@ -145,4 +167,4 @@ assert.equal(
   'every proof-tree person must connect to home through a displayed GEDCOM relationship or documented family-of-origin grouping',
 );
 
-console.log('proof-family.test.mjs passed');
+console.log(`proof-family stress test passed: ${family.people.length} people with ${multiFamilyParents.length} multi-family parents`);

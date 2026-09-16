@@ -30,8 +30,8 @@ assert.match(
 );
 assert.match(
   source,
-  /chevrons expand branches/,
-  'the compact tree status must explain the inline chevron interaction',
+  /branch arrows reveal more/,
+  'the compact tree status must explain the inline branch-arrow interaction',
 );
 assert.doesNotMatch(
   source,
@@ -39,4 +39,4 @@ assert.doesNotMatch(
   'the obsolete toolbar-style collapse interaction must not remain active',
 );
 
-console.log('relationship lines remain continuous and inline branch chevrons own expand/collapse interaction');
+console.log('relationship lines remain continuous and inline family-branch arrows own expand/collapse interaction');

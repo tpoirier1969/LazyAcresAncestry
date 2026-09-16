@@ -31,43 +31,53 @@ export function nearestPeopleIds(targetId, people = [], relationships = [], limi
   return visible;
 }
 
-export function nextDescendantExpansionIds(rootId, visibleIds, people = [], relationships = []) {
+export function visibleIdsForExpandedRoots(baseVisibleIds, expandedRoots, people = [], relationships = []) {
   const knownIds = new Set(people.map(person => person.id));
-  if (!knownIds.has(rootId)) return new Set();
-  const visible = visibleIds instanceof Set ? visibleIds : new Set(visibleIds || []);
+  const visible = new Set([...baseVisibleIds].filter(id => knownIds.has(id)));
+  const roots = expandedRoots instanceof Set ? expandedRoots : new Set(expandedRoots || []);
   const children = directedChildren(knownIds, relationships);
-  const familyNeighbors = immediateFamilyNeighbors(knownIds, relationships);
-  const traversed = new Set([rootId]);
-  let frontier = [...(children.get(rootId) || [])];
+  const parents = parentsByChild(knownIds, relationships);
+  const spouses = spouseNeighbors(knownIds, relationships);
 
-  while (frontier.length) {
-    const hiddenLayer = frontier.filter(id => !visible.has(id));
-    if (hiddenLayer.length) {
-      const expansion = new Set(hiddenLayer);
-      for (const id of hiddenLayer) {
-        for (const relativeId of familyNeighbors.get(id) || []) {
-          if (!visible.has(relativeId)) expansion.add(relativeId);
-        }
-      }
-      return expansion;
-    }
-
-    const next = new Set();
-    for (const id of frontier) {
-      if (traversed.has(id)) continue;
-      traversed.add(id);
-      for (const childId of children.get(id) || []) {
-        if (!traversed.has(childId)) next.add(childId);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const rootId of roots) {
+      if (!visible.has(rootId)) continue;
+      for (const childId of children.get(rootId) || []) {
+        changed = addVisible(visible, childId) || changed;
+        for (const parentId of parents.get(childId) || []) changed = addVisible(visible, parentId) || changed;
+        for (const spouseId of spouses.get(childId) || []) changed = addVisible(visible, spouseId) || changed;
       }
     }
-    frontier = [...next].sort();
   }
 
-  return new Set();
+  return visible;
 }
 
-export function hasHiddenDescendants(rootId, visibleIds, people = [], relationships = []) {
-  return nextDescendantExpansionIds(rootId, visibleIds, people, relationships).size > 0;
+export function hiddenImmediateDescendantRootIds(visibleIds, people = [], relationships = []) {
+  const knownIds = new Set(people.map(person => person.id));
+  const visible = visibleIds instanceof Set ? visibleIds : new Set(visibleIds || []);
+  const children = directedChildren(knownIds, relationships);
+  const result = new Set();
+  for (const id of visible) {
+    if ([...(children.get(id) || [])].some(childId => !visible.has(childId))) result.add(id);
+  }
+  return result;
+}
+
+export function descendantIds(rootId, people = [], relationships = []) {
+  const knownIds = new Set(people.map(person => person.id));
+  const children = directedChildren(knownIds, relationships);
+  const descendants = new Set();
+  const queue = [...(children.get(rootId) || [])];
+  while (queue.length) {
+    const id = queue.shift();
+    if (descendants.has(id)) continue;
+    descendants.add(id);
+    for (const childId of children.get(id) || []) queue.push(childId);
+  }
+  return descendants;
 }
 
 function undirectedAdjacency(byId, relationships) {
@@ -90,19 +100,35 @@ function directedChildren(knownIds, relationships) {
   return children;
 }
 
-function immediateFamilyNeighbors(knownIds, relationships) {
-  const neighbors = new Map();
+function parentsByChild(knownIds, relationships) {
+  const parents = new Map();
+  for (const link of relationships || []) {
+    if (link.type !== 'parent' || !knownIds.has(link.from) || !knownIds.has(link.to) || link.from === link.to) continue;
+    if (!parents.has(link.to)) parents.set(link.to, new Set());
+    parents.get(link.to).add(link.from);
+  }
+  return parents;
+}
+
+function spouseNeighbors(knownIds, relationships) {
+  const spouses = new Map();
   const add = (a, b) => {
     if (!knownIds.has(a) || !knownIds.has(b) || a === b) return;
-    if (!neighbors.has(a)) neighbors.set(a, new Set());
-    neighbors.get(a).add(b);
+    if (!spouses.has(a)) spouses.set(a, new Set());
+    spouses.get(a).add(b);
   };
   for (const link of relationships || []) {
-    if (link.type !== 'parent' && link.type !== 'spouse') continue;
+    if (link.type !== 'spouse') continue;
     add(link.from, link.to);
     add(link.to, link.from);
   }
-  return neighbors;
+  return spouses;
+}
+
+function addVisible(visible, id) {
+  if (!id || visible.has(id)) return false;
+  visible.add(id);
+  return true;
 }
 
 function personOrderKey(person) {

@@ -38,6 +38,34 @@ for (let i = 1; i < ordered.length; i += 1) {
   );
 }
 
+assert.ok(
+  FAMILY_VIEW_SPACING.FAMILY_BLOCK_GAP >= 4.5,
+  'distinct family blocks should be spread before relationship rails are forced to stack',
+);
+
+const multiPeople = [
+  { id: 'H', name: 'Shared spouse' },
+  { id: 'W1', name: 'First spouse', role: 'one-step-spouse' },
+  { id: 'W2', name: 'Second spouse', role: 'one-step-spouse' },
+];
+const multiRelationships = [
+  { type: 'spouse', from: 'H', to: 'W1', familyId: 'FH1' },
+  { type: 'spouse', from: 'H', to: 'W2', familyId: 'FH2' },
+];
+const multiPositions = new Map([
+  ['W1', tangentPoint(-2.2, 0, radius)],
+  ['W2', tangentPoint(-1.1, 0, radius)],
+  ['H', tangentPoint(2.0, 0, radius)],
+]);
+const multiSpread = spreadFamilyLayout(multiPositions, multiPeople, multiRelationships, radius);
+const multiX = new Map([...multiSpread].map(([id, unit]) => [id, surfaceX(unit, radius)]));
+const left = Math.min(multiX.get('W1'), multiX.get('W2'));
+const right = Math.max(multiX.get('W1'), multiX.get('W2'));
+assert.ok(
+  multiX.get('H') > left && multiX.get('H') < right,
+  'a person shared by multiple spouse families should be the visual hub with spouses on opposite sides',
+);
+
 function surfaceX(unit, sphereRadius) {
   const theta = Math.acos(Math.max(-1, Math.min(1, -unit.z)));
   const s = Math.sin(theta);
@@ -45,4 +73,4 @@ function surfaceX(unit, sphereRadius) {
   return sphereRadius * theta * unit.x / s;
 }
 
-console.log('family-aware layout spacing regression passed');
+console.log('family-aware layout spacing and multi-spouse hub regression passed');

@@ -4,9 +4,9 @@ Interactive genealogy atlas built from the supplied Ancestry data.
 
 ## Current prototype
 
-The app uses a spherical family-atlas view with fixed physical person plaques anchored to the same globe as the family connectors. The current Supabase sample contains 44 people: Tod, Donna, Amy, Tod's parents, grandparents, and grandparent sibling groups. The renderer remains scalable to the full genealogy without one DOM element per person.
+The app uses a spherical family-atlas view with fixed physical person plaques anchored to the same globe as the family connectors. The current proof population contains **139 people**, generated deterministically from the supplied GEDCOM: the approved 53-person proof tree plus one non-recursive breadth step of each displayed person's recorded siblings and spouses. The renderer remains scalable to the full genealogy without one DOM element per person.
 
-The working globe radius is **150 physical layout units**, up from 120, so the visible genealogy occupies a flatter-looking patch of the sphere and leaves substantially more surface area for deeper generations. Person plaques remain fixed-size physical objects and use the larger portrait/name scale established by the approved visual reference.
+The working globe radius is **225 physical layout units**, so the visible genealogy occupies a relatively flat-looking patch of the sphere while leaving substantial surface area for deeper generations. Person plaques remain fixed-size physical objects and use the larger portrait/name scale established by the approved visual reference.
 
 ## Globe renderer
 
@@ -46,14 +46,16 @@ These external dependencies are acceptable for the prototype, but controlled cop
 Visible family layout uses named physical spacing rules rather than cluster-specific magic numbers:
 
 - `COUPLE_GAP` is the smallest relationship gap; spouses read as one family unit.
-- `SIBLING_GAP` is normal spacing between siblings in the same family.
+- `SIBLING_GAP` is normal spacing between siblings in the same GEDCOM family.
 - `MIN_PERSON_CLEARANCE` is hard minimum center-to-center clearance for any two people.
-- `BETWEEN_FAMILY_GAP` adds breathing room when one family grouping ends and another begins.
+- `BETWEEN_FAMILY_GAP` adds breathing room when one GEDCOM family grouping ends and another begins.
 - `GENERATION_GAP` provides one consistent surface distance between generations.
 
-These constants live in `src/layout.js` as the canonical owner of family spacing. `BETWEEN_FAMILY_GAP` is intentionally larger than `SIBLING_GAP`, but not large enough to visually disconnect adjacent families. The gaps were opened slightly when person plaques were enlarged so the approved portrait/name scale does not reintroduce crowding.
+These constants live in `src/layout.js` as the canonical owner of family spacing. `BETWEEN_FAMILY_GAP` is intentionally larger than `SIBLING_GAP`, but not large enough to visually disconnect adjacent families.
 
-The current prototype grandparent generation is laid out as a single generation band rather than compressed mini-clusters. Within a family the sibling gap is consistent; direct grandparent couples use the couple gap; distinct nearby family groups use the between-family gap.
+Layout grouping now follows the actual GEDCOM family-of-origin identity. Children belonging to the same `FAM` record remain one contiguous block. If a parent has children with different spouses, those children remain in separate family blocks even though they share that parent. This prevents neighboring families from interleaving and prevents layout geometry from implying a family relationship that the GEDCOM does not contain.
+
+The current prototype uses one generation band per genealogical generation rather than compressed mini-clusters. Within a family the sibling gap is consistent; couples use the couple gap; distinct nearby family groups use the between-family gap.
 
 ## Person plaques
 
@@ -61,7 +63,7 @@ Person plaques are fixed-size physical objects laid in the local tangent plane o
 
 The projection uses both axes of the actual 3D tangent plane. Plaques near the viewing apex therefore read nearly face-on, while plaques farther around the sphere progressively foreshorten with the surface. This makes the people look attached to the atlas rather than standing upright as camera-facing badges.
 
-The current label treatment is dark wood with brass end caps and lighter engraved-style lettering. Portrait/plaque dimensions were enlarged from the first WebGL pass to move back toward the approved reference, where faces and names remain recognizable in the normal home view.
+The current label treatment is dark wood with engraved-style lettering and restrained aged-metal trim. Male plaques use a darker oil-rubbed bronze treatment, female plaques use a warmer redder rose bronze, and unspecified sex uses aged pewter. Portrait/plaque dimensions remain fixed physical dimensions on the sphere.
 
 ## Current interaction
 
@@ -71,6 +73,7 @@ The current label treatment is dark wood with brass end caps and lighter engrave
 - Camera **angle** changes continuously with zoom through a smooth S-curve. Close views remain nearly perpendicular to the focused family patch; the view leans progressively as distance increases, without an early jump into an overview angle.
 - The focused family moves gradually higher in the viewport as the view widens. At the far end the sphere center remains high enough to keep most of the globe visible instead of leaving a large empty sky area above a low globe.
 - Click a person to rotate that branch into focus.
+- Wheel zoom preserves the selected person's screen coordinate instead of jumping focus to another person.
 - Use `Return to Tod` or Home to restore the current prototype home person.
 - Search the current sample by name.
 - Open People for filters by family side, century, relationship distance, and name.
@@ -79,17 +82,17 @@ The current label treatment is dark wood with brass end caps and lighter engrave
 
 ## Family relationships
 
-Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, sibling rail, and child stems. They are rendered in a muted brick/iron-oxide red family with a restrained parchment halo, keeping genealogy distinct from the brown map linework without introducing a modern or neon color.
+Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, family rail, and child stems. Relationship strokes are deliberately heavier than the early prototype and use related but distinct brick/iron-oxide tones for couple bars, descent stems, and family rails. A restrained parchment halo separates the genealogy from the map without introducing modern or neon color.
 
-Connectors remain evidence-based. A layout grouping may influence where a prototype person is placed, but it can never create a genealogical relationship. Parent, spouse, and shared-parent sibling lines are drawn only from recorded relationship data.
+Each visible family rail corresponds to one recorded GEDCOM family where a family ID is available. Separate spouse/parent families remain separate routes even when they share one parent. Adaptive child stems normally rise about one portrait-frame height before turning into the horizontal family rail and extend farther only when another documented family route requires additional clearance.
 
-The currently imported Supabase subset contains only a small relationship sample. Missing family relationships are not fabricated to make the prototype look fuller.
+Connectors remain evidence-based. A layout grouping may influence where a person is placed, but it can never create a genealogical relationship. Parent, spouse, and shared-parent sibling lines are drawn only from recorded relationship data. When a displayed person's family of origin is known but their parents are outside the current proof scope, the renderer uses a lighter individual ancestry-continuation stem rather than drawing a horizontal rail that would falsely imply visible or shared parents.
 
 ## GEDCOM and population coverage
 
-The current Supabase import is explicitly a prototype subset. It does **not** contain Donna's ancestral generations, the requested descendant branches, the complete parent/spouse graph, or all source/citation structures from the full GEDCOM. Re-importing the complete GEDCOM is required both for saved records and for the requested expanded-family stress test.
+The current view is a deliberately scoped proof population, not the entire genealogy. `src/proof-family.js` defines the deterministic 139-person scope from the supplied GEDCOM and preserves GEDCOM identifiers as stable external identifiers.
 
-The complete raw GEDCOM is intentionally not committed to this public repository. GEDCOM identifiers remain stable external identifiers.
+The current prototype reads the supplied GEDCOM directly during the proof phase. Future import, database, and media work must preserve the same stable GEDCOM identifiers and keep sourced facts distinct from inferred or user-entered information.
 
 ## Media direction
 
@@ -99,39 +102,31 @@ The globe renderer accepts a person's current `photo` as a display source, but f
 
 - `src/geometry.js` owns spherical placement, camera projection, visible-horizon tests, anchored plaque frames, and capacity math.
 - `src/camera-behavior.js` owns the deterministic zoom-to-view-angle, zoom-to-pan-speed, focus framing, and motion curves.
-- `src/layout.js` owns family layout and the canonical gap hierarchy.
+- `src/layout.js` owns GEDCOM-family-aware person placement and the canonical gap hierarchy.
 - `src/globe-webgl.js` owns the GPU UV sphere, Upper Peninsula atlas alignment, layered textures, generated cartographic labels, antique color treatment, texture sharpening, and hidden-surface handling.
 - `src/atlas-map.js` owns atlas asset URLs, provenance metadata, and the canonical home geographic anchor.
-- `src/scene.js` owns interaction, shared runtime sphere rotation/camera state, evidence-based genealogy connectors, physical globe radius, and the 2D person overlay. It consumes the canonical curves from `camera-behavior.js` rather than duplicating zoom behavior.
-- `src/plaque.js` owns the old-glass portrait medallion and wood nameplate with brass end caps.
+- `src/scene.js` owns interaction, shared runtime sphere rotation/camera state, evidence-based genealogy connectors, adaptive family-route planning, ancestry-continuation stems, physical globe radius, and the 2D person overlay. It consumes the canonical curves from `camera-behavior.js` rather than duplicating zoom behavior.
+- `src/plaque.js` owns the old-glass portrait medallion and wood nameplate.
+- `src/plaque-metal.js` owns the canonical male, female, and unspecified plaque-metal palettes.
 - `src/plaque-projection.js` maps the rigid plaque artwork onto its projected 3D plane while preserving its sphere attachment point.
 - `src/relationships.js` derives human-readable kinship labels from recorded relationship data.
 - `src/gedcom.js` normalizes preserved alternate names and saved source/citation records for Person Details.
-- `src/data.js` owns the Supabase/bundled-sample boundary.
+- `src/gedcom-family-parser.js` parses and validates GEDCOM family records used by the proof-tree builder.
+- `src/proof-family.js` owns the current deterministic proof-population scope.
+- `src/data.js` loads the GEDCOM, validates it, builds the proof population, and attaches prototype portraits.
 - `src/version.js` is the sole application-version source.
 
 ## Data and storage
 
-The test app reads the shared personal Supabase project using project-specific objects prefixed `lazy_acres_ancestry_`. If Supabase is unavailable it falls back to `data/sample-family.json`.
+The current proof app reads the supplied GEDCOM directly and validates its family graph before building the displayed population. Prototype family notes currently remain in browser local storage. Data-quality notes remain separate from family notes.
 
-Prototype family notes currently remain in browser local storage. Data-quality notes remain separate from family notes.
-
-The intended permanent image archive remains Cloudflare R2.
+Any future Supabase objects for this application must use the project-specific `lazy_acres_ancestry_` prefix because the personal Supabase project is shared with other applications. The intended permanent image archive remains Cloudflare R2.
 
 ## Test
 
-```bash
-node tests/geometry.test.mjs
-node tests/camera-behavior.test.mjs
-node tests/atlas-map.test.mjs
-node tests/globe-webgl.test.mjs
-node tests/layout.test.mjs
-node tests/plaque-projection.test.mjs
-node tests/relationships.test.mjs
-node tests/gedcom.test.mjs
-```
+GitHub Actions syntax-checks every source module and executes every `tests/*.test.mjs` file. The deterministic suite includes geometry, camera behavior, family routing, family-aware layout, plaque projection and metal palettes, GEDCOM parsing, proof-family scope, relationship labels, interaction, and WebGL atlas tests.
 
-The camera-behavior test guards the gradual zoom-dependent viewing angle, higher wide-view framing, tangent plaque mode, and slower zoom-dependent panning. The WebGL mesh test guards unit-sphere geometry, local compass orientation, and the Upper Peninsula atlas anchor. The atlas-map test guards the source URLs, provenance, and anchor bounds. The plaque-projection test guards the surface attachment and 3D foreshortening behavior. The layout test guards the semantic gap hierarchy and equal generation spacing. Geometry, relationship, and GEDCOM tests protect the other deterministic renderer and data rules.
+The family-routing and layout regressions specifically guard against merging distinct GEDCOM families, interleaving children from different spouse families, fabricating sibling rails for omitted parents, and attaching unrelated people to a one-child family. The interaction test guards selected-person zoom anchoring so wheel zoom cannot silently switch the focus person.
 
 ## Hosting
 

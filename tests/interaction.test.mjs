@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { projectedSphereVerticalBounds } from '../src/geometry.js';
 
 const listeners = new Map();
+const timers = new Map();
+let timerSerial = 0;
 const hoverCard = {
   hidden: true,
   innerHTML: '',
@@ -16,6 +18,12 @@ globalThis.matchMedia = () => ({ matches: true });
 globalThis.ResizeObserver = class { observe() {} };
 globalThis.requestAnimationFrame = () => 0;
 globalThis.cancelAnimationFrame = () => {};
+globalThis.setTimeout = (fn, delay) => {
+  const id = ++timerSerial;
+  timers.set(id, { fn, delay });
+  return id;
+};
+globalThis.clearTimeout = id => timers.delete(id);
 globalThis.devicePixelRatio = 1;
 globalThis.innerWidth = 1200;
 globalThis.innerHeight = 800;
@@ -30,7 +38,7 @@ const canvas = {
   setPointerCapture: () => {},
 };
 
-const { GlobeScene } = await import('../src/scene.js');
+const { GlobeScene, HOVER_DELAY_MS } = await import('../src/scene.js');
 const scene = new GlobeScene(canvas, () => {});
 scene.setFamily([
   { id: 'HOME', name: 'Home', role: 'root', branch: 'center', directAncestorDepth: 0, sex: 'M', birth: { date: '1969', place: 'Home Place' } },
@@ -58,13 +66,23 @@ const pointerMove = listeners.get('pointermove');
 assert.equal(typeof pointerMove, 'function', 'scene must install pointer hover/drag interaction');
 scene.hitAreas = [{ id: 'PARENT', x: 240, y: 180, r: 32, z: 1 }];
 pointerMove({ offsetX: 240, offsetY: 180, clientX: 240, clientY: 180, pointerType: 'mouse' });
-assert.equal(scene.hoveredId, 'PARENT', 'hovering a plaque must identify that person without changing focus');
-assert.equal(hoverCard.hidden, false, 'hovering a plaque must show the reusable person tooltip');
+assert.equal(scene.hoverCandidateId, 'PARENT', 'hovering a plaque must start intent tracking for that person');
+assert.equal(scene.hoveredId, null, 'person must not be considered visibly hovered before the delay completes');
+assert.equal(hoverCard.hidden, true, 'hover card must remain hidden during the two-second intent delay');
+assert.equal(timers.size, 1, 'one hover timer should be pending');
+const pendingHover = [...timers.entries()][0];
+assert.equal(pendingHover[1].delay, HOVER_DELAY_MS);
+assert.equal(HOVER_DELAY_MS, 2000, 'hover details should require two seconds of continuous intent');
+pendingHover[1].fn();
+timers.delete(pendingHover[0]);
+assert.equal(scene.hoveredId, 'PARENT', 'person should become visibly hovered after the delay');
+assert.equal(hoverCard.hidden, false, 'completed hover intent must show the reusable person tooltip');
 assert.match(hoverCard.innerHTML, /Parent Person/, 'hover card must include the person name');
 assert.match(hoverCard.innerHTML, /Parent Place/, 'hover card must include known event place information');
 assert.match(hoverCard.innerHTML, /Click for full person details/, 'hover card must point to the existing full details interaction');
 pointerMove({ offsetX: 900, offsetY: 700, clientX: 900, clientY: 700, pointerType: 'mouse' });
 assert.equal(hoverCard.hidden, true, 'moving away from a plaque must clear the tooltip');
+assert.equal(scene.hoverCandidateId, null, 'moving away must clear hover intent as well as the visible card');
 
 scene.focus('PARENT');
 assert.equal(scene.focusedId, 'PARENT');
@@ -117,4 +135,4 @@ assert.ok(scene.cameraGap > 3.8, 'explicit Home action may restore the normal ho
 assertFocusAt(viewportCenter, 'returning Home must restore the home person to the viewport center');
 assertSphereCentered('after returning Home');
 
-console.log('hover details, click focus, anchored wheel zoom, and globe centering remain stable');
+console.log('two-second hover intent, click focus, anchored wheel zoom, and globe centering remain stable');

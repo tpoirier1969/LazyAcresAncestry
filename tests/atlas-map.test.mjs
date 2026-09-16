@@ -4,6 +4,7 @@ import {
   ATLAS_DETAIL_CREDIT,
   ATLAS_DETAIL_LEVELS,
   ATLAS_DETAIL_SOURCE_PAGE,
+  ATLAS_FALLBACK_TEXTURE_URL,
   ATLAS_HOME_ANCHOR,
   ATLAS_RELIEF_TEXTURE_FALLBACK_URL,
   ATLAS_RELIEF_TEXTURE_URL,
@@ -17,18 +18,11 @@ import {
   quantizeAtlasDetailCenter,
 } from '../src/atlas-map.js';
 
-assert.equal(ATLAS_TEXTURE_URL, 'assets/atlas-base.svg', 'base atlas must remain bundled with the app');
-assert.equal(
-  ATLAS_RELIEF_TEXTURE_URL,
-  'https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg',
-  'normal global relief must use Wikimedia\'s published 2048px original rather than an invented thumbnail size',
-);
-assert.match(
-  ATLAS_RELIEF_TEXTURE_FALLBACK_URL,
-  /1280px-Solarsystemscope_texture_2k_earth_daymap\.jpg$/,
-  'lower-capability devices should receive a published 1280px geographic map',
-);
-assert.equal(ATLAS_DETAIL_LEVELS.length, 0, 'rectangular regional WMS overlays must remain disabled until they can be sphere-masked without visible bounds');
+assert.equal(ATLAS_TEXTURE_URL, 'assets/atlas-base.svg', 'fictional base atlas must remain bundled with the app');
+assert.equal(ATLAS_FALLBACK_TEXTURE_URL, 'assets/atlas-base-fallback.svg', 'the prior neutral atlas must remain available as an explicit fallback asset');
+assert.equal(ATLAS_RELIEF_TEXTURE_URL, ATLAS_TEXTURE_URL, 'fictional atlas mode must not blend real Earth imagery into the invented map');
+assert.equal(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, ATLAS_TEXTURE_URL, 'lower-capability devices must retain the same fictional geography');
+assert.equal(ATLAS_DETAIL_LEVELS.length, 0, 'real-world regional WMS overlays must remain disabled for the fictional atlas');
 assert.equal(atlasDetailLevel(7), null);
 assert.equal(atlasDetailLevel(100), null);
 assert.equal(atlasDetailStrength(7), 0);
@@ -37,16 +31,24 @@ assert.equal(quantizeAtlasDetailCenter(ATLAS_HOME_ANCHOR, atlasDetailLevel(7)), 
 assert.equal(atlasDetailBounds(ATLAS_HOME_ANCHOR, atlasDetailLevel(7)), null);
 
 const localAtlas = fs.readFileSync(new URL(`../${ATLAS_TEXTURE_URL}`, import.meta.url), 'utf8');
-assert.match(localAtlas, /^<svg[\s\S]*<path/i, 'bundled atlas must retain subtle graticule geometry');
-assert.doesNotMatch(localAtlas, /fill="url\(#land\)"/, 'bundled atlas must not contain simplified filled continent polygons');
-assert.doesNotMatch(localAtlas, /<ellipse/i, 'bundled atlas must not contain oversized schematic Great Lakes ovals');
+assert.match(localAtlas, /^<svg[^>]*width="8192"[^>]*height="4096"/i, 'fictional atlas must provide a large 8192×4096 vector canvas for future sphere growth');
+assert.match(localAtlas, /fill="url\(#land\)"/, 'fictional atlas must contain deliberate invented land masses rather than a blank graticule');
+assert.match(localAtlas, /OCEANVS FAMILIAE/, 'fictional atlas should retain decorative pseudo-Latin cartography');
+assert.match(localAtlas, /TEMPORA OMNIA/, 'fictional atlas should retain multiple decorative cartographic labels');
+assert.match(localAtlas, /translate\(1460 2450\)/, 'fictional atlas should retain decorative sailing-ship artwork');
+assert.match(localAtlas, /translate\(7200 860\)/, 'fictional atlas should retain its decorative compass rose');
 
-assert.match(ATLAS_DETAIL_SOURCE_PAGE, /^https:\/\/science\.nasa\.gov\//, 'future NASA regional-detail provenance must remain recorded');
-assert(ATLAS_DETAIL_CREDIT.includes('NASA'), 'future regional-detail provenance must remain explicit');
-assert.equal(ATLAS_TEXTURE_SOURCE_PAGE, '', 'bundled neutral atlas does not depend on a live source page');
-assert(ATLAS_TEXTURE_CREDIT.includes('Bundled Lazy Acres Ancestry'), 'bundled atlas provenance must remain explicit');
-assert.equal(ATLAS_TEXTURE_SHA1, 'bundled-local-atlas');
-assert.ok(ATLAS_HOME_ANCHOR.latitude > 45 && ATLAS_HOME_ANCHOR.latitude < 48, 'home anchor should remain in Michigan Upper Peninsula latitude');
-assert.ok(ATLAS_HOME_ANCHOR.longitude < -84 && ATLAS_HOME_ANCHOR.longitude > -91, 'home anchor should remain in Michigan Upper Peninsula longitude');
+const fallbackAtlas = fs.readFileSync(new URL(`../${ATLAS_FALLBACK_TEXTURE_URL}`, import.meta.url), 'utf8');
+assert.match(fallbackAtlas, /^<svg[^>]*width="2048"[^>]*height="1024"/i, 'fallback must preserve the previous neutral atlas dimensions');
+assert.doesNotMatch(fallbackAtlas, /OCEANVS FAMILIAE/, 'fallback must remain the old neutral treatment rather than silently duplicating the new fictional atlas');
 
-console.log('atlas uses one stable published global geography layer and no visible regional area overlays');
+assert.equal(ATLAS_DETAIL_SOURCE_PAGE, '', 'fictional atlas mode must not claim a live NASA regional source');
+assert.match(ATLAS_DETAIL_CREDIT, /disabled for fictional atlas mode/i, 'disabled real-world regional detail must be documented truthfully');
+assert.equal(ATLAS_TEXTURE_SOURCE_PAGE, '', 'bundled fictional atlas does not depend on a live source page');
+assert.match(ATLAS_TEXTURE_CREDIT, /fictional antique atlas/i, 'bundled atlas provenance must identify it as fictional');
+assert.equal(ATLAS_TEXTURE_SHA1, 'bundled-fictional-atlas-v1');
+assert.equal(ATLAS_HOME_ANCHOR.label, 'Fictional atlas home orientation');
+assert.ok(Number.isFinite(ATLAS_HOME_ANCHOR.latitude) && Math.abs(ATLAS_HOME_ANCHOR.latitude) <= 90);
+assert.ok(Number.isFinite(ATLAS_HOME_ANCHOR.longitude) && Math.abs(ATLAS_HOME_ANCHOR.longitude) <= 180);
+
+console.log('fictional antique atlas is bundled, scalable, non-geographic, and preserves the prior atlas as fallback');

@@ -16,7 +16,7 @@ The working globe radius is **225 physical layout units**, so the visible geneal
 
 The world map is rendered as a genuine GPU-textured sphere rather than as Canvas 2D affine map triangles.
 
-- `src/globe-webgl.js` builds a dense latitude/longitude sphere mesh with perspective-correct UV mapping. The normal production mesh is 320 x 160 segments.
+- `src/globe-webgl.js` builds a dense latitude/longitude sphere mesh with perspective-correct UV mapping. The normal production mesh is 360 x 180 segments, deliberately near the practical 16-bit index limit used by the current WebGL path.
 - `src/atlas-map.js` owns the canonical atlas texture URLs, geographic home anchor, and provenance metadata.
 - The base texture is a 4,424 x 2,214 equirectangular physical world map from Wikimedia Commons.
 - A separate **8192 x 4096 detail layer** restores terrain and water detail for close inspection. GPUs limited to 4K textures use a 3840-pixel fallback.
@@ -94,6 +94,10 @@ Couple and descent connectors use conventional genealogy grammar: partner bar, c
 
 Primary relationship strokes are intentionally bold. Ancestry-continuation stems remain visually lighter by color because they indicate family continuing outside the displayed scope, but they are no longer physically reduced to hairline weight. The continuation stroke is kept close to the primary relationship weight so it stays readable at normal viewing distances.
 
+Genealogy connectors do not follow the WebGL mesh triangles. Their points are calculated analytically on the spherical surface and projected through the same camera as the globe. Connector sampling is now adaptive to projected size: close or long lines receive many more surface samples than distant short lines, with a roughly 6-pixel static target and a looser moving target for responsive dragging. This removes the visible polygonal bends produced by the former fixed 12-sample rule without globally increasing the globe mesh.
+
+Each family route is painted as one connected visual unit. Its parchment halos are painted for the entire route first, followed by the colored rail and stems. A child stem therefore cannot paint its halo over the family rail and create a false gap at the junction. Different families remain separately painted so the halo can still clarify genuine route crossings.
+
 Each visible family rail corresponds to one recorded GEDCOM family where a family ID is available. Separate spouse/parent families remain separate routes even when they share one parent. Adaptive child stems normally rise about one portrait-frame height before turning into the horizontal family rail and extend farther only when another documented family route requires additional clearance.
 
 Connectors remain evidence-based. A layout grouping may influence where a person is placed, but it can never create a genealogical relationship. Parent, spouse, and shared-parent sibling lines are drawn only from recorded relationship data. When a displayed person's family of origin is known but their parents are outside the current proof scope, the renderer uses a lighter individual ancestry-continuation stem rather than drawing a horizontal rail that would falsely imply visible or shared parents.
@@ -117,7 +121,7 @@ The globe renderer accepts a person's current `photo` as a display source, but f
 - `src/layout.js` owns GEDCOM-family-aware person placement and the canonical gap hierarchy.
 - `src/globe-webgl.js` owns the GPU UV sphere, Upper Peninsula atlas alignment, layered textures, generated cartographic labels, antique color treatment, texture sharpening, and hidden-surface handling.
 - `src/atlas-map.js` owns atlas asset URLs, provenance metadata, and the canonical home geographic anchor.
-- `src/scene.js` owns interaction, shared runtime sphere rotation/camera state, evidence-based genealogy connectors, adaptive family-route planning, ancestry-continuation stems, reusable hover-card hit testing/content, physical globe radius, and the 2D person overlay. It consumes the canonical curves from `camera-behavior.js` rather than duplicating zoom behavior.
+- `src/scene.js` owns interaction, shared runtime sphere rotation/camera state, evidence-based genealogy connectors, adaptive family-route planning, adaptive surface-line sampling, same-family halo/stroke paint order, ancestry-continuation stems, reusable hover-card hit testing/content, physical globe radius, and the 2D person overlay. It consumes the canonical curves from `camera-behavior.js` rather than duplicating zoom behavior.
 - `src/plaque.js` owns the old-glass portrait medallion and wood nameplate.
 - `src/plaque-metal.js` owns the canonical male, female, and unspecified plaque-metal palettes.
 - `src/plaque-projection.js` maps the rigid plaque artwork onto its projected 3D plane while preserving its sphere attachment point.
@@ -138,7 +142,7 @@ Any future Supabase objects for this application must use the project-specific `
 
 GitHub Actions syntax-checks every source module and executes every `tests/*.test.mjs` file. The deterministic suite includes geometry, camera behavior, family routing, family-aware layout, plaque projection and metal palettes, GEDCOM parsing, proof-family scope, relationship labels, interaction, and WebGL atlas tests.
 
-The family-routing and layout regressions specifically guard against merging distinct GEDCOM families, interleaving children from different spouse families, fabricating sibling rails for omitted parents, attaching unrelated people to a one-child family, and allowing ancestry continuations to collapse back to hairline strokes. The proof-family stress test runs the full 430-person population through family-aware layout. The interaction test covers reusable hover details as well as selected-person zoom anchoring so wheel zoom cannot silently switch the focus person.
+The family-routing and layout regressions specifically guard against merging distinct GEDCOM families, interleaving children from different spouse families, fabricating sibling rails for omitted parents, attaching unrelated people to a one-child family, allowing ancestry continuations to collapse back to hairline strokes, reverting to coarse fixed surface-line sampling, or painting same-family halos in an order that cuts visible gaps into connected rails. The proof-family stress test runs the full 430-person population through family-aware layout. The interaction test covers reusable hover details as well as selected-person zoom anchoring so wheel zoom cannot silently switch the focus person.
 
 ## Hosting
 

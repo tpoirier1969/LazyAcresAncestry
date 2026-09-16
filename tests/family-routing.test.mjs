@@ -6,10 +6,12 @@ globalThis.matchMedia = globalThis.matchMedia || (() => ({ matches: false }));
 globalThis.ResizeObserver = globalThis.ResizeObserver || class { observe() {} };
 
 const {
+  GlobeScene,
   buildRelationshipGroups,
   familyLaneBand,
   familyStemRange,
   planFamilyRoutes,
+  surfaceLineStepCount,
   RELATIONSHIP_LINE_WIDTH,
   ANCESTRY_CONTINUATION_LINE_WIDTH,
   RELATIONSHIP_COLORS,
@@ -17,6 +19,8 @@ const {
   FAMILY_CHILD_STEM_PREFERRED,
   FAMILY_CHILD_STEM_MIN,
   FAMILY_PARALLEL_GAP,
+  SURFACE_LINE_STATIC_MAX_STEPS,
+  SURFACE_LINE_MOVING_MAX_STEPS,
 } = await import('../src/scene.js');
 
 const relationships = [
@@ -139,6 +143,48 @@ for (let index = 1; index < railYs.length; index += 1) {
   );
 }
 
+const closeCamera = { focal: 900, centerZ: 232.2, near: 0.1 };
+const overviewCamera = { focal: 900, centerZ: 380, near: 0.1 };
+const staticCloseSteps = surfaceLineStepCount(12, closeCamera, 225, false);
+const movingCloseSteps = surfaceLineStepCount(12, closeCamera, 225, true);
+const overviewSteps = surfaceLineStepCount(12, overviewCamera, 225, false);
+assert.ok(staticCloseSteps > 12, 'close static relationship lines must use far more than the old fixed 12 samples');
+assert.ok(staticCloseSteps > movingCloseSteps, 'static rendering should resolve curvature more finely than active dragging');
+assert.ok(overviewSteps < staticCloseSteps, 'sampling density should fall with projected size rather than wasting work at overview distance');
+assert.equal(surfaceLineStepCount(1000, closeCamera, 225, false), SURFACE_LINE_STATIC_MAX_STEPS, 'static smoothing must have a deterministic safety cap');
+assert.equal(surfaceLineStepCount(1000, closeCamera, 225, true), SURFACE_LINE_MOVING_MAX_STEPS, 'moving smoothing must have a deterministic safety cap');
+
+const paintCalls = [];
+const paintScene = Object.create(GlobeScene.prototype);
+paintScene.drag = null;
+paintScene.motionFrame = null;
+paintScene.focusFrame = null;
+paintScene.sampleSurfacePolyline = pointsToSample => pointsToSample;
+paintScene.strokeSampledSurfacePolyline = (sampled, stroke) => paintCalls.push(stroke);
+paintScene.drawSurfaceJunction = () => {};
+paintScene.drawFamilyRoute({
+  source: { x: 0, y: 3 },
+  railY: 1,
+  minX: -2,
+  maxX: 2,
+  children: [
+    { point: { x: -1, y: 0 } },
+    { point: { x: 1, y: 0 } },
+  ],
+}, closeCamera);
+assert.equal(paintCalls.length, 8, 'one two-child family route should render four connected components in two paint passes');
+assert.ok(paintCalls.slice(0, 4).every(stroke => stroke === RELATIONSHIP_COLORS.halo), 'all same-family halos must be painted before any colored family stroke');
+assert.deepEqual(
+  paintCalls.slice(4),
+  [
+    RELATIONSHIP_COLORS.descent,
+    RELATIONSHIP_COLORS.rail,
+    RELATIONSHIP_COLORS.descent,
+    RELATIONSHIP_COLORS.descent,
+  ],
+  'family color strokes must be painted together after the halo pass so junctions cannot be punched apart',
+);
+
 assert.ok(RELATIONSHIP_LINE_WIDTH >= 3.2 && RELATIONSHIP_LINE_WIDTH <= 3.7, 'primary relationship strokes should remain intentionally bold at normal viewing distance');
 assert.ok(
   ANCESTRY_CONTINUATION_LINE_WIDTH >= RELATIONSHIP_LINE_WIDTH * 0.85,
@@ -148,4 +194,4 @@ assert.notEqual(RELATIONSHIP_COLORS.couple, RELATIONSHIP_COLORS.descent, 'couple
 assert.notEqual(RELATIONSHIP_COLORS.descent, RELATIONSHIP_COLORS.rail, 'descent stems and family rails should have related but distinct brick-red tones');
 assert.notEqual(RELATIONSHIP_COLORS.continuation, RELATIONSHIP_COLORS.rail, 'omitted-parent continuations should use their own lighter treatment');
 
-console.log('GEDCOM family routes preserve family topology, adaptive spacing, and readable relationship-specific styling');
+console.log('GEDCOM family routes preserve topology, adaptive spacing, smooth sphere curvature, and gap-free same-family joins');

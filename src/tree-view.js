@@ -1,31 +1,74 @@
 export const DEFAULT_VISIBLE_PEOPLE = 600;
+export const COLLATERAL_GENERATION_LIMIT = 3;
 
-export function nearestPeopleIds(targetId, people = [], relationships = [], limit = DEFAULT_VISIBLE_PEOPLE) {
+export function lineageWindowIds(targetId, people = [], relationships = [], limit = DEFAULT_VISIBLE_PEOPLE) {
   const byId = new Map(people.map(person => [person.id, person]));
+  const knownIds = new Set(byId.keys());
   const requestedLimit = Math.max(1, Math.floor(Number(limit) || DEFAULT_VISIBLE_PEOPLE));
   const target = byId.has(targetId)
     ? targetId
     : people.find(person => person.role === 'root')?.id || people[0]?.id || null;
   if (!target) return new Set();
 
-  const adjacency = undirectedAdjacency(byId, relationships);
-  const visible = new Set();
-  let frontier = [target];
-  const discovered = new Set(frontier);
+  const { parents, children } = parentChildMaps(knownIds, relationships);
+  const spouses = spouseNeighbors(knownIds, relationships);
+  const ancestors = generationDepths(target, parents);
+  const descendants = generationDepths(target, children);
+  const vertical = new Set([...ancestors.keys(), ...descendants.keys()]);
 
-  while (frontier.length && visible.size < requestedLimit) {
-    frontier.sort((a, b) => personOrderKey(byId.get(a)).localeCompare(personOrderKey(byId.get(b))));
-    const next = new Set();
-    for (const id of frontier) {
-      if (visible.size >= requestedLimit) break;
-      visible.add(id);
-      for (const neighbor of adjacency.get(id) || []) {
-        if (discovered.has(neighbor)) continue;
-        discovered.add(neighbor);
-        next.add(neighbor);
+  const visible = new Set();
+  const add = id => {
+    if (!id || !knownIds.has(id) || visible.has(id) || visible.size >= requestedLimit) return false;
+    visible.add(id);
+    return true;
+  };
+
+  add(target);
+  for (const spouseId of sortedIds(spouses.get(target) || [])) add(spouseId);
+
+  const verticalEntries = [];
+  for (const [id, depth] of ancestors) {
+    if (id !== target) verticalEntries.push({ id, depth, direction: 0 });
+  }
+  for (const [id, depth] of descendants) {
+    if (id !== target) verticalEntries.push({ id, depth, direction: 1 });
+  }
+  verticalEntries.sort((a, b) => a.depth - b.depth || a.direction - b.direction || a.id.localeCompare(b.id));
+  for (const entry of verticalEntries) add(entry.id);
+
+  // Keep spouses/co-parents attached to the vertical spine before spending
+  // the remaining display budget on collateral branches.
+  for (const entry of verticalEntries) {
+    for (const spouseId of sortedIds(spouses.get(entry.id) || [])) add(spouseId);
+  }
+
+  const collateral = new Map();
+  for (const [ancestorId, targetDepth] of ancestors) {
+    if (targetDepth < 1 || targetDepth > COLLATERAL_GENERATION_LIMIT) continue;
+    const branchDepths = generationDepths(ancestorId, children, COLLATERAL_GENERATION_LIMIT);
+    for (const [candidateId, candidateDepth] of branchDepths) {
+      if (candidateDepth < 1 || candidateDepth > COLLATERAL_GENERATION_LIMIT) continue;
+      if (vertical.has(candidateId)) continue;
+      const span = Math.max(targetDepth, candidateDepth);
+      if (span > COLLATERAL_GENERATION_LIMIT) continue;
+      const score = targetDepth + candidateDepth;
+      const existing = collateral.get(candidateId);
+      if (!existing || score < existing.score || (score === existing.score && span < existing.span)) {
+        collateral.set(candidateId, { id: candidateId, score, span, targetDepth, candidateDepth });
       }
     }
-    frontier = [...next];
+  }
+
+  const collateralEntries = [...collateral.values()].sort((a, b) =>
+    a.span - b.span
+    || a.score - b.score
+    || a.targetDepth - b.targetDepth
+    || a.candidateDepth - b.candidateDepth
+    || a.id.localeCompare(b.id));
+
+  for (const entry of collateralEntries) add(entry.id);
+  for (const entry of collateralEntries) {
+    for (const spouseId of sortedIds(spouses.get(entry.id) || [])) add(spouseId);
   }
 
   return visible;
@@ -147,14 +190,34 @@ function familyKey(link, kind) {
     : `spouse:${[link.from, link.to].sort().join('|')}`;
 }
 
-function undirectedAdjacency(byId, relationships) {
-  const adjacency = new Map([...byId.keys()].map(id => [id, new Set()]));
+function parentChildMaps(knownIds, relationships = []) {
+  const parents = new Map([...knownIds].map(id => [id, new Set()]));
+  const children = new Map([...knownIds].map(id => [id, new Set()]));
   for (const link of relationships || []) {
-    if (!byId.has(link.from) || !byId.has(link.to) || link.from === link.to) continue;
-    adjacency.get(link.from).add(link.to);
-    adjacency.get(link.to).add(link.from);
+    if (link.type !== 'parent' || !knownIds.has(link.from) || !knownIds.has(link.to) || link.from === link.to) continue;
+    children.get(link.from).add(link.to);
+    parents.get(link.to).add(link.from);
   }
-  return adjacency;
+  return { parents, children };
+}
+
+function generationDepths(startId, adjacency, maxDepth = Infinity) {
+  const depths = new Map([[startId, 0]]);
+  let frontier = [startId];
+  while (frontier.length) {
+    const next = [];
+    for (const id of frontier) {
+      const depth = depths.get(id) || 0;
+      if (depth >= maxDepth) continue;
+      for (const relativeId of adjacency.get(id) || []) {
+        if (depths.has(relativeId)) continue;
+        depths.set(relativeId, depth + 1);
+        next.push(relativeId);
+      }
+    }
+    frontier = next;
+  }
+  return depths;
 }
 
 function spouseNeighbors(knownIds, relationships) {
@@ -172,15 +235,12 @@ function spouseNeighbors(knownIds, relationships) {
   return spouses;
 }
 
+function sortedIds(ids) {
+  return [...ids].sort((a, b) => String(a).localeCompare(String(b)));
+}
+
 function addVisible(visible, id) {
   if (!id || visible.has(id)) return false;
   visible.add(id);
   return true;
-}
-
-function personOrderKey(person) {
-  if (!person) return '9|';
-  const direct = Number.isFinite(person.directAncestorDepth) ? '0' : '1';
-  const role = person.role === 'root' ? '0' : '1';
-  return `${role}|${direct}|${String(person.id || '')}`;
 }

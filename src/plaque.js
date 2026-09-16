@@ -3,6 +3,10 @@ import { plaqueMetalForSex } from './plaque-metal.js';
 const CACHE = new Map();
 const IMAGES = new Map();
 
+export const PLAQUE_NAME_START_RATIO = 0.061;
+export const PLAQUE_DATE_START_RATIO = 0.043;
+export const PLAQUE_DATE_MIN_RATIO = 0.031;
+
 export function plaqueTexture(person, size = 520) {
   const metal = plaqueMetalForSex(person.sex);
   const key = [
@@ -289,7 +293,7 @@ function drawText(ctx, w, h, person, metal) {
   const name = fitWrappedText(ctx, person.name || 'Unknown', {
     maxWidth,
     maxLines: 2,
-    startSize: w * 0.061,
+    startSize: w * PLAQUE_NAME_START_RATIO,
     minSize: w * 0.035,
     weight: 700,
   });
@@ -316,8 +320,8 @@ function drawText(ctx, w, h, person, metal) {
   const date = fitWrappedText(ctx, dates, {
     maxWidth,
     maxLines: 2,
-    startSize: w * 0.057,
-    minSize: w * 0.043,
+    startSize: w * PLAQUE_DATE_START_RATIO,
+    minSize: w * PLAQUE_DATE_MIN_RATIO,
     weight: 600,
   });
   ctx.fillStyle = '#ead5a0';

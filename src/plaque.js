@@ -4,8 +4,8 @@ const CACHE = new Map();
 const IMAGES = new Map();
 
 export const PLAQUE_NAME_START_RATIO = 0.061;
-export const PLAQUE_DATE_START_RATIO = 0.043;
-export const PLAQUE_DATE_MIN_RATIO = 0.031;
+export const PLAQUE_DATE_START_RATIO = 0.049;
+export const PLAQUE_DATE_MIN_RATIO = 0.035;
 
 export function plaqueTexture(person, size = 520) {
   const metal = plaqueMetalForSex(person.sex);
@@ -324,7 +324,7 @@ function drawText(ctx, w, h, person, metal) {
     minSize: w * PLAQUE_DATE_MIN_RATIO,
     weight: 600,
   });
-  ctx.fillStyle = '#ead5a0';
+  ctx.fillStyle = '#f0dca8';
   ctx.font = `600 ${date.fontSize}px Georgia, serif`;
   const dateLineHeight = date.fontSize * 1.02;
   const dateCenterY = h * 0.864;

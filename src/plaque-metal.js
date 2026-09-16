@@ -15,7 +15,7 @@ export const PLAQUE_METALS = Object.freeze({
     mid: '#ad535b',
     light: '#dc8487',
     bright: '#efaaa7',
-    edge: '#512326',
+    edge: '#d8d4cf',
     line: '#d8d4cf',
     rule: 'rgba(218,214,207,.90)',
   }),

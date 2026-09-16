@@ -1,28 +1,27 @@
-// Canonical fictional antique atlas used by the genealogy globe. It is a large
-// vector asset, so it can be rasterized sharply for larger future spheres
-// without tying the family tree to recognizable modern geography.
+// Canonical rendered antique atlas used by the genealogy globe. The current
+// artwork is a deliberately low-contrast raster treatment wrapped in an
+// 8192x4096 SVG canvas so the renderer keeps the same texture contract while we
+// evaluate the art direction. The previously coded fictional map is preserved
+// separately rather than being overwritten as a hidden repair layer.
 export const ATLAS_TEXTURE_URL = 'assets/atlas-base.svg';
 export const ATLAS_TEXTURE_SOURCE_PAGE = '';
-export const ATLAS_TEXTURE_CREDIT = 'Bundled Lazy Acres Ancestry fictional antique atlas';
-export const ATLAS_TEXTURE_SHA1 = 'bundled-fictional-atlas-v1';
+export const ATLAS_TEXTURE_CREDIT = 'Bundled rendered antique atlas, screened as a low-contrast genealogy background';
+export const ATLAS_TEXTURE_SHA1 = 'bundled-rendered-atlas-v1';
 
-// Keep the prior neutral parchment/graticule map in the repository as a manual
-// fallback, but use the fictional atlas itself for the detail sampler so real
-// Earth imagery cannot bleed through and make the invented geography look
-// recognizable or soft-focus.
 export const ATLAS_FALLBACK_TEXTURE_URL = 'assets/atlas-base-fallback.svg';
+export const ATLAS_CODED_FALLBACK_TEXTURE_URL = 'assets/atlas-base-coded-fallback.svg';
 export const ATLAS_RELIEF_TEXTURE_URL = 'assets/atlas-base.svg';
 export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'assets/atlas-base.svg';
 export const ATLAS_RELIEF_SOURCE_PAGE = '';
-export const ATLAS_RELIEF_CREDIT = 'Bundled fictional atlas detail layer';
+export const ATLAS_RELIEF_CREDIT = 'Bundled rendered atlas detail layer';
 
-// Rectangular regional WMS layers remain disabled. Their straight geographic
-// bounds are inappropriate for a fictional atlas and read as artificial areas
-// on the curved sphere.
+// Rectangular regional WMS layers remain disabled. The bundled artwork is the
+// sole visual atlas layer, avoiding a sharp modern-photo patch over the faded
+// historical treatment.
 export const ATLAS_DETAIL_LEVELS = Object.freeze([]);
 export const ATLAS_DETAIL_FADE_MS = 300;
 export const ATLAS_DETAIL_SOURCE_PAGE = '';
-export const ATLAS_DETAIL_CREDIT = 'Regional real-world detail disabled for fictional atlas mode';
+export const ATLAS_DETAIL_CREDIT = 'Regional real-world detail disabled for bundled antique atlas mode';
 const ATLAS_DETAIL_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi';
 
 export function atlasDetailLevel() {
@@ -120,10 +119,11 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-// This anchor is now only the default orientation of the fictional sphere; it
-// no longer claims to place the home person over a real-world map location.
+// The temporary rendered atlas again resembles Earth. Use the central Upper
+// Peninsula as the visual home orientation, while treating this artwork as
+// decorative rather than geographically precise cartography.
 export const ATLAS_HOME_ANCHOR = Object.freeze({
-  latitude: 12,
-  longitude: -28,
-  label: 'Fictional atlas home orientation',
+  latitude: 46.55,
+  longitude: -87.45,
+  label: 'Central Upper Peninsula home orientation',
 });

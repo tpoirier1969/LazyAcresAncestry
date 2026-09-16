@@ -8,11 +8,9 @@ export function normalizedLogZoom(gap, minGap, maxGap) {
 export function cameraBehavior(gap, minGap, maxGap) {
   const zoomT = normalizedLogZoom(gap, minGap, maxGap);
   const angleT = smootherstep(zoomT);
-  // Keep close and medium inspection deliberately slow, then let speed rise
-  // more strongly toward the wide overview. This prevents a modest drag from
-  // throwing the user away from the family they were inspecting without making
-  // large-scale navigation painfully slow.
-  const speedT = Math.pow(smootherstep(zoomT), 1.55);
+  // Tight inspection gets a little more resistance than before, but the curve
+  // releases progressively so medium and overview navigation stay useful.
+  const speedT = Math.pow(smootherstep(zoomT), 1.72);
 
   return {
     zoomT,
@@ -25,11 +23,11 @@ export function cameraBehavior(gap, minGap, maxGap) {
     // Zoom itself must not masquerade as panning. The canonical focused point
     // keeps one stable screen height throughout the zoom range.
     targetYRatio: 0.58,
-    // The upper bound stays unchanged for broad navigation, but the curved
-    // response makes the close and medium ranges substantially less twitchy.
-    dragSensitivity: lerp(0.00014, 0.00058, speedT),
-    motionEase: lerp(0.064, 0.100, speedT),
-    focusDuration: lerp(1320, 1050, speedT),
+    // Only the close end is reduced materially. The overview ceiling stays at
+    // the approved value so wide traversal does not become painfully slow.
+    dragSensitivity: lerp(0.000118, 0.00058, speedT),
+    motionEase: lerp(0.060, 0.100, speedT),
+    focusDuration: lerp(1360, 1050, speedT),
   };
 }
 

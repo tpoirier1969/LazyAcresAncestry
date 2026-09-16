@@ -68,11 +68,11 @@ scene.hitAreas = [{ id: 'PARENT', x: 240, y: 180, r: 32, z: 1 }];
 pointerMove({ offsetX: 240, offsetY: 180, clientX: 240, clientY: 180, pointerType: 'mouse' });
 assert.equal(scene.hoverCandidateId, 'PARENT', 'hovering a plaque must start intent tracking for that person');
 assert.equal(scene.hoveredId, null, 'person must not be considered visibly hovered before the delay completes');
-assert.equal(hoverCard.hidden, true, 'hover card must remain hidden during the two-second intent delay');
+assert.equal(hoverCard.hidden, true, 'hover card must remain hidden during the intent delay');
 assert.equal(timers.size, 1, 'one hover timer should be pending');
 const pendingHover = [...timers.entries()][0];
 assert.equal(pendingHover[1].delay, HOVER_DELAY_MS);
-assert.equal(HOVER_DELAY_MS, 2000, 'hover details should require two seconds of continuous intent');
+assert.equal(HOVER_DELAY_MS, 1250, 'hover details should require 1.25 seconds of continuous intent');
 pendingHover[1].fn();
 timers.delete(pendingHover[0]);
 assert.equal(scene.hoveredId, 'PARENT', 'person should become visibly hovered after the delay');
@@ -135,4 +135,4 @@ assert.ok(scene.cameraGap > 3.8, 'explicit Home action may restore the normal ho
 assertFocusAt(viewportCenter, 'returning Home must restore the home person to the viewport center');
 assertSphereCentered('after returning Home');
 
-console.log('two-second hover intent, click focus, anchored wheel zoom, and globe centering remain stable');
+console.log('1.25-second hover intent, click focus, anchored wheel zoom, and globe centering remain stable');

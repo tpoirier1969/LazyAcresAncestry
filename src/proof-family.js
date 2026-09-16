@@ -6,7 +6,7 @@ export const PROOF_SIBLING_ID = 'I40538616398';
 export const PROOF_SIBLING_CHILD_ID = 'I40538616392';
 export const PROOF_BASE_EXPECTED_PEOPLE = 53;
 export const PROOF_PRE_CHILD_EXPECTED_PEOPLE = 139;
-export const PROOF_EXPECTED_PEOPLE = 139;
+export const PROOF_EXPECTED_PEOPLE = 430;
 
 const DISPLAY_NAME_OVERRIDES = Object.freeze({
   I40538615623: 'Mary Alene Hillman',
@@ -182,10 +182,6 @@ export function buildProofFamily(parsed) {
           : 'one-step-sibling';
     const branch = inheritedBranch.get(id) || branchForBase(id, paternal, maternal);
     const familyOfOrigin = firstFamilyOfOrigin(individual);
-    // Keep the real GEDCOM family-of-origin available as a layout grouping key.
-    // If those parents are outside this proof scope the renderer may use the
-    // family ID to keep visible siblings together, but it never invents a
-    // parent relationship.
     const cluster = isBase ? familyOfOrigin : expansionCluster.get(id) || null;
     return {
       id,
@@ -318,8 +314,8 @@ function proofPersonOrder(a, b) {
 }
 
 function relationshipOrder(a, b) {
-  return String(a.familyId || '').localeCompare(String(b.familyId || ''))
-    || a.type.localeCompare(b.type)
+  return String(a.familyId || '').localeCompare(String(b.familyId || '')
+  ) || a.type.localeCompare(b.type)
     || a.from.localeCompare(b.from)
     || a.to.localeCompare(b.to);
 }

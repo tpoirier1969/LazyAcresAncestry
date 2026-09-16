@@ -3,12 +3,18 @@ export * from './scene-core.js';
 import { layoutSample } from './layout.js';
 import { spreadFamilyLayout } from './layout-spacing.js';
 import {
+  DEFAULT_VISIBLE_PEOPLE,
+  hasHiddenDescendants,
+  nearestPeopleIds,
+  nextDescendantExpansionIds,
+} from './tree-view.js';
+import {
   GlobeScene as CoreGlobeScene,
   buildRelationshipGroups,
   planFamilyRoutes,
 } from './scene-core.js';
 
-const ROUTE_WORKER_THRESHOLD = 700;
+const ROUTE_WORKER_THRESHOLD = 450;
 const DENSITY_WARNING_COUNT = 110;
 const DENSITY_SEVERE_COUNT = 180;
 const MOVING_PLAQUE_MIN_WIDTH_PX = 30;
@@ -20,7 +26,9 @@ export class GlobeScene extends CoreGlobeScene {
     this.fullPeople = [];
     this.fullRelationships = [];
     this.visibleIds = new Set();
-    this.collapsedRoots = new Set();
+    this.baseVisibleIds = new Set();
+    this.manualVisibleIds = new Set();
+    this.viewTargetId = null;
     this.lastDensityCount = null;
     this.installTreeViewControls();
   }
@@ -28,9 +36,16 @@ export class GlobeScene extends CoreGlobeScene {
   setFamily(people, relationships = []) {
     this.fullPeople = people;
     this.fullRelationships = relationships;
-    this.collapsedRoots.clear();
-    this.setVisibleFamily(people, relationships);
-    this.updateTreeViewControls();
+    this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
+    this.viewTargetId = this.homeId;
+    this.manualVisibleIds.clear();
+    this.baseVisibleIds = nearestPeopleIds(
+      this.viewTargetId,
+      this.fullPeople,
+      this.fullRelationships,
+      DEFAULT_VISIBLE_PEOPLE,
+    );
+    this.applyWindowView();
   }
 
   setVisibleFamily(people, relationships = []) {
@@ -41,7 +56,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.people = people;
     this.relationships = relationships;
     this.visibleIds = new Set(people.map(person => person.id));
-    this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
+    if (!this.homeId) this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
     const basePositions = layoutSample(people, this.radius, relationships);
     this.positions = spreadFamilyLayout(basePositions, people, relationships, this.radius);
 
@@ -113,19 +128,25 @@ export class GlobeScene extends CoreGlobeScene {
   }
 
   focus(id, options = {}) {
-    if (this.fullPeople.length && !this.visibleIds.has(id)) {
-      this.collapsedRoots.clear();
-      this.applyCollapsedView();
-    }
+    if (this.fullPeople.length && !this.visibleIds.has(id)) this.setViewTarget(id);
     super.focus(id, options);
     this.updateTreeViewControls();
   }
 
+  setViewTarget(id) {
+    if (!this.fullPeople.some(person => person.id === id)) return;
+    this.viewTargetId = id;
+    this.manualVisibleIds.clear();
+    this.baseVisibleIds = nearestPeopleIds(
+      id,
+      this.fullPeople,
+      this.fullRelationships,
+      DEFAULT_VISIBLE_PEOPLE,
+    );
+    this.applyWindowView();
+  }
+
   drawRelationships(camera) {
-    // Relationship geometry stays present throughout drag, zoom, and overview.
-    // scene-core.js already switches to a cheaper moving sample density and
-    // suppresses line shadows while moving, so continuity does not require the
-    // expensive settled-view treatment.
     super.drawRelationships(camera);
   }
 
@@ -154,73 +175,78 @@ export class GlobeScene extends CoreGlobeScene {
     const controls = document.createElement('div');
     controls.className = 'tree-view-controls';
     controls.innerHTML = `
-      <button type="button" class="branch-collapse" disabled aria-disabled="true">Select a person with descendants</button>
-      <button type="button" class="branch-expand-all" hidden>Expand all</button>
+      <button type="button" class="branch-expand" disabled aria-disabled="true">Select a branch to expand</button>
+      <button type="button" class="tree-reset" disabled aria-disabled="true">Reset expansions</button>
+      <div class="tree-window-count" aria-live="polite"></div>
       <div class="density-warning" hidden role="status" aria-live="polite"></div>`;
     shell.appendChild(controls);
 
-    this.branchCollapseButton = controls.querySelector('.branch-collapse');
-    this.expandAllButton = controls.querySelector('.branch-expand-all');
+    this.branchExpandButton = controls.querySelector('.branch-expand');
+    this.resetTreeButton = controls.querySelector('.tree-reset');
+    this.treeWindowCount = controls.querySelector('.tree-window-count');
     this.densityWarning = controls.querySelector('.density-warning');
 
-    this.branchCollapseButton?.addEventListener('click', () => this.toggleFocusedBranch());
-    this.expandAllButton?.addEventListener('click', () => {
-      this.collapsedRoots.clear();
-      this.applyCollapsedView();
+    this.branchExpandButton?.addEventListener('click', () => this.expandFocusedBranch());
+    this.resetTreeButton?.addEventListener('click', () => {
+      this.manualVisibleIds.clear();
+      this.applyWindowView();
     });
   }
 
-  toggleFocusedBranch() {
+  expandFocusedBranch() {
     const id = this.focusedId;
-    if (!id || !this.hasRecordedChildren(id)) return;
-    if (this.collapsedRoots.has(id)) this.collapsedRoots.delete(id);
-    else this.collapsedRoots.add(id);
-    this.applyCollapsedView();
+    if (!id) return;
+    const additions = nextDescendantExpansionIds(
+      id,
+      this.visibleIds,
+      this.fullPeople,
+      this.fullRelationships,
+    );
+    if (!additions.size) return;
+    additions.forEach(personId => this.manualVisibleIds.add(personId));
+    this.applyWindowView();
   }
 
-  applyCollapsedView() {
+  applyWindowView() {
     if (!this.fullPeople.length) return;
-    const hidden = descendantIdsHiddenBy(this.collapsedRoots, this.fullPeople, this.fullRelationships);
-    const visiblePeople = this.fullPeople.filter(person => !hidden.has(person.id));
-    const visibleIds = new Set(visiblePeople.map(person => person.id));
-    const visibleRelationships = this.fullRelationships.filter(link => visibleIds.has(link.from) && visibleIds.has(link.to));
+    const visibleIds = new Set([...this.baseVisibleIds, ...this.manualVisibleIds]);
+    if (this.focusedId) visibleIds.add(this.focusedId);
+    const visiblePeople = this.fullPeople.filter(person => visibleIds.has(person.id));
+    const actualIds = new Set(visiblePeople.map(person => person.id));
+    const visibleRelationships = this.fullRelationships.filter(
+      link => actualIds.has(link.from) && actualIds.has(link.to),
+    );
     const focusedId = this.focusedId;
     this.setVisibleFamily(visiblePeople, visibleRelationships);
-    if (focusedId && visibleIds.has(focusedId)) this.focusedId = focusedId;
+    if (focusedId && actualIds.has(focusedId)) this.focusedId = focusedId;
     this.lastDensityCount = null;
     this.updateTreeViewControls();
     this.requestDraw();
   }
 
-  hasRecordedChildren(id) {
-    return this.fullRelationships.some(link => link.type === 'parent' && link.from === id);
-  }
-
   updateTreeViewControls() {
-    if (!this.branchCollapseButton || !this.expandAllButton) return;
+    if (!this.branchExpandButton || !this.resetTreeButton) return;
     const id = this.focusedId;
-    const hasChildren = Boolean(id && this.hasRecordedChildren(id));
+    const canExpand = Boolean(id && hasHiddenDescendants(
+      id,
+      this.visibleIds,
+      this.fullPeople,
+      this.fullRelationships,
+    ));
 
-    // Keep the control visible so branch collapsing is discoverable. When the
-    // selected person has no recorded descendants, explain that state instead
-    // of silently removing the control from the interface.
-    this.branchCollapseButton.hidden = false;
-    this.branchCollapseButton.disabled = !hasChildren;
-    this.branchCollapseButton.setAttribute('aria-disabled', String(!hasChildren));
-    if (hasChildren) {
-      this.branchCollapseButton.textContent = this.collapsedRoots.has(id)
-        ? 'Expand descendants'
-        : 'Collapse descendants';
-    } else {
-      this.branchCollapseButton.textContent = id
-        ? 'No descendants to collapse'
-        : 'Select a person with descendants';
-    }
+    this.branchExpandButton.disabled = !canExpand;
+    this.branchExpandButton.setAttribute('aria-disabled', String(!canExpand));
+    this.branchExpandButton.textContent = canExpand
+      ? 'Expand next generation'
+      : id ? 'Branch fully shown' : 'Select a branch to expand';
 
-    this.expandAllButton.hidden = this.collapsedRoots.size === 0;
-    if (this.collapsedRoots.size) {
-      const hiddenCount = Math.max(0, this.fullPeople.length - this.people.length);
-      this.expandAllButton.textContent = `Expand all · ${hiddenCount} hidden`;
+    const hasManualExpansion = this.manualVisibleIds.size > 0;
+    this.resetTreeButton.disabled = !hasManualExpansion;
+    this.resetTreeButton.setAttribute('aria-disabled', String(!hasManualExpansion));
+
+    if (this.treeWindowCount) {
+      const targetName = this.fullPeople.find(person => person.id === this.viewTargetId)?.name || 'target person';
+      this.treeWindowCount.textContent = `${this.people.length.toLocaleString()} of ${this.fullPeople.length.toLocaleString()} shown · nearest ${Math.min(DEFAULT_VISIBLE_PEOPLE, this.fullPeople.length).toLocaleString()} to ${targetName}`;
     }
   }
 
@@ -234,62 +260,9 @@ export class GlobeScene extends CoreGlobeScene {
     this.densityWarning.hidden = false;
     this.densityWarning.classList.toggle('severe', count >= DENSITY_SEVERE_COUNT);
     this.densityWarning.textContent = count >= DENSITY_SEVERE_COUNT
-      ? `Very dense view · ${count} people visible. Focus a family and collapse descendants.`
-      : `Dense view · ${count} people visible. Collapse a descendant branch for a cleaner chart.`;
+      ? `Very dense view · ${count} people readable here. Expand additional branches selectively.`
+      : `Dense view · ${count} people readable here. Expand only the branches you need.`;
   }
-}
-
-export function descendantIdsHiddenBy(collapsedRoots, people, relationships) {
-  if (!collapsedRoots?.size) return new Set();
-  const knownIds = new Set((people || []).map(person => person.id));
-  const byId = new Map((people || []).map(person => [person.id, person]));
-  const children = new Map();
-  const spouseLinks = [];
-
-  (relationships || []).forEach(link => {
-    if (link.type === 'parent' && knownIds.has(link.from) && knownIds.has(link.to)) {
-      if (!children.has(link.from)) children.set(link.from, new Set());
-      children.get(link.from).add(link.to);
-    } else if (link.type === 'spouse' && knownIds.has(link.from) && knownIds.has(link.to)) {
-      spouseLinks.push(link);
-    }
-  });
-
-  const hidden = new Set();
-  const queue = [];
-  collapsedRoots.forEach(rootId => {
-    for (const childId of children.get(rootId) || []) queue.push(childId);
-  });
-
-  while (queue.length) {
-    const id = queue.shift();
-    if (hidden.has(id) || collapsedRoots.has(id)) continue;
-    hidden.add(id);
-    for (const childId of children.get(id) || []) queue.push(childId);
-  }
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    spouseLinks.forEach(link => {
-      const fromHidden = hidden.has(link.from);
-      const toHidden = hidden.has(link.to);
-      if (fromHidden === toHidden) return;
-      const supportId = fromHidden ? link.to : link.from;
-      const support = byId.get(supportId);
-      if (!isSupportingSpouse(support) || collapsedRoots.has(supportId)) return;
-      hidden.add(supportId);
-      changed = true;
-    });
-  }
-
-  return hidden;
-}
-
-function isSupportingSpouse(person) {
-  if (!person) return false;
-  if (person.role === 'one-step-spouse') return true;
-  return ['spouse', 'co-parent', 'descendant-co-parent'].includes(person.proofExpansionKind);
 }
 
 function pairKey(a, b) {

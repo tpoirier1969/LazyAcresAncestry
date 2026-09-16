@@ -38,18 +38,19 @@ export function layoutSample(people, radius, relationships = []) {
   const root = people.find(person => person.role === 'root') || people[0];
   const levels = assignGenerations(people, root.id, parentLinks, spouseLinks);
   const parentsByChild = collectParents(parentLinks);
+  const originFamilyKeys = collectOriginFamilyKeys(parentLinks);
   const spouseAdjacency = collectSpouses(spouseLinks);
   const distances = graphDistances(root.id, people, parentLinks, spouseLinks);
-  const { unitsByLevel, unitByPerson } = buildGenerationUnits(
+  const unitsByLevel = buildGenerationUnits(
     people,
     levels,
     parentsByChild,
     spouseAdjacency,
     distances,
     root.id,
+    originFamilyKeys,
   );
 
-  connectFamilyUnits(unitsByLevel, unitByPerson, parentsByChild);
   const { blocksByLevel, blockByPerson } = buildFamilyBlocks(unitsByLevel);
   connectBlockNeighbors(parentLinks, blockByPerson);
   const planar = placeFamilyBlocks(blocksByLevel, root.id, people.length);
@@ -126,6 +127,33 @@ function collectParents(parentLinks) {
   return map;
 }
 
+function collectOriginFamilyKeys(parentLinks) {
+  const familyCountsByChild = new Map();
+  const fallbackParentsByChild = new Map();
+
+  parentLinks.forEach(link => {
+    if (!fallbackParentsByChild.has(link.to)) fallbackParentsByChild.set(link.to, new Set());
+    fallbackParentsByChild.get(link.to).add(link.from);
+    if (!link.familyId) return;
+    if (!familyCountsByChild.has(link.to)) familyCountsByChild.set(link.to, new Map());
+    const counts = familyCountsByChild.get(link.to);
+    counts.set(link.familyId, (counts.get(link.familyId) || 0) + 1);
+  });
+
+  const result = new Map();
+  fallbackParentsByChild.forEach((parents, childId) => {
+    const counts = familyCountsByChild.get(childId);
+    if (counts?.size) {
+      const familyId = [...counts.entries()]
+        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0][0];
+      result.set(childId, `fam:${familyId}`);
+      return;
+    }
+    result.set(childId, `parents:${[...parents].sort().join('|')}`);
+  });
+  return result;
+}
+
 function collectSpouses(spouseLinks) {
   const map = new Map();
   spouseLinks.forEach(link => {
@@ -158,7 +186,15 @@ function graphDistances(rootId, people, parentLinks, spouseLinks) {
   return distances;
 }
 
-function buildGenerationUnits(people, levels, parentsByChild, spouseAdjacency, distances, rootId) {
+function buildGenerationUnits(
+  people,
+  levels,
+  parentsByChild,
+  spouseAdjacency,
+  distances,
+  rootId,
+  originFamilyKeys,
+) {
   const byId = new Map(people.map(person => [person.id, person]));
   const peopleByLevel = new Map();
   people.forEach(person => {
@@ -168,7 +204,6 @@ function buildGenerationUnits(people, levels, parentsByChild, spouseAdjacency, d
   });
 
   const unitsByLevel = new Map();
-  const unitByPerson = new Map();
 
   for (const [level, ids] of peopleByLevel) {
     const levelSet = new Set(ids);
@@ -207,27 +242,27 @@ function buildGenerationUnits(people, levels, parentsByChild, spouseAdjacency, d
       const birthYears = members.map(member => birthYear(byId.get(member))).filter(Number.isFinite);
       const labels = members.map(member => byId.get(member)?.name || member).sort();
       const clusters = members.map(member => byId.get(member)?.cluster).filter(Boolean);
+      const anchorCluster = byId.get(anchorMember)?.cluster || null;
+      const originFamilyKey = originFamilyKeys.get(anchorMember)
+        || (anchorCluster ? `fam:${anchorCluster}` : null);
       const unit = {
         id: `${level}:${units.length}`,
         level,
         members,
         anchorMember,
-        parentUnits: new Set(),
-        layoutParentUnits: new Set(),
-        childUnits: new Set(),
+        originFamilyKey,
         branch: mostCommon(branches),
         cluster: mostCommon(clusters),
         birthYear: birthYears.length ? Math.min(...birthYears) : 9999,
         label: labels[0] || '',
       };
       units.push(unit);
-      members.forEach(member => unitByPerson.set(member, unit));
     });
 
     unitsByLevel.set(level, units);
   }
 
-  return { unitsByLevel, unitByPerson };
+  return unitsByLevel;
 }
 
 function memberSeed(a, b, byId, rootId) {
@@ -265,32 +300,6 @@ function orderUnitMembers(component, rootId, byId, spouseAdjacency, parentsByChi
   return [...others.slice(0, leftCount), hub, ...others.slice(leftCount)];
 }
 
-function connectFamilyUnits(unitsByLevel, unitByPerson, parentsByChild) {
-  for (const units of unitsByLevel.values()) {
-    for (const unit of units) {
-      for (const member of unit.members) {
-        for (const parent of parentsByChild.get(member) || []) {
-          const parentUnit = unitByPerson.get(parent);
-          if (parentUnit && parentUnit.level === unit.level + 1) {
-            unit.parentUnits.add(parentUnit.id);
-            parentUnit.childUnits.add(unit.id);
-          }
-        }
-      }
-
-      for (const parent of parentsByChild.get(unit.anchorMember) || []) {
-        const parentUnit = unitByPerson.get(parent);
-        if (parentUnit && parentUnit.level === unit.level + 1) {
-          unit.layoutParentUnits.add(parentUnit.id);
-        }
-      }
-      if (!unit.layoutParentUnits.size) {
-        unit.parentUnits.forEach(id => unit.layoutParentUnits.add(id));
-      }
-    }
-  }
-}
-
 function buildFamilyBlocks(unitsByLevel) {
   const blocksByLevel = new Map();
   const blockByPerson = new Map();
@@ -298,10 +307,9 @@ function buildFamilyBlocks(unitsByLevel) {
   for (const [level, units] of unitsByLevel) {
     const groups = new Map();
     for (const unit of units) {
-      const parentKey = [...unit.layoutParentUnits].sort().join('|');
-      const key = parentKey
-        ? `family:${parentKey}`
-        : unit.cluster ? `origin:${unit.cluster}` : `unit:${unit.id}`;
+      const key = unit.originFamilyKey
+        ? `family:${unit.originFamilyKey}`
+        : `unit:${unit.id}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(unit);
     }

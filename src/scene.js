@@ -31,6 +31,7 @@ const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
 const OVERVIEW_GAP = 155;
 const ABSOLUTE_MAX_GAP = 520;
+const RELATIONSHIP_PLAN_DEFER_THRESHOLD = 700;
 
 export const HOVER_DELAY_MS = 1250;
 export const RELATIONSHIP_LINE_WIDTH = 3.35;
@@ -42,6 +43,8 @@ export const SURFACE_LINE_STATIC_TARGET_PX = 6;
 export const SURFACE_LINE_MOVING_TARGET_PX = 14;
 export const SURFACE_LINE_STATIC_MAX_STEPS = 240;
 export const SURFACE_LINE_MOVING_MAX_STEPS = 96;
+export const SURFACE_LINE_CULL_MAX_STEPS = 24;
+export const VIEWPORT_CULL_MARGIN_PX = 160;
 
 export const FAMILY_CHILD_STEM_PREFERRED = PLAQUE.height * 1.45;
 export const FAMILY_CHILD_STEM_MIN = PLAQUE.height * 1.05;
@@ -52,6 +55,11 @@ export const FAMILY_TRUNK_SHIFT_MAX = PLAQUE.width * 0.62;
 const FAMILY_PARENT_CLEARANCE = PLAQUE.height * 0.72;
 const FAMILY_ROUTE_OVERLAP_MARGIN = PLAQUE.width * 0.12;
 const FAMILY_CROSSING_MARGIN = PLAQUE.width * 0.14;
+const FAMILY_CONFLICT_BOUNDS_PADDING = Math.max(
+  FAMILY_PARALLEL_GAP,
+  FAMILY_VERTICAL_CLEARANCE,
+  FAMILY_CROSSING_MARGIN,
+);
 
 export const RELATIONSHIP_COLORS = Object.freeze({
   couple: 'rgba(108,48,42,.98)',
@@ -122,10 +130,14 @@ export function shouldSnapSingleChildRoute(route) {
 }
 
 export function familyRouteConflictScore(route, railY, plannedRoutes = []) {
-  const candidate = routeSegmentsForConflict({ ...route, railY });
+  const candidateRoute = { ...route, railY };
+  const candidate = routeSegmentsForConflict(candidateRoute);
+  const candidateBounds = routeBoundsFromSegments(candidate);
   let score = 0;
   for (const other of plannedRoutes) {
-    const existing = routeSegmentsForConflict(other);
+    const existing = other.conflictSegments || routeSegmentsForConflict(other);
+    const existingBounds = other.conflictBounds || routeBoundsFromSegments(existing);
+    if (!routeBoundsOverlap(candidateBounds, existingBounds, FAMILY_CONFLICT_BOUNDS_PADDING)) continue;
     for (const a of candidate) {
       for (const b of existing) {
         if (a.kind === 'horizontal' && b.kind === 'horizontal') {
@@ -206,13 +218,15 @@ export function planFamilyRoutes(familyGroups, pointForId) {
   candidates.forEach(route => {
     const directSingleChild = shouldSnapSingleChildRoute(route);
     if (directSingleChild) {
-      planned.push({
+      const plannedRoute = {
         ...route,
         directSingleChild: true,
         stemLength: route.generationSpan,
         routeSlot: 0,
         railY: route.children[0].point.y,
-      });
+      };
+      cacheRouteConflictGeometry(plannedRoute);
+      planned.push(plannedRoute);
       return;
     }
 
@@ -244,14 +258,16 @@ export function planFamilyRoutes(familyGroups, pointForId) {
     });
     options.sort((a, b) => a.cost - b.cost || a.routeSlot - b.routeSlot || a.sourceSlot - b.sourceSlot);
     const selected = options[0];
-    planned.push({
+    const plannedRoute = {
       ...route,
       source: { ...route.source, x: selected.sourceX },
       minX: selected.minX,
       maxX: selected.maxX,
       directSingleChild: false,
       ...selected,
-    });
+    };
+    cacheRouteConflictGeometry(plannedRoute);
+    planned.push(plannedRoute);
   });
 
   return planned;
@@ -271,6 +287,8 @@ export class GlobeScene {
     this.relationships = [];
     this.positions = new Map();
     this.hitAreas = [];
+    this.relationshipPlan = emptyRelationshipPlan();
+    this.relationshipPlanToken = 0;
     this.homeId = null;
     this.focusedId = null;
     this.hoveredId = null;
@@ -302,6 +320,49 @@ export class GlobeScene {
     this.relationships = relationships;
     this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
     this.positions = layoutSample(people, RADIUS, relationships);
+
+    const token = ++this.relationshipPlanToken;
+    const knownIds = new Set(this.positions.keys());
+    const { spousePairs, familyGroups, ancestryStubs } = buildRelationshipGroups(
+      this.relationships,
+      knownIds,
+      this.people,
+    );
+    const familyPairKeys = new Set(
+      familyGroups
+        .filter(group => group.parents.length >= 2)
+        .map(group => pairKey(group.parents[0], group.parents[1])),
+    );
+    const basePlan = {
+      spousePairs,
+      familyGroups,
+      ancestryStubs,
+      familyPairKeys,
+      familyRoutes: [],
+      ready: false,
+    };
+    this.relationshipPlan = basePlan;
+
+    const finishPlan = () => {
+      if (token !== this.relationshipPlanToken) return;
+      const familyRoutes = planFamilyRoutes(
+        familyGroups,
+        id => this.surfaceXY(this.positions.get(id)),
+      );
+      if (token !== this.relationshipPlanToken) return;
+      this.relationshipPlan = { ...basePlan, familyRoutes, ready: true };
+      this.requestDraw();
+    };
+
+    if (people.length >= RELATIONSHIP_PLAN_DEFER_THRESHOLD) {
+      if (typeof globalThis.requestIdleCallback === 'function') {
+        globalThis.requestIdleCallback(finishPlan, { timeout: 250 });
+      } else {
+        setTimeout(finishPlan, 32);
+      }
+    } else {
+      finishPlan();
+    }
     this.requestDraw();
   }
 
@@ -570,21 +631,12 @@ export class GlobeScene {
   }
 
   drawRelationships(camera) {
-    const knownIds = new Set(this.positions.keys());
-    const { spousePairs, familyGroups, ancestryStubs } = buildRelationshipGroups(
-      this.relationships,
-      knownIds,
-      this.people,
-    );
-    const familyRoutes = planFamilyRoutes(
-      familyGroups,
-      id => this.surfaceXY(this.positions.get(id)),
-    );
-    const familyPairKeys = new Set(
-      familyGroups
-        .filter(group => group.parents.length >= 2)
-        .map(group => pairKey(group.parents[0], group.parents[1])),
-    );
+    const {
+      spousePairs,
+      ancestryStubs,
+      familyRoutes,
+      familyPairKeys,
+    } = this.relationshipPlan;
     ancestryStubs.forEach(id => this.drawAncestryStub(id, camera));
     spousePairs
       .filter(([a, b]) => !familyPairKeys.has(pairKey(a, b)))
@@ -649,7 +701,7 @@ export class GlobeScene {
     const sampledParts = parts.map(part => ({
       ...part,
       sampled: this.sampleSurfacePolyline(part.points, camera, moving),
-    }));
+    })).filter(part => part.sampled.length);
     sampledParts.forEach(part => this.strokeSampledSurfacePolyline(
       part.sampled,
       RELATIONSHIP_COLORS.halo,
@@ -678,7 +730,43 @@ export class GlobeScene {
     );
   }
 
+  projectedInViewport(projected, camera, margin = VIEWPORT_CULL_MARGIN_PX) {
+    if (!projected) return false;
+    const dpr = camera.dpr || 1;
+    const width = this.canvas.width / dpr;
+    const height = this.canvas.height / dpr;
+    return projected.x >= -margin
+      && projected.x <= width + margin
+      && projected.y >= -margin
+      && projected.y <= height + margin;
+  }
+
+  surfacePolylineMayBeVisible(xyPoints, camera) {
+    for (let segment = 0; segment < xyPoints.length - 1; segment += 1) {
+      const a = xyPoints[segment];
+      const b = xyPoints[segment + 1];
+      const surfaceDistance = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const coarseSteps = Math.max(4, Math.min(
+        SURFACE_LINE_CULL_MAX_STEPS,
+        Math.ceil(surfaceDistance / 6),
+      ));
+      for (let i = 0; i <= coarseSteps; i += 1) {
+        const t = i / coarseSteps;
+        const local = tangentPoint(
+          a[0] + (b[0] - a[0]) * t,
+          a[1] + (b[1] - a[1]) * t,
+          RADIUS,
+        );
+        const unit = rotatePoint(local, this.yaw, this.pitch);
+        const projected = projectSpherePoint(unit, camera, RADIUS + 0.012);
+        if (isVisible(unit, projected) && this.projectedInViewport(projected, camera)) return true;
+      }
+    }
+    return false;
+  }
+
   sampleSurfacePolyline(xyPoints, camera, moving = Boolean(this.drag || this.motionFrame || this.focusFrame)) {
+    if (!this.surfacePolylineMayBeVisible(xyPoints, camera)) return [];
     const sampled = [];
     for (let segment = 0; segment < xyPoints.length - 1; segment += 1) {
       const a = xyPoints[segment];
@@ -694,13 +782,18 @@ export class GlobeScene {
         );
         const unit = rotatePoint(local, this.yaw, this.pitch);
         const q = projectSpherePoint(unit, camera, RADIUS + 0.012);
-        sampled.push(isVisible(unit, q) ? q : null);
+        sampled.push(
+          isVisible(unit, q) && this.projectedInViewport(q, camera)
+            ? q
+            : null,
+        );
       }
     }
     return sampled;
   }
 
   strokeSampledSurfacePolyline(sampled, stroke, width, moving, { shadow = false } = {}) {
+    if (!sampled.length) return;
     const ctx = this.ctx;
     ctx.save();
     ctx.lineCap = 'round';
@@ -726,6 +819,7 @@ export class GlobeScene {
   ) {
     const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
     const sampled = this.sampleSurfacePolyline(xyPoints, camera, moving);
+    if (!sampled.length) return;
     this.strokeSampledSurfacePolyline(
       sampled,
       RELATIONSHIP_COLORS.halo,
@@ -757,7 +851,10 @@ export class GlobeScene {
       if (!local) return;
       const unit = rotatePoint(local, this.yaw, this.pitch);
       const projected = projectSpherePoint(unit, camera, RADIUS);
-      if (isVisible(unit, projected)) ordered.push({ person, unit, projected });
+      if (
+        isVisible(unit, projected)
+        && this.projectedInViewport(projected, camera)
+      ) ordered.push({ person, unit, projected });
     });
     ordered.sort((a, b) => b.projected.z - a.projected.z);
     this.hitAreas = [];
@@ -1075,6 +1172,40 @@ function routeSegmentsForConflict(route) {
     segments.push({ kind: 'vertical', x1: point.x, x2: point.x, y1: point.y, y2: railY });
   });
   return segments;
+}
+
+function cacheRouteConflictGeometry(route) {
+  route.conflictSegments = routeSegmentsForConflict(route);
+  route.conflictBounds = routeBoundsFromSegments(route.conflictSegments);
+  return route;
+}
+
+function routeBoundsFromSegments(segments) {
+  if (!segments?.length) return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  return {
+    minX: Math.min(...segments.map(segment => Math.min(segment.x1, segment.x2))),
+    maxX: Math.max(...segments.map(segment => Math.max(segment.x1, segment.x2))),
+    minY: Math.min(...segments.map(segment => Math.min(segment.y1, segment.y2))),
+    maxY: Math.max(...segments.map(segment => Math.max(segment.y1, segment.y2))),
+  };
+}
+
+function routeBoundsOverlap(a, b, padding = 0) {
+  return a.maxX + padding >= b.minX
+    && b.maxX + padding >= a.minX
+    && a.maxY + padding >= b.minY
+    && b.maxY + padding >= a.minY;
+}
+
+function emptyRelationshipPlan() {
+  return {
+    spousePairs: [],
+    familyGroups: [],
+    ancestryStubs: [],
+    familyPairKeys: new Set(),
+    familyRoutes: [],
+    ready: false,
+  };
 }
 
 function intervalOverlapLength(a1, a2, b1, b2) {

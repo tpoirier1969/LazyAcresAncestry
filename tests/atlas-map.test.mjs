@@ -22,8 +22,8 @@ import {
 assert.equal(ATLAS_TEXTURE_URL, 'assets/atlas-base.svg', 'rendered base atlas must remain bundled with the app');
 assert.equal(ATLAS_FALLBACK_TEXTURE_URL, 'assets/atlas-base-fallback.svg', 'the prior neutral atlas must remain available as an explicit fallback asset');
 assert.equal(ATLAS_CODED_FALLBACK_TEXTURE_URL, 'assets/atlas-base-coded-fallback.svg', 'the v0.4.20 coded fictional atlas must be preserved as a separate fallback');
-assert.equal(ATLAS_RELIEF_TEXTURE_URL, ATLAS_TEXTURE_URL, 'bundled atlas mode must not blend sharp modern Earth imagery over the antique treatment');
-assert.equal(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, ATLAS_TEXTURE_URL, 'lower-capability devices must retain the same rendered atlas');
+assert.equal(ATLAS_RELIEF_TEXTURE_URL, 'assets/atlas-relief-neutral.svg', 'rendered artwork should not be decoded and uploaded twice as a relief texture');
+assert.equal(ATLAS_RELIEF_TEXTURE_FALLBACK_URL, ATLAS_RELIEF_TEXTURE_URL, 'all devices should use the same tiny neutral relief texture');
 assert.equal(ATLAS_DETAIL_LEVELS.length, 0, 'modern regional WMS overlays must remain disabled');
 assert.equal(atlasDetailLevel(7), null);
 assert.equal(atlasDetailLevel(100), null);
@@ -36,6 +36,11 @@ const localAtlas = fs.readFileSync(new URL(`../${ATLAS_TEXTURE_URL}`, import.met
 assert.match(localAtlas, /^<svg[^>]*width="8192"[^>]*height="4096"/i, 'rendered atlas must keep the large 8192×4096 texture contract');
 assert.match(localAtlas, /data:image\/jpeg;base64,/i, 'canonical atlas must contain the rendered raster artwork rather than regenerated geometric land paths');
 assert.doesNotMatch(localAtlas, /fill="url\(#land\)"/, 'canonical rendered atlas must not silently fall back to the coded v0.4.20 landmass generator');
+
+const neutralRelief = fs.readFileSync(new URL(`../${ATLAS_RELIEF_TEXTURE_URL}`, import.meta.url), 'utf8');
+assert.match(neutralRelief, /^<svg[^>]*width="2"[^>]*height="2"/i, 'neutral relief must remain tiny instead of duplicating the 8K atlas in GPU memory');
+assert.match(neutralRelief, /#808080/i, 'neutral relief should be mid-gray so it adds no artificial terrain contrast');
+assert.ok(neutralRelief.length < 300, 'neutral relief should remain an intentionally trivial texture');
 
 const codedFallback = fs.readFileSync(new URL(`../${ATLAS_CODED_FALLBACK_TEXTURE_URL}`, import.meta.url), 'utf8');
 assert.match(codedFallback, /fill="url\(#land\)"/, 'coded fictional atlas must remain preserved as a fallback asset');
@@ -53,4 +58,4 @@ assert.equal(ATLAS_HOME_ANCHOR.label, 'Central Upper Peninsula home orientation'
 assert.ok(Number.isFinite(ATLAS_HOME_ANCHOR.latitude) && Math.abs(ATLAS_HOME_ANCHOR.latitude) <= 90);
 assert.ok(Number.isFinite(ATLAS_HOME_ANCHOR.longitude) && Math.abs(ATLAS_HOME_ANCHOR.longitude) <= 180);
 
-console.log('rendered antique atlas is bundled, faded, and preserves both prior fallback treatments');
+console.log('rendered antique atlas is bundled once, uses lightweight neutral relief, and preserves both prior fallback treatments');

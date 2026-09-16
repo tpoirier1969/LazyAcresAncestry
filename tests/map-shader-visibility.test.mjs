@@ -5,18 +5,18 @@ const source = await readFile(new URL('../src/globe-webgl.js', import.meta.url),
 
 assert.match(
   source,
-  /sourceTint\s*=\s*clamp\(\(sourceTint\s*-\s*0\.5\)\s*\*\s*1\.34\s*\+\s*0\.5/,
-  'atlas source artwork should receive explicit local contrast before antiquing',
+  /vec4\s+source\s*=\s*texture2D\(uAtlas,\s*vUv\)/,
+  'the rendered atlas must be sampled directly as the sphere surface',
 );
 assert.match(
   source,
-  /antique\s*=\s*mix\(antique,\s*sourceTint,\s*0\.42\)/,
-  'the rendered atlas must remain a substantial visible part of the globe shader',
+  /source\.rgb\s*\*\s*sphereShade/,
+  'sphere lighting may shade the atlas but must preserve the atlas artwork itself',
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /sourceGradient[\s\S]*max\(sourceGradient,\s*reliefGradient\)/,
-  'coastlines and cartographic edges from the source atlas must contribute to engraving detail',
+  /landPaper|seaPaper|paperNoise|gridLine|uLabels|progressiveDetail/,
+  'the globe shader must not generate parchment, graticules, labels, or replacement cartography over the atlas',
 );
 
-console.log('atlas shader preserves visible source cartography');
+console.log('atlas artwork is the sole rendered sphere surface apart from curvature lighting');

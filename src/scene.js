@@ -16,6 +16,8 @@ import { layoutSample } from './layout.js';
 import { ATLAS_TEXTURE_URL } from './atlas-map.js';
 import { GlobeWebGLRenderer } from './globe-webgl.js';
 import { solveFocusedZoomAnchor } from './zoom-anchor.js';
+import { extractSavedRecords } from './gedcom.js';
+import { describeRelationship } from './relationships.js';
 
 const POPULATION = 9099;
 const PLAQUE = { width: 1.20, height: 1.08 };
@@ -29,7 +31,8 @@ const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
 const OVERVIEW_GAP = 155;
 const ABSOLUTE_MAX_GAP = 520;
-export const RELATIONSHIP_LINE_WIDTH = 3.05;
+export const RELATIONSHIP_LINE_WIDTH = 3.35;
+export const ANCESTRY_CONTINUATION_LINE_WIDTH = 3.0;
 export const ANCESTRY_STUB_LENGTH = PLAQUE.height * 1.10;
 
 // Family routes are rule-driven rather than tied to fixed lane numbers. A child
@@ -45,7 +48,7 @@ export const RELATIONSHIP_COLORS = Object.freeze({
   couple: 'rgba(108,48,42,.98)',
   descent: 'rgba(137,58,48,.98)',
   rail: 'rgba(154,70,55,.97)',
-  continuation: 'rgba(158,96,80,.68)',
+  continuation: 'rgba(158,96,80,.86)',
   halo: 'rgba(247,225,190,.56)',
   shadow: 'rgba(43,28,20,.44)',
 });
@@ -153,6 +156,7 @@ export class GlobeScene {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.mapCanvas = document.getElementById('mapCanvas');
+    this.hoverCard = document.getElementById('personHover');
     this.globeRenderer = this.mapCanvas
       ? new GlobeWebGLRenderer(this.mapCanvas, ATLAS_TEXTURE_URL, () => this.requestDraw())
       : null;
@@ -163,6 +167,7 @@ export class GlobeScene {
     this.hitAreas = [];
     this.homeId = null;
     this.focusedId = null;
+    this.hoveredId = null;
     this.yaw = 0;
     this.pitch = 0;
     this.cameraGap = DEFAULT_GAP;
@@ -183,6 +188,7 @@ export class GlobeScene {
   }
 
   setFamily(people, relationships = []) {
+    this.clearHover();
     this.people = people;
     this.relationships = relationships;
     this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
@@ -200,6 +206,7 @@ export class GlobeScene {
     this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
     this.canvas.dataset.dpr = String(dpr);
     this.globeRenderer?.resize(rect.width, rect.height, dpr);
+    this.clearHover();
     this.requestDraw();
   }
 
@@ -235,6 +242,7 @@ export class GlobeScene {
 
   bind() {
     this.canvas.addEventListener('pointerdown', event => {
+      this.clearHover();
       this.cancelFocus();
       this.stopMotion();
       this.canvas.setPointerCapture(event.pointerId);
@@ -248,7 +256,10 @@ export class GlobeScene {
     });
 
     this.canvas.addEventListener('pointermove', event => {
-      if (!this.drag) return;
+      if (!this.drag) {
+        this.updateHover(event);
+        return;
+      }
       const dx = event.clientX - this.drag.x;
       const dy = event.clientY - this.drag.y;
       if (Math.hypot(dx, dy) > 3) this.drag.moved = true;
@@ -268,12 +279,17 @@ export class GlobeScene {
       if (!this.drag?.moved) this.pick(event.offsetX, event.offsetY);
       this.drag = null;
     });
-    this.canvas.addEventListener('pointercancel', () => { this.drag = null; });
+    this.canvas.addEventListener('pointercancel', () => {
+      this.drag = null;
+      this.clearHover();
+    });
+    this.canvas.addEventListener('pointerleave', () => this.clearHover());
 
     this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
       const direction = Math.sign(event.deltaY);
       if (!direction) return;
+      this.clearHover();
 
       const focused = this.focusedScreenPoint();
       if (focused && this.focusedId) {
@@ -372,6 +388,7 @@ export class GlobeScene {
   focus(id, { resetZoom = false, targetPoint = null } = {}) {
     const local = this.positions.get(id);
     if (!local) return;
+    this.clearHover();
     this.stopMotion();
     this.cancelFocus();
     this.focusedId = id;
@@ -525,7 +542,7 @@ export class GlobeScene {
       [[point.x, point.y], [point.x, point.y + ANCESTRY_STUB_LENGTH]],
       camera,
       RELATIONSHIP_COLORS.continuation,
-      RELATIONSHIP_LINE_WIDTH * 0.55,
+      ANCESTRY_CONTINUATION_LINE_WIDTH,
     );
   }
 
@@ -647,11 +664,99 @@ export class GlobeScene {
     });
   }
 
-  pick(x, y) {
+  personAt(x, y) {
     const candidates = this.hitAreas.filter(hit => Math.hypot(x - hit.x, y - hit.y) <= hit.r);
-    if (!candidates.length) return;
+    if (!candidates.length) return null;
     candidates.sort((a, b) => a.z - b.z);
-    this.onSelect?.(candidates[0].id);
+    return candidates[0];
+  }
+
+  pick(x, y) {
+    const hit = this.personAt(x, y);
+    if (!hit) return;
+    this.clearHover();
+    this.onSelect?.(hit.id);
+  }
+
+  updateHover(event) {
+    if (!this.hoverCard || event.pointerType === 'touch') {
+      this.clearHover();
+      return;
+    }
+    const rect = this.canvas.getBoundingClientRect();
+    const x = Number.isFinite(event.offsetX) ? event.offsetX : (Number(event.clientX) || 0) - (rect.left || 0);
+    const y = Number.isFinite(event.offsetY) ? event.offsetY : (Number(event.clientY) || 0) - (rect.top || 0);
+    const hit = this.personAt(x, y);
+    if (!hit) {
+      this.clearHover();
+      return;
+    }
+    const person = this.people.find(candidate => candidate.id === hit.id);
+    if (!person) {
+      this.clearHover();
+      return;
+    }
+    if (this.hoveredId !== person.id) this.renderHoverCard(person);
+    this.hoveredId = person.id;
+    const clientX = Number.isFinite(event.clientX) ? event.clientX : (rect.left || 0) + x;
+    const clientY = Number.isFinite(event.clientY) ? event.clientY : (rect.top || 0) + y;
+    this.positionHoverCard(clientX, clientY);
+  }
+
+  renderHoverCard(person) {
+    if (!this.hoverCard) return;
+    const relationship = describeRelationship(this.homeId, person.id, this.people, this.relationships);
+    const records = extractSavedRecords(person.rawGedcom);
+    const connections = connectionCounts(person.id, this.relationships);
+    const birth = eventLine(person.birth);
+    const death = eventLine(person.death);
+    const birthYear = yearFrom(person.birth?.date) || '?';
+    const deathYear = person.death?.date ? (yearFrom(person.death.date) || '?') : 'Living';
+    const profile = person.photo
+      ? `<div class="hover-profile"><img src="${escapeHtml(person.photo)}" alt=""></div>`
+      : `<div class="hover-profile hover-profile-initial" aria-hidden="true">${escapeHtml((person.name || '?').trim().charAt(0).toUpperCase() || '?')}</div>`;
+    const recordMarkup = records.length
+      ? `<div class="hover-records"><span>${records.length} saved record${records.length === 1 ? '' : 's'}</span><ul>${records.slice(0, 2).map(record => `<li>${escapeHtml(record.title)}</li>`).join('')}</ul></div>`
+      : '';
+
+    this.hoverCard.innerHTML = `
+      <div class="hover-person-head">
+        ${profile}
+        <div>
+          <div class="hover-kicker">${escapeHtml(relationship)}</div>
+          <strong class="hover-name">${escapeHtml(person.name)}</strong>
+          <div class="hover-lifespan">${escapeHtml(birthYear)}–${escapeHtml(deathYear)}</div>
+        </div>
+      </div>
+      <div class="hover-events">
+        <div class="hover-event"><span>Born</span><div>${escapeHtml(birth || 'Unknown')}</div></div>
+        <div class="hover-event"><span>Died</span><div>${escapeHtml(death || 'No death recorded')}</div></div>
+      </div>
+      <div class="hover-kin">${connections.parents} parent${connections.parents === 1 ? '' : 's'} · ${connections.spouses} spouse${connections.spouses === 1 ? '' : 's'} · ${connections.children} child${connections.children === 1 ? '' : 'ren'}</div>
+      ${recordMarkup}
+      <div class="hover-more">Click for full person details</div>`;
+    this.hoverCard.hidden = false;
+  }
+
+  positionHoverCard(clientX, clientY) {
+    if (!this.hoverCard || this.hoverCard.hidden) return;
+    const card = this.hoverCard.getBoundingClientRect();
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const viewportWidth = Number(globalThis.innerWidth) || canvasRect.width || 1200;
+    const viewportHeight = Number(globalThis.innerHeight) || canvasRect.height || 800;
+    const margin = 10;
+    const gap = 16;
+    let left = clientX + gap;
+    let top = clientY + gap;
+    if (left + card.width > viewportWidth - margin) left = clientX - card.width - gap;
+    if (top + card.height > viewportHeight - margin) top = clientY - card.height - gap;
+    this.hoverCard.style.left = `${Math.max(margin, left)}px`;
+    this.hoverCard.style.top = `${Math.max(margin, top)}px`;
+  }
+
+  clearHover() {
+    this.hoveredId = null;
+    if (this.hoverCard) this.hoverCard.hidden = true;
   }
 }
 
@@ -853,6 +958,40 @@ function averagePoint(points) {
 
 function average(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function connectionCounts(personId, relationships) {
+  const parents = new Set();
+  const spouses = new Set();
+  const children = new Set();
+  relationships.forEach(link => {
+    if (link.type === 'parent') {
+      if (link.to === personId) parents.add(link.from);
+      if (link.from === personId) children.add(link.to);
+    } else if (link.type === 'spouse') {
+      if (link.from === personId) spouses.add(link.to);
+      if (link.to === personId) spouses.add(link.from);
+    }
+  });
+  return { parents: parents.size, spouses: spouses.size, children: children.size };
+}
+
+function eventLine(event = {}) {
+  const parts = [event.date, event.place].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function yearFrom(value = '') {
+  return String(value).match(/\b(1[0-9]{3}|20[0-9]{2}|21[0-9]{2})\b/)?.[1] || '';
+}
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
 function strokeSegments(ctx, points) {

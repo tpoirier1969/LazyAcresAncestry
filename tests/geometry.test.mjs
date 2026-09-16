@@ -78,9 +78,9 @@ const grouped = buildRelationshipGroups(relationshipSample, knownIds, samplePeop
 assert.deepEqual(grouped.spousePairs, [['P1', 'P2']], 'recorded spouses should produce one partner bar');
 assert.equal(grouped.parentSets.length, 1, 'children with the same recorded parents should form one sibling group');
 assert.deepEqual(grouped.parentSets[0], { parents: ['P1', 'P2'], children: ['C1', 'C2'] });
-assert.deepEqual(grouped.siblingClusters, [['G1', 'G2']], 'imported sibling-cluster metadata should create a peer rail without inventing parents');
+assert.deepEqual(grouped.ancestryStubs, ['G1', 'G2'], 'family-of-origin metadata without visible parents should create individual ancestry continuations, not a false peer rail');
 assert(!JSON.stringify(grouped).includes('MISSING'), 'relationships to people outside the rendered sample must not create stray lines');
-assert(!JSON.stringify(grouped).includes('UNRELATED'), 'people without evidence or sibling-cluster metadata must not gain fabricated connectors');
+assert(!JSON.stringify(grouped).includes('UNRELATED'), 'people without relationship or family-of-origin evidence must not gain fabricated connectors');
 
 const amyLike = buildRelationshipGroups(
   [{ type: 'parent', from: 'AMY', to: 'MAIKEL' }],
@@ -101,7 +101,12 @@ const normalizedPeople = familySample.people.map(person => ({
   role: person.role,
   cluster: person.cluster,
 }));
-const normalizedRelationships = familySample.relationships.map(link => ({ type: link.type, from: link.from, to: link.to }));
+const normalizedRelationships = familySample.relationships.map(link => ({
+  type: link.type,
+  from: link.from,
+  to: link.to,
+  familyId: link.familyId,
+}));
 const fullGroups = buildRelationshipGroups(normalizedRelationships, familyIds, normalizedPeople);
 const connected = new Set();
 fullGroups.spousePairs.forEach(pair => pair.forEach(id => connected.add(id)));
@@ -109,8 +114,8 @@ fullGroups.parentSets.forEach(group => {
   group.parents.forEach(id => connected.add(id));
   group.children.forEach(id => connected.add(id));
 });
-fullGroups.siblingClusters.forEach(ids => ids.forEach(id => connected.add(id)));
+fullGroups.ancestryStubs.forEach(id => connected.add(id));
 const disconnected = [...familyIds].filter(id => !connected.has(id));
-assert.deepEqual(disconnected, [], `every current prototype person must connect to at least one other person; disconnected: ${disconnected.join(', ')}`);
+assert.deepEqual(disconnected, [], `every current prototype person must have a recorded relationship or evidence-backed ancestry continuation; disconnected: ${disconnected.join(', ')}`);
 
 console.log(`geometry ok: capacity sphere diameter ${(radius * 2).toFixed(1)} plaque widths; unified sphere projection, tangent plaques, and evidence-only connectors ok`);

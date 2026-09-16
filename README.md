@@ -8,7 +8,7 @@ The app uses a spherical family-atlas view with fixed physical person plaques an
 
 The 430-person population is intentionally a family-separation stress test. It includes real cases where one displayed parent has children in more than one GEDCOM family, so the renderer must keep those spouse/child families visually distinct rather than merely handling a tidy ancestor tree.
 
-The renderer remains scalable to the full genealogy without one DOM element per person. Person plaques and relationships remain Canvas/WebGL content; the new hover details use one reusable DOM tooltip rather than a tooltip node for every person.
+The renderer remains scalable to the full genealogy without one DOM element per person. Person plaques and relationships remain Canvas/WebGL content; hover details use one reusable DOM tooltip rather than a tooltip node for every person.
 
 The working globe radius is **225 physical layout units**, so the visible genealogy occupies a relatively flat-looking patch of the sphere while leaving substantial surface area for deeper generations. Person plaques remain fixed-size physical objects and use the larger portrait/name scale established by the approved visual reference.
 
@@ -69,16 +69,17 @@ Person plaques are fixed-size physical objects laid in the local tangent plane o
 
 The projection uses both axes of the actual 3D tangent plane. Plaques near the viewing apex therefore read nearly face-on, while plaques farther around the sphere progressively foreshorten with the surface. This makes the people look attached to the atlas rather than standing upright as camera-facing badges.
 
-The current label treatment is dark wood with engraved-style lettering and restrained aged-metal trim. Male plaques use a darker oil-rubbed bronze treatment, female plaques use a warmer redder rose bronze, and unspecified sex uses aged pewter. Portrait/plaque dimensions remain fixed physical dimensions on the sphere.
+The current label treatment is dark wood with engraved-style lettering and restrained aged-metal trim. Male plaques use a darker oil-rubbed bronze treatment, female plaques use a warmer redder rose bronze, and unspecified sex uses aged pewter. Portrait/plaque dimensions remain fixed physical dimensions on the sphere. Date typography is intentionally smaller than the person name so the name remains the dominant reading level even when a full birth/death date wraps to two lines.
 
 ## Current interaction
 
 - Drag the atlas surface to rotate the globe.
-- Drag sensitivity is tied to zoom level and is deliberately restrained throughout the range. Close inspection is slowest; broad overview becomes only moderately faster.
+- Drag sensitivity follows a curved zoom response rather than a global speed multiplier. Close and normal inspection are now substantially slower, medium zoom remains restrained, and the far overview keeps enough speed for broad navigation.
 - Wheel or trackpad movement changes camera distance across a wide near/far range.
 - Camera **angle** changes continuously with zoom through a smooth S-curve. Close views remain nearly perpendicular to the focused family patch; the view leans progressively as distance increases, without an early jump into an overview angle.
 - The focused family moves gradually higher in the viewport as the view widens. At the far end the sphere center remains high enough to keep most of the globe visible instead of leaving a large empty sky area above a low globe.
-- Hover a visible person plaque on desktop to open a compact parchment information card. It shows the named relationship to the home person, lifespan, known birth/death place information, immediate parent/spouse/child counts, profile image or initial, and up to two saved-record titles when available.
+- Hover continuously over a visible person plaque for **two seconds** on desktop to open the compact parchment information card. Brief pointer passes do not trigger the card.
+- The hover card shows the named relationship to the home person, lifespan, known birth/death place information, immediate parent/spouse/child counts, profile image or initial, and up to two saved-record titles when available.
 - The hover card is one reusable UI surface driven by the same Canvas hit-testing used for click selection. It is not one DOM element per person.
 - Click a person to rotate that branch into focus and open full Person Details.
 - Wheel zoom preserves the selected person's screen coordinate instead of jumping focus to another person.
@@ -92,13 +93,17 @@ The current label treatment is dark wood with engraved-style lettering and restr
 
 Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, family rail, and child stems. Relationship strokes use related but distinct brick/iron-oxide tones for couple bars, descent stems, and family rails, with a restrained parchment halo separating genealogy from map linework.
 
-Primary relationship strokes are intentionally bold. Ancestry-continuation stems remain visually lighter by color because they indicate family continuing outside the displayed scope, but they are no longer physically reduced to hairline weight. The continuation stroke is kept close to the primary relationship weight so it stays readable at normal viewing distances.
+Relationship weight now changes continuously with zoom. The close inspection view retains the deliberately bold approximately 3.35-pixel primary stroke, while the overview tapers toward approximately 1.55 pixels. Ancestry-continuation stems taper from about 3.0 to 1.35 pixels. This keeps close relationships strong without turning a dense overview into a red lattice.
 
-Genealogy connectors do not follow the WebGL mesh triangles. Their points are calculated analytically on the spherical surface and projected through the same camera as the globe. Connector sampling is now adaptive to projected size: close or long lines receive many more surface samples than distant short lines, with a roughly 6-pixel static target and a looser moving target for responsive dragging. This removes the visible polygonal bends produced by the former fixed 12-sample rule without globally increasing the globe mesh.
+Genealogy connectors do not follow the WebGL mesh triangles. Their points are calculated analytically on the spherical surface and projected through the same camera as the globe. Connector sampling is adaptive to projected size: close or long lines receive many more surface samples than distant short lines, with a roughly 6-pixel static target and a looser moving target for responsive dragging. This removes the visible polygonal bends produced by the former fixed 12-sample rule without globally increasing the globe mesh.
 
-Each family route is painted as one connected visual unit. Its parchment halos are painted for the entire route first, followed by the colored rail and stems. A child stem therefore cannot paint its halo over the family rail and create a false gap at the junction. Different families remain separately painted so the halo can still clarify genuine route crossings.
+Each family route is painted as one connected visual unit. Its partner bar, descent, family rail, and child stems share one halo-first/color-second paint sequence, so a connected component cannot erase another component at a join. Decorative junction nodes have been removed. Different families remain separately painted so the halo can still clarify genuine route crossings.
 
 Each visible family rail corresponds to one recorded GEDCOM family where a family ID is available. Separate spouse/parent families remain separate routes even when they share one parent. Adaptive child stems normally rise about one portrait-frame height before turning into the horizontal family rail and extend farther only when another documented family route requires additional clearance.
+
+The route planner now scores more than horizontal rail collisions. It also penalizes near-parallel vertical runs and horizontal/vertical crossings, and the minimum parallel-rail clearance is larger than before. The planner uses available generation space to choose a less crowded rail height rather than mechanically taking the first legal lane.
+
+A one-child family no longer receives a tiny decorative dogleg merely because the child is a little off the exact couple midpoint. When the child lies beneath the couple span and the horizontal correction is below a portrait-relative threshold, the family uses a straight vertical descent instead. A meaningful horizontal offset still retains normal family routing.
 
 Connectors remain evidence-based. A layout grouping may influence where a person is placed, but it can never create a genealogical relationship. Parent, spouse, and shared-parent sibling lines are drawn only from recorded relationship data. When a displayed person's family of origin is known but their parents are outside the current proof scope, the renderer uses a lighter individual ancestry-continuation stem rather than drawing a horizontal rail that would falsely imply visible or shared parents.
 
@@ -110,6 +115,12 @@ The expansion sequence is deliberately bounded: approved 53-person base → sibl
 
 The current prototype reads the supplied GEDCOM directly during the proof phase. Future import, database, and media work must preserve the same stable GEDCOM identifiers and keep sourced facts distinct from inferred or user-entered information.
 
+### Saved-record links
+
+Ancestry GEDCOM exports can preserve `_APID` record identifiers on source citations. When a saved record has a valid `_APID`, the parser now reconstructs the corresponding Ancestry discovery-record URL and Person Details exposes it through the existing **Open record** link. Records without a usable `_APID` remain descriptive rather than receiving a guessed URL. Opening an Ancestry record may still require the viewer to sign in or have the appropriate Ancestry access.
+
+A universal cross-site link is not inferred from a record title alone. A FamilySearch, archive, or other provider link should only be added when the imported citation carries a provider-specific identifier or URL that can be resolved deterministically.
+
 ## Media direction
 
 The globe renderer accepts a person's current `photo` as a display source, but future user-managed media will not depend on editing the GEDCOM. The planned media model gives each stable person record one profile/frame image plus a separately managed gallery whose images can be uploaded, captioned, dated, annotated, removed, or promoted to profile status over time. The detailed requirements are tracked in `FUTURE_ENHANCEMENTS.md`.
@@ -117,17 +128,17 @@ The globe renderer accepts a person's current `photo` as a display source, but f
 ## Architecture
 
 - `src/geometry.js` owns spherical placement, camera projection, visible-horizon tests, anchored plaque frames, and capacity math.
-- `src/camera-behavior.js` owns the deterministic zoom-to-view-angle, zoom-to-pan-speed, focus framing, and motion curves.
+- `src/camera-behavior.js` owns the deterministic zoom-to-view-angle, curved zoom-to-pan-speed response, focus framing, and motion curves.
 - `src/layout.js` owns GEDCOM-family-aware person placement and the canonical gap hierarchy.
 - `src/globe-webgl.js` owns the GPU UV sphere, Upper Peninsula atlas alignment, layered textures, generated cartographic labels, antique color treatment, texture sharpening, and hidden-surface handling.
 - `src/atlas-map.js` owns atlas asset URLs, provenance metadata, and the canonical home geographic anchor.
-- `src/scene.js` owns interaction, shared runtime sphere rotation/camera state, evidence-based genealogy connectors, adaptive family-route planning, adaptive surface-line sampling, same-family halo/stroke paint order, ancestry-continuation stems, reusable hover-card hit testing/content, physical globe radius, and the 2D person overlay. It consumes the canonical curves from `camera-behavior.js` rather than duplicating zoom behavior.
-- `src/plaque.js` owns the old-glass portrait medallion and wood nameplate.
+- `src/scene.js` owns interaction, shared runtime sphere rotation/camera state, evidence-based genealogy connectors, adaptive family-route planning, route-conflict scoring, zoom-dependent relationship weights, adaptive surface-line sampling, same-family halo/stroke paint order, two-second hover intent, ancestry-continuation stems, physical globe radius, and the 2D person overlay.
+- `src/plaque.js` owns the old-glass portrait medallion, wood nameplate, and the canonical name/date typography hierarchy.
 - `src/plaque-metal.js` owns the canonical male, female, and unspecified plaque-metal palettes.
 - `src/plaque-projection.js` maps the rigid plaque artwork onto its projected 3D plane while preserving its sphere attachment point.
 - `src/relationships.js` derives human-readable kinship labels from recorded relationship data.
 - `src/gedcom.js` normalizes preserved alternate names and saved source/citation records for Person Details and hover summaries.
-- `src/gedcom-family-parser.js` parses and validates GEDCOM family records used by the proof-tree builder.
+- `src/gedcom-family-parser.js` parses and validates GEDCOM family records, preserves Ancestry `_APID` citation references, and derives deterministic Ancestry saved-record URLs when possible.
 - `src/proof-family.js` owns the current deterministic proof/stress-population scope.
 - `src/data.js` loads the GEDCOM, validates it, builds the proof population, and attaches prototype portraits.
 - `src/version.js` is the sole application-version source.
@@ -140,9 +151,11 @@ Any future Supabase objects for this application must use the project-specific `
 
 ## Test
 
-GitHub Actions syntax-checks every source module and executes every `tests/*.test.mjs` file. The deterministic suite includes geometry, camera behavior, family routing, family-aware layout, plaque projection and metal palettes, GEDCOM parsing, proof-family scope, relationship labels, interaction, and WebGL atlas tests.
+GitHub Actions syntax-checks every source module and executes every `tests/*.test.mjs` file. The deterministic suite includes geometry, camera behavior, family routing, family-aware layout, plaque projection and typography, plaque metal palettes, GEDCOM parsing, saved-record links, proof-family scope, relationship labels, interaction, and WebGL atlas tests.
 
-The family-routing and layout regressions specifically guard against merging distinct GEDCOM families, interleaving children from different spouse families, fabricating sibling rails for omitted parents, attaching unrelated people to a one-child family, allowing ancestry continuations to collapse back to hairline strokes, reverting to coarse fixed surface-line sampling, or painting same-family halos in an order that cuts visible gaps into connected rails. The proof-family stress test runs the full 430-person population through family-aware layout. The interaction test covers reusable hover details as well as selected-person zoom anchoring so wheel zoom cannot silently switch the focus person.
+The family-routing and layout regressions specifically guard against merging distinct GEDCOM families, interleaving children from different spouse families, fabricating sibling rails for omitted parents, attaching unrelated people to a one-child family, reverting to coarse fixed surface-line sampling, stacking overlapping rails too closely, preserving tiny one-child doglegs, or reintroducing junction-node paint. Zoom-aware relationship tests guard the close-to-overview stroke taper. The interaction regression requires two seconds of hover intent while continuing to cover selected-person zoom anchoring. Separate tests guard the smaller date typography and deterministic Ancestry `_APID` record links.
+
+The proof-family stress test runs the full 430-person population through family-aware layout.
 
 ## Hosting
 

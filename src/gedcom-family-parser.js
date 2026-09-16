@@ -249,6 +249,13 @@ function buildRelationships(individuals, families, warnings) {
   return relationships;
 }
 
+export function ancestryRecordUrlFromApid(apid) {
+  const match = String(apid || '').trim().match(/^(?:[^,]+,)?(\d+)::(\d+)$/);
+  if (!match) return '';
+  const [, databaseId, recordId] = match;
+  return `https://www.ancestry.com/discoveryui-content/view/${encodeURIComponent(recordId)}:${encodeURIComponent(databaseId)}`;
+}
+
 export function savedRecordsForIndividual(individual, sources) {
   if (!individual) return [];
   const grouped = new Map();
@@ -276,11 +283,14 @@ export function savedRecordsForIndividual(individual, sources) {
     if (record.apids.size) details.push(`${record.apids.size} Ancestry record reference${record.apids.size === 1 ? '' : 's'}`);
     if (record.author) details.push(`Author: ${record.author}`);
     if (record.publisher) details.push(`Publisher: ${record.publisher}`);
+    const url = [...record.apids]
+      .map(ancestryRecordUrlFromApid)
+      .find(Boolean) || '';
     return {
       title: record.title,
       kind: record.kind,
       detail: details.join(' · '),
-      url: '',
+      url,
     };
   });
 }

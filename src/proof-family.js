@@ -6,7 +6,7 @@ export const PROOF_SIBLING_ID = 'I40538616398';
 export const PROOF_SIBLING_CHILD_ID = 'I40538616392';
 export const PROOF_BASE_EXPECTED_PEOPLE = 53;
 export const PROOF_PRE_CHILD_EXPECTED_PEOPLE = 139;
-export const PROOF_EXPECTED_PEOPLE = 430;
+export const PROOF_PRE_DESCENDANT_EXPECTED_PEOPLE = 430;
 
 const DISPLAY_NAME_OVERRIDES = Object.freeze({
   I40538615623: 'Mary Alene Hillman',
@@ -94,10 +94,8 @@ export function buildProofFamily(parsed) {
   const generationHint = new Map(baseGeneration);
   const expansionCluster = new Map();
 
-  // First breadth step: for every person in the approved 53-person proof tree,
-  // add the siblings in their GEDCOM family of origin and every recorded spouse.
-  // This is the established 139-person population that existed before the child
-  // stress-test expansion below.
+  // Established breadth step: siblings in the base person's recorded family of
+  // origin plus every recorded spouse. This is the 139-person proof population.
   for (const seedId of baseIncluded) {
     const seed = requirePerson(individuals, seedId);
     const seedBranch = baseBranch.get(seedId) || 'center';
@@ -119,7 +117,7 @@ export function buildProofFamily(parsed) {
     for (const familyId of seed.fams || []) {
       const family = families.get(familyId);
       if (!family) continue;
-      const spouseId = family.husb === seedId ? family.wife : family.wife === seedId ? family.husb : null;
+      const spouseId = otherParentId(family, seedId);
       if (!spouseId || !individuals.has(spouseId) || baseIncluded.has(spouseId)) continue;
       included.add(spouseId);
       if (!expansionKind.has(spouseId)) expansionKind.set(spouseId, 'spouse');
@@ -132,12 +130,8 @@ export function buildProofFamily(parsed) {
     throw new Error(`Pre-child proof tree expected ${PROOF_PRE_CHILD_EXPECTED_PEOPLE} people but produced ${included.size}`);
   }
 
-  // Child stress-test step: freeze the existing 139-person population, then add
-  // every GEDCOM-recorded child of those people. When the other recorded parent
-  // is outside the 139-person population, include that co-parent as supporting
-  // family context so each child family remains genealogically complete. This
-  // step is deliberately non-recursive: newly added children and co-parents do
-  // not seed additional descendants or spouse families.
+  // Established child step: children of the 139-person population plus any
+  // missing co-parent required to show those recorded child families intact.
   const childExpansionSeeds = [...included];
   for (const seedId of childExpansionSeeds) {
     const seed = requirePerson(individuals, seedId);
@@ -147,7 +141,7 @@ export function buildProofFamily(parsed) {
     for (const familyId of seed.fams || []) {
       const family = families.get(familyId);
       if (!family) continue;
-      const coParentId = family.husb === seedId ? family.wife : family.wife === seedId ? family.husb : null;
+      const coParentId = otherParentId(family, seedId);
 
       if (coParentId && individuals.has(coParentId) && !included.has(coParentId)) {
         included.add(coParentId);
@@ -169,17 +163,86 @@ export function buildProofFamily(parsed) {
     }
   }
 
+  if (included.size !== PROOF_PRE_DESCENDANT_EXPECTED_PEOPLE) {
+    throw new Error(`Pre-descendant proof tree expected ${PROOF_PRE_DESCENDANT_EXPECTED_PEOPLE} people but produced ${included.size}`);
+  }
+
+  // Full descendant expansion. The population that was already on the map is
+  // frozen as the 430-person seed. Every recorded child is then followed
+  // recursively to the end of that descendant line. A missing spouse/co-parent
+  // is included as supporting family context. Supporting co-parents do not seed
+  // unrelated unions unless they were one of the original 430 people or are
+  // themselves also reached through a descendant path.
+  const descendantSeedIds = new Set(included);
+  const descendantIds = new Set();
+  const descendantCoParentIds = new Set();
+  const queue = [...descendantSeedIds];
+  const queued = new Set(queue);
+  const expanded = new Set();
+
+  while (queue.length) {
+    const seedId = queue.shift();
+    queued.delete(seedId);
+    if (expanded.has(seedId)) continue;
+    expanded.add(seedId);
+
+    const seed = requirePerson(individuals, seedId);
+    const seedBranch = inheritedBranch.get(seedId) || baseBranch.get(seedId) || 'center';
+    const seedGeneration = generationHint.get(seedId) ?? 0;
+
+    for (const familyId of seed.fams || []) {
+      const family = families.get(familyId);
+      if (!family) continue;
+      const coParentId = otherParentId(family, seedId);
+
+      if (coParentId && individuals.has(coParentId) && !included.has(coParentId)) {
+        included.add(coParentId);
+        descendantCoParentIds.add(coParentId);
+        expansionKind.set(coParentId, 'descendant-co-parent');
+        inheritedBranch.set(coParentId, seedBranch);
+        generationHint.set(coParentId, seedGeneration);
+      }
+
+      for (const childId of family.children || []) {
+        if (!individuals.has(childId)) continue;
+        const wasIncluded = included.has(childId);
+        if (!wasIncluded) {
+          included.add(childId);
+          descendantIds.add(childId);
+          expansionKind.set(childId, 'descendant');
+        } else if (!descendantSeedIds.has(childId) && expansionKind.get(childId) === 'descendant-co-parent') {
+          // A person first pulled in as someone's supporting spouse can later be
+          // reached legitimately as a descendant through another recorded line.
+          descendantCoParentIds.delete(childId);
+          descendantIds.add(childId);
+          expansionKind.set(childId, 'descendant');
+        }
+
+        if (!inheritedBranch.has(childId)) inheritedBranch.set(childId, seedBranch);
+        if (!generationHint.has(childId)) generationHint.set(childId, seedGeneration - 1);
+        if (!expansionCluster.has(childId)) expansionCluster.set(childId, family.id);
+
+        if (!expanded.has(childId) && !queued.has(childId)) {
+          queue.push(childId);
+          queued.add(childId);
+        }
+      }
+    }
+  }
+
   const people = [...included].map(id => {
     const individual = requirePerson(individuals, id);
     const isBase = baseIncluded.has(id);
     const kind = expansionKind.get(id) || null;
     const role = isBase
       ? roleForBase(id, parents, grandparents, greatGrandparents)
-      : kind === 'spouse' || kind === 'co-parent'
+      : ['spouse', 'co-parent', 'descendant-co-parent'].includes(kind)
         ? 'one-step-spouse'
         : kind === 'child'
           ? 'one-step-child'
-          : 'one-step-sibling';
+          : kind === 'descendant'
+            ? 'descendant'
+            : 'one-step-sibling';
     const branch = inheritedBranch.get(id) || branchForBase(id, paternal, maternal);
     const familyOfOrigin = firstFamilyOfOrigin(individual);
     const cluster = isBase ? familyOfOrigin : expansionCluster.get(id) || null;
@@ -240,22 +303,31 @@ export function buildProofFamily(parsed) {
   scopedRelationships.sort(relationshipOrder);
 
   return {
-    source: `GEDCOM proof tree + sibling/spouse breadth + current-tree children · ${people.length} people`,
+    source: `GEDCOM 430-person seed + all recorded descendants · ${people.length} people`,
     people,
     families: scopedFamilies,
     relationships: scopedRelationships,
     metadata: {
       relationshipAuthority: 'GEDCOM FAM records only',
-      expectedPeople: PROOF_EXPECTED_PEOPLE,
+      expectedPeople: people.length,
       basePeople: PROOF_BASE_EXPECTED_PEOPLE,
       preChildPeople: PROOF_PRE_CHILD_EXPECTED_PEOPLE,
-      scope: 'approved 53-person proof tree, one non-recursive sibling/spouse breadth step, then all recorded children and required co-parents for the established 139-person population',
+      descendantSeedPeople: PROOF_PRE_DESCENDANT_EXPECTED_PEOPLE,
+      recursiveDescendantsAdded: descendantIds.size,
+      supportingCoParentsAdded: descendantCoParentIds.size,
+      scope: 'approved proof tree and breadth population expanded to the established 430-person map, then every recorded descendant recursively plus only the supporting co-parents needed to display those descendant families',
     },
   };
 }
 
 function firstFamilyOfOrigin(individual) {
   return individual?.famc?.[0]?.familyId || null;
+}
+
+function otherParentId(family, personId) {
+  if (family.husb === personId) return family.wife || null;
+  if (family.wife === personId) return family.husb || null;
+  return null;
 }
 
 function requirePerson(individuals, id) {
@@ -314,8 +386,8 @@ function proofPersonOrder(a, b) {
 }
 
 function relationshipOrder(a, b) {
-  return String(a.familyId || '').localeCompare(String(b.familyId || '')
-  ) || a.type.localeCompare(b.type)
+  return String(a.familyId || '').localeCompare(String(b.familyId || ''))
+    || a.type.localeCompare(b.type)
     || a.from.localeCompare(b.from)
     || a.to.localeCompare(b.to);
 }

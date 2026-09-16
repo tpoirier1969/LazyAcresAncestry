@@ -24,6 +24,7 @@ const {
   FAMILY_CHILD_STEM_MIN,
   FAMILY_PARALLEL_GAP,
   FAMILY_SINGLE_CHILD_SNAP_MAX,
+  FAMILY_TRUNK_SHIFT_MAX,
   SURFACE_LINE_STATIC_MAX_STEPS,
   SURFACE_LINE_MOVING_MAX_STEPS,
 } = await import('../src/scene.js');
@@ -138,6 +139,32 @@ const snapPoints = new Map([
 const snapped = planFamilyRoutes(snapGroups, id => snapPoints.get(id))[0];
 assert.equal(snapped.directSingleChild, true, 'planned one-child family should mark a short-offset route for direct descent');
 
+const corridorGroups = [
+  { familyId: 'COR1', parents: ['P1A', 'P1B'], children: ['K1A', 'K1B'], lane: 0 },
+  { familyId: 'COR2', parents: ['P2A', 'P2B'], children: ['K2A', 'K2B'], lane: 1 },
+];
+const corridorPoints = new Map([
+  ['P1A', { x: -0.8, y: 1.6 }],
+  ['P1B', { x: 0.8, y: 1.6 }],
+  ['P2A', { x: -0.8, y: 1.6 }],
+  ['P2B', { x: 0.8, y: 1.6 }],
+  ['K1A', { x: -1.0, y: 0 }],
+  ['K1B', { x: 1.0, y: 0 }],
+  ['K2A', { x: -1.0, y: 0 }],
+  ['K2B', { x: 1.0, y: 0 }],
+]);
+const corridorRoutes = planFamilyRoutes(corridorGroups, id => corridorPoints.get(id));
+assert.equal(corridorRoutes.length, 2);
+assert.ok(Math.abs(corridorRoutes[0].source.x) < 1e-9, 'an unobstructed family should keep its trunk at the couple midpoint');
+assert.ok(
+  Math.abs(corridorRoutes[1].source.x) > 0.2,
+  'when vertical corridors overlap and rail height cannot change, the later multi-child family should slide its trunk along the parent bar',
+);
+assert.ok(
+  Math.abs(corridorRoutes[1].source.x) <= FAMILY_TRUNK_SHIFT_MAX + 1e-9,
+  'descent-corridor trunk shifting must stay bounded and cannot wander arbitrarily far from the couple midpoint',
+);
+
 const manyFamilies = Array.from({ length: 6 }, (_, index) => ({
   familyId: `FX${index}`,
   parents: [`PX${index}`],
@@ -221,4 +248,4 @@ assert.notEqual(RELATIONSHIP_COLORS.couple, RELATIONSHIP_COLORS.descent, 'couple
 assert.notEqual(RELATIONSHIP_COLORS.descent, RELATIONSHIP_COLORS.rail, 'descent stems and family rails should have related but distinct brick-red tones');
 assert.notEqual(RELATIONSHIP_COLORS.continuation, RELATIONSHIP_COLORS.rail, 'omitted-parent continuations should use their own lighter treatment');
 
-console.log('GEDCOM family routes preserve topology, suppress tiny doglegs, reduce route overlap, thin with zoom, and render without junction nodes');
+console.log('GEDCOM family routes preserve topology, use descent corridors, suppress tiny doglegs, reduce route overlap, thin with zoom, and render without junction nodes');

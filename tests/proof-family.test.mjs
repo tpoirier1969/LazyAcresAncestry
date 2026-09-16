@@ -4,6 +4,7 @@ import { parseGedcomFamilies, validateGedcomFamilyGraph } from '../src/gedcom-fa
 import {
   buildProofFamily,
   PROOF_BASE_EXPECTED_PEOPLE,
+  PROOF_PRE_CHILD_EXPECTED_PEOPLE,
   PROOF_EXPECTED_PEOPLE,
   PROOF_ROOT_ID,
   PROOF_SIBLING_CHILD_ID,
@@ -17,21 +18,43 @@ assert.equal(validateGedcomFamilyGraph(parsed).length, 0, 'source GEDCOM relatio
 
 const family = buildProofFamily(parsed);
 assert.equal(PROOF_BASE_EXPECTED_PEOPLE, 53, 'approved proof-tree base must remain 53 people');
-assert.equal(PROOF_EXPECTED_PEOPLE, 139, 'one-step breadth proof tree must remain 139 people');
-assert.equal(family.people.length, PROOF_EXPECTED_PEOPLE);
-assert.equal(family.metadata.basePeople, PROOF_BASE_EXPECTED_PEOPLE);
+assert.equal(PROOF_PRE_CHILD_EXPECTED_PEOPLE, 139, 'the established pre-child proof tree must remain 139 people');
 
 const expansionSiblings = family.people.filter(person => person.proofExpansionKind === 'sibling');
 const expansionSpouses = family.people.filter(person => person.proofExpansionKind === 'spouse');
-assert.equal(expansionSiblings.length, 53, 'one breadth step should add 53 GEDCOM-recorded siblings');
-assert.equal(expansionSpouses.length, 33, 'one breadth step should add 33 GEDCOM-recorded spouses');
-assert.equal(PROOF_BASE_EXPECTED_PEOPLE + expansionSiblings.length + expansionSpouses.length, family.people.length);
+const expansionChildren = family.people.filter(person => person.proofExpansionKind === 'child');
+const expansionCoParents = family.people.filter(person => person.proofExpansionKind === 'co-parent');
+console.log(`proof population ${family.people.length}: base ${PROOF_BASE_EXPECTED_PEOPLE}, siblings ${expansionSiblings.length}, spouses ${expansionSpouses.length}, new children ${expansionChildren.length}, supporting co-parents ${expansionCoParents.length}`);
+assert.equal(family.people.length, PROOF_EXPECTED_PEOPLE, 'expanded proof-tree population must match the canonical expected count');
+assert.equal(family.metadata.basePeople, PROOF_BASE_EXPECTED_PEOPLE);
+assert.equal(family.metadata.preChildPeople, PROOF_PRE_CHILD_EXPECTED_PEOPLE);
+assert.equal(expansionSiblings.length, 53, 'the established breadth step should still add 53 GEDCOM-recorded siblings');
+assert.equal(expansionSpouses.length, 33, 'the established breadth step should still add 33 GEDCOM-recorded spouses');
+assert.ok(expansionChildren.length > 0, 'child stress-test expansion must add recorded children beyond the established 139 people');
 
 const ids = new Set(family.people.map(person => person.id));
 for (const relation of family.relationships) {
   assert.ok(ids.has(relation.from) && ids.has(relation.to), 'every displayed relationship must stay inside the proof tree');
   assert.ok(relation.familyId, 'every displayed relationship must identify its source GEDCOM FAM record');
   assert.ok(parsed.families.has(relation.familyId), 'every displayed relationship must resolve to a source GEDCOM family');
+}
+
+const preChildSeeds = family.people.filter(person => !['child', 'co-parent'].includes(person.proofExpansionKind));
+assert.equal(preChildSeeds.length, PROOF_PRE_CHILD_EXPECTED_PEOPLE, 'children must be expanded from exactly the population that was already displayed before this change');
+for (const seed of preChildSeeds) {
+  const sourcePerson = parsed.individuals.get(seed.id);
+  assert.ok(sourcePerson, `${seed.id} must still resolve to the source GEDCOM`);
+  for (const familyId of sourcePerson.fams || []) {
+    const sourceFamily = parsed.families.get(familyId);
+    if (!sourceFamily) continue;
+    for (const childId of sourceFamily.children || []) {
+      assert.ok(ids.has(childId), `${seed.id} recorded child ${childId} from ${familyId} must be displayed`);
+    }
+    const coParentId = sourceFamily.husb === seed.id ? sourceFamily.wife : sourceFamily.wife === seed.id ? sourceFamily.husb : null;
+    if (coParentId && parsed.individuals.has(coParentId)) {
+      assert.ok(ids.has(coParentId), `${seed.id} family ${familyId} must include co-parent ${coParentId} so the visible child family is complete`);
+    }
+  }
 }
 
 const rootParents = family.relationships
@@ -69,7 +92,10 @@ assert.ok(tod.rawGedcom.saved_records.some(record => /School Yearbooks/i.test(re
 
 for (const person of family.people) {
   if (!person.proofExpansionKind) continue;
-  assert.ok(['sibling', 'spouse'].includes(person.proofExpansionKind), 'expansion may only add one-step siblings or spouses');
+  assert.ok(
+    ['sibling', 'spouse', 'child', 'co-parent'].includes(person.proofExpansionKind),
+    'proof expansion may only add explicitly supported non-recursive relationship kinds',
+  );
 }
 
 const adjacency = new Map(family.people.map(person => [person.id, new Set()]));
@@ -85,7 +111,7 @@ const originGroups = new Map();
 for (const person of family.people) {
   if (!person.cluster || peopleWithDisplayedParents.has(person.id)) continue;
   const sourceFamily = parsed.families.get(person.cluster);
-  assert.ok(sourceFamily, `sibling rail ${person.cluster} must resolve to a GEDCOM family`);
+  assert.ok(sourceFamily, `family-of-origin group ${person.cluster} must resolve to a GEDCOM family`);
   assert.ok(sourceFamily.children.includes(person.id), `${person.id} must actually be a CHIL member of ${person.cluster}`);
   if (!originGroups.has(person.cluster)) originGroups.set(person.cluster, []);
   originGroups.get(person.cluster).push(person.id);
@@ -115,7 +141,7 @@ while (queue.length) {
 assert.equal(
   connected.size,
   family.people.length,
-  'every proof-tree person must connect to home through a displayed GEDCOM relationship or documented family-of-origin sibling rail',
+  'every proof-tree person must connect to home through a displayed GEDCOM relationship or documented family-of-origin grouping',
 );
 
 console.log('proof-family.test.mjs passed');

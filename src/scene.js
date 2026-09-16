@@ -11,7 +11,6 @@ import {
 const ROUTE_WORKER_THRESHOLD = 700;
 const DENSITY_WARNING_COUNT = 110;
 const DENSITY_SEVERE_COUNT = 180;
-const RELATIONSHIP_OVERVIEW_HIDE_GAP = 58;
 const MOVING_PLAQUE_MIN_WIDTH_PX = 30;
 
 export class GlobeScene extends CoreGlobeScene {
@@ -123,9 +122,10 @@ export class GlobeScene extends CoreGlobeScene {
   }
 
   drawRelationships(camera) {
-    const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
-    const gap = camera.centerZ - this.radius;
-    if (moving || gap > RELATIONSHIP_OVERVIEW_HIDE_GAP) return;
+    // Relationship geometry stays present throughout drag, zoom, and overview.
+    // scene-core.js already switches to a cheaper moving sample density and
+    // suppresses line shadows while moving, so continuity does not require the
+    // expensive settled-view treatment.
     super.drawRelationships(camera);
   }
 
@@ -154,7 +154,7 @@ export class GlobeScene extends CoreGlobeScene {
     const controls = document.createElement('div');
     controls.className = 'tree-view-controls';
     controls.innerHTML = `
-      <button type="button" class="branch-collapse" hidden>Collapse descendants</button>
+      <button type="button" class="branch-collapse" disabled aria-disabled="true">Select a person with descendants</button>
       <button type="button" class="branch-expand-all" hidden>Expand all</button>
       <div class="density-warning" hidden role="status" aria-live="polite"></div>`;
     shell.appendChild(controls);
@@ -200,12 +200,23 @@ export class GlobeScene extends CoreGlobeScene {
     if (!this.branchCollapseButton || !this.expandAllButton) return;
     const id = this.focusedId;
     const hasChildren = Boolean(id && this.hasRecordedChildren(id));
-    this.branchCollapseButton.hidden = !hasChildren;
+
+    // Keep the control visible so branch collapsing is discoverable. When the
+    // selected person has no recorded descendants, explain that state instead
+    // of silently removing the control from the interface.
+    this.branchCollapseButton.hidden = false;
+    this.branchCollapseButton.disabled = !hasChildren;
+    this.branchCollapseButton.setAttribute('aria-disabled', String(!hasChildren));
     if (hasChildren) {
       this.branchCollapseButton.textContent = this.collapsedRoots.has(id)
         ? 'Expand descendants'
         : 'Collapse descendants';
+    } else {
+      this.branchCollapseButton.textContent = id
+        ? 'No descendants to collapse'
+        : 'Select a person with descendants';
     }
+
     this.expandAllButton.hidden = this.collapsedRoots.size === 0;
     if (this.collapsedRoots.size) {
       const hiddenCount = Math.max(0, this.fullPeople.length - this.people.length);

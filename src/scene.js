@@ -34,6 +34,10 @@ const ABSOLUTE_MAX_GAP = 520;
 export const RELATIONSHIP_LINE_WIDTH = 3.35;
 export const ANCESTRY_CONTINUATION_LINE_WIDTH = 3.0;
 export const ANCESTRY_STUB_LENGTH = PLAQUE.height * 1.10;
+export const SURFACE_LINE_STATIC_TARGET_PX = 6;
+export const SURFACE_LINE_MOVING_TARGET_PX = 14;
+export const SURFACE_LINE_STATIC_MAX_STEPS = 240;
+export const SURFACE_LINE_MOVING_MAX_STEPS = 96;
 
 // Family routes are rule-driven rather than tied to fixed lane numbers. A child
 // connector should visibly rise about one portrait-frame height above the
@@ -52,6 +56,19 @@ export const RELATIONSHIP_COLORS = Object.freeze({
   halo: 'rgba(247,225,190,.56)',
   shadow: 'rgba(43,28,20,.44)',
 });
+
+export function surfaceLineStepCount(surfaceDistance, camera, radius = RADIUS, moving = false) {
+  const distance = Math.max(0, Number(surfaceDistance) || 0);
+  const focal = Math.max(1, Number(camera?.focal) || 1);
+  const near = Math.max(0.001, Number(camera?.near) || 0.1);
+  const centerZ = Number(camera?.centerZ) || radius + DEFAULT_GAP;
+  const frontGap = Math.max(near, centerZ - radius);
+  const projectedLength = distance * focal / frontGap;
+  const targetPixels = moving ? SURFACE_LINE_MOVING_TARGET_PX : SURFACE_LINE_STATIC_TARGET_PX;
+  const minimumSteps = moving ? 8 : 16;
+  const maximumSteps = moving ? SURFACE_LINE_MOVING_MAX_STEPS : SURFACE_LINE_STATIC_MAX_STEPS;
+  return Math.max(minimumSteps, Math.min(maximumSteps, Math.ceil(projectedLength / targetPixels)));
+}
 
 export function familyLaneBand(lane = 0) {
   const index = Math.max(0, Number(lane) || 0);
@@ -512,25 +529,45 @@ export class GlobeScene {
 
   drawFamilyRoute(route, camera) {
     const { source, children, railY, minX, maxX } = route;
+    const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
+    const parts = [
+      {
+        points: [[source.x, source.y], [source.x, railY]],
+        color: RELATIONSHIP_COLORS.descent,
+        width: RELATIONSHIP_LINE_WIDTH,
+      },
+      {
+        points: [[minX, railY], [maxX, railY]],
+        color: RELATIONSHIP_COLORS.rail,
+        width: RELATIONSHIP_LINE_WIDTH,
+      },
+      ...children.map(({ point }) => ({
+        points: [[point.x, railY], [point.x, point.y]],
+        color: RELATIONSHIP_COLORS.descent,
+        width: RELATIONSHIP_LINE_WIDTH,
+      })),
+    ].map(part => ({
+      ...part,
+      sampled: this.sampleSurfacePolyline(part.points, camera, moving),
+    }));
 
-    this.drawSurfacePolyline(
-      [[source.x, source.y], [source.x, railY]],
-      camera,
-      RELATIONSHIP_COLORS.descent,
-    );
-    this.drawSurfacePolyline(
-      [[minX, railY], [maxX, railY]],
-      camera,
-      RELATIONSHIP_COLORS.rail,
-    );
-
-    children.forEach(({ point }) => {
-      this.drawSurfacePolyline(
-        [[point.x, railY], [point.x, point.y]],
-        camera,
-        RELATIONSHIP_COLORS.descent,
-      );
-    });
+    // A family is one connected diagram. Paint every halo first, then every
+    // colored stroke, so the halo of a child stem cannot erase the rail it
+    // joins. Different families are still painted separately, preserving the
+    // useful halo break where unrelated routes cross.
+    parts.forEach(part => this.strokeSampledSurfacePolyline(
+      part.sampled,
+      RELATIONSHIP_COLORS.halo,
+      part.width + (moving ? 0.95 : 1.35),
+      moving,
+    ));
+    parts.forEach(part => this.strokeSampledSurfacePolyline(
+      part.sampled,
+      part.color,
+      part.width,
+      moving,
+      { shadow: true },
+    ));
 
     this.drawSurfaceJunction({ x: source.x, y: railY }, camera, RELATIONSHIP_COLORS.rail);
   }
@@ -564,13 +601,13 @@ export class GlobeScene {
     ctx.restore();
   }
 
-  drawSurfacePolyline(xyPoints, camera, stroke = null, width = RELATIONSHIP_LINE_WIDTH) {
+  sampleSurfacePolyline(xyPoints, camera, moving = Boolean(this.drag || this.motionFrame || this.focusFrame)) {
     const sampled = [];
-    const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
-    const steps = moving ? 6 : 12;
     for (let segment = 0; segment < xyPoints.length - 1; segment += 1) {
       const a = xyPoints[segment];
       const b = xyPoints[segment + 1];
+      const surfaceDistance = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const steps = surfaceLineStepCount(surfaceDistance, camera, RADIUS, moving);
       for (let i = 0; i <= steps; i += 1) {
         const t = i / steps;
         const local = tangentPoint(
@@ -583,17 +620,17 @@ export class GlobeScene {
         sampled.push(isVisible(unit, q) ? q : null);
       }
     }
+    return sampled;
+  }
 
+  strokeSampledSurfacePolyline(sampled, stroke, width, moving, { shadow = false } = {}) {
     const ctx = this.ctx;
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = RELATIONSHIP_COLORS.halo;
-    ctx.lineWidth = width + (moving ? 0.95 : 1.35);
-    strokeSegments(ctx, sampled);
-    ctx.strokeStyle = stroke || RELATIONSHIP_COLORS.descent;
+    ctx.strokeStyle = stroke;
     ctx.lineWidth = width;
-    if (!moving) {
+    if (shadow && !moving) {
       ctx.shadowColor = RELATIONSHIP_COLORS.shadow;
       ctx.shadowBlur = 2.2;
       ctx.shadowOffsetX = 0.5;
@@ -601,6 +638,24 @@ export class GlobeScene {
     }
     strokeSegments(ctx, sampled);
     ctx.restore();
+  }
+
+  drawSurfacePolyline(xyPoints, camera, stroke = null, width = RELATIONSHIP_LINE_WIDTH) {
+    const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
+    const sampled = this.sampleSurfacePolyline(xyPoints, camera, moving);
+    this.strokeSampledSurfacePolyline(
+      sampled,
+      RELATIONSHIP_COLORS.halo,
+      width + (moving ? 0.95 : 1.35),
+      moving,
+    );
+    this.strokeSampledSurfacePolyline(
+      sampled,
+      stroke || RELATIONSHIP_COLORS.descent,
+      width,
+      moving,
+      { shadow: true },
+    );
   }
 
   surfaceXY(unit) {

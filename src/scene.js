@@ -4,10 +4,10 @@ import { layoutSample } from './layout.js';
 import { spreadFamilyLayout } from './layout-spacing.js';
 import {
   DEFAULT_VISIBLE_PEOPLE,
-  descendantIds,
-  hiddenImmediateDescendantRootIds,
+  branchControlFamilies,
+  descendantFamilyIds,
   nearestPeopleIds,
-  visibleIdsForExpandedRoots,
+  visibleIdsForExpandedFamilies,
 } from './tree-view.js';
 import {
   GlobeScene as CoreGlobeScene,
@@ -29,8 +29,8 @@ export class GlobeScene extends CoreGlobeScene {
     this.fullRelationships = [];
     this.visibleIds = new Set();
     this.baseVisibleIds = new Set();
-    this.expandedRoots = new Set();
-    this.expandableIds = new Set();
+    this.expandedFamilyIds = new Set();
+    this.branchFamilies = [];
     this.branchControlAreas = [];
     this.viewTargetId = null;
     this.lastDensityCount = null;
@@ -42,7 +42,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.fullRelationships = relationships;
     this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
     this.viewTargetId = this.homeId;
-    this.expandedRoots.clear();
+    this.expandedFamilyIds.clear();
     this.baseVisibleIds = nearestPeopleIds(
       this.viewTargetId,
       this.fullPeople,
@@ -140,7 +140,7 @@ export class GlobeScene extends CoreGlobeScene {
   setViewTarget(id) {
     if (!this.fullPeople.some(person => person.id === id)) return;
     this.viewTargetId = id;
-    this.expandedRoots.clear();
+    this.expandedFamilyIds.clear();
     this.baseVisibleIds = nearestPeopleIds(
       id,
       this.fullPeople,
@@ -177,16 +177,30 @@ export class GlobeScene extends CoreGlobeScene {
 
   drawBranchControls() {
     const ctx = this.ctx;
-    for (const hit of this.hitAreas) {
-      if (hit.r < BRANCH_CONTROL_MIN_HIT_RADIUS) continue;
-      const action = this.expandedRoots.has(hit.id)
-        ? 'collapse'
-        : this.expandableIds.has(hit.id) ? 'expand' : null;
-      if (!action) continue;
+    const hitsById = new Map(this.hitAreas.map(hit => [hit.id, hit]));
 
-      const radius = Math.max(9, Math.min(13, hit.r * 0.24));
-      const x = hit.x + Math.max(14, hit.r * 0.72);
-      const y = hit.y + Math.max(4, hit.r * 0.18);
+    for (const family of this.branchFamilies) {
+      const parentHits = family.visibleParentIds.map(id => hitsById.get(id)).filter(Boolean);
+      if (!parentHits.length) continue;
+      if (parentHits.every(hit => hit.r < BRANCH_CONTROL_MIN_HIT_RADIUS)) continue;
+
+      let x;
+      let y;
+      let baseRadius;
+      if (parentHits.length >= 2) {
+        x = parentHits.reduce((sum, hit) => sum + hit.x, 0) / parentHits.length;
+        y = parentHits.reduce((sum, hit) => sum + hit.y, 0) / parentHits.length;
+        baseRadius = Math.max(...parentHits.map(hit => hit.r));
+        y += Math.max(11, baseRadius * 0.60);
+      } else {
+        const hit = parentHits[0];
+        x = hit.x + Math.max(14, hit.r * 0.72);
+        y = hit.y + Math.max(4, hit.r * 0.18);
+        baseRadius = hit.r;
+      }
+
+      const radius = Math.max(9, Math.min(13, baseRadius * 0.24));
+      const action = family.action;
 
       ctx.save();
       ctx.shadowColor = 'rgba(48,31,20,.22)';
@@ -218,7 +232,14 @@ export class GlobeScene extends CoreGlobeScene {
       ctx.stroke();
       ctx.restore();
 
-      this.branchControlAreas.push({ id: hit.id, action, x, y, r: radius + 4, z: hit.z });
+      this.branchControlAreas.push({
+        familyId: family.familyId,
+        action,
+        x,
+        y,
+        r: radius + 4,
+        z: Math.min(...parentHits.map(hit => hit.z)),
+      });
     }
   }
 
@@ -227,22 +248,19 @@ export class GlobeScene extends CoreGlobeScene {
       .filter(hit => Math.hypot(x - hit.x, y - hit.y) <= hit.r)
       .sort((a, b) => a.z - b.z);
     if (controls.length) {
-      this.toggleBranch(controls[0].id, controls[0].action);
+      this.toggleFamilyBranch(controls[0].familyId, controls[0].action);
       return;
     }
     super.pick(x, y);
   }
 
-  toggleBranch(id, action) {
+  toggleFamilyBranch(familyId, action) {
     if (action === 'expand') {
-      this.expandedRoots.add(id);
+      this.expandedFamilyIds.add(familyId);
     } else if (action === 'collapse') {
-      const below = descendantIds(id, this.fullPeople, this.fullRelationships);
-      this.expandedRoots.delete(id);
-      for (const rootId of [...this.expandedRoots]) {
-        if (below.has(rootId)) this.expandedRoots.delete(rootId);
-      }
-      if (this.focusedId && below.has(this.focusedId)) this.focusedId = id;
+      const below = descendantFamilyIds(familyId, this.fullPeople, this.fullRelationships);
+      this.expandedFamilyIds.delete(familyId);
+      for (const descendantFamilyId of below) this.expandedFamilyIds.delete(descendantFamilyId);
     }
     this.applyWindowView();
   }
@@ -264,33 +282,36 @@ export class GlobeScene extends CoreGlobeScene {
     this.densityWarning = controls.querySelector('.density-warning');
 
     this.resetTreeButton?.addEventListener('click', () => {
-      this.expandedRoots.clear();
+      this.expandedFamilyIds.clear();
       this.applyWindowView();
     });
   }
 
   applyWindowView() {
     if (!this.fullPeople.length) return;
-    const visibleIds = visibleIdsForExpandedRoots(
+    const visibleIds = visibleIdsForExpandedFamilies(
       this.baseVisibleIds,
-      this.expandedRoots,
+      this.expandedFamilyIds,
       this.fullPeople,
       this.fullRelationships,
     );
+    const previousFocus = this.focusedId;
+    if (previousFocus && !visibleIds.has(previousFocus)) this.focusedId = this.viewTargetId;
     if (this.focusedId) visibleIds.add(this.focusedId);
+
     const visiblePeople = this.fullPeople.filter(person => visibleIds.has(person.id));
     const actualIds = new Set(visiblePeople.map(person => person.id));
     const visibleRelationships = this.fullRelationships.filter(
       link => actualIds.has(link.from) && actualIds.has(link.to),
     );
-    const focusedId = this.focusedId;
-    this.expandableIds = hiddenImmediateDescendantRootIds(
+
+    this.branchFamilies = branchControlFamilies(
       actualIds,
+      this.expandedFamilyIds,
       this.fullPeople,
       this.fullRelationships,
     );
     this.setVisibleFamily(visiblePeople, visibleRelationships);
-    if (focusedId && actualIds.has(focusedId)) this.focusedId = focusedId;
     this.lastDensityCount = null;
     this.updateTreeViewControls();
     this.requestDraw();
@@ -298,12 +319,12 @@ export class GlobeScene extends CoreGlobeScene {
 
   updateTreeViewControls() {
     if (!this.resetTreeButton) return;
-    this.resetTreeButton.hidden = this.expandedRoots.size === 0;
+    this.resetTreeButton.hidden = this.expandedFamilyIds.size === 0;
 
     if (this.treeWindowCount) {
       const targetName = this.fullPeople.find(person => person.id === this.viewTargetId)?.name || 'target person';
       const baseCount = Math.min(DEFAULT_VISIBLE_PEOPLE, this.fullPeople.length);
-      this.treeWindowCount.textContent = `${this.people.length.toLocaleString()} of ${this.fullPeople.length.toLocaleString()} shown · nearest ${baseCount.toLocaleString()} to ${targetName} · chevrons expand branches`;
+      this.treeWindowCount.textContent = `${this.people.length.toLocaleString()} of ${this.fullPeople.length.toLocaleString()} shown · nearest ${baseCount.toLocaleString()} to ${targetName} · branch arrows reveal more`;
     }
   }
 
@@ -317,8 +338,8 @@ export class GlobeScene extends CoreGlobeScene {
     this.densityWarning.hidden = false;
     this.densityWarning.classList.toggle('severe', count >= DENSITY_SEVERE_COUNT);
     this.densityWarning.textContent = count >= DENSITY_SEVERE_COUNT
-      ? `Very dense view · ${count} people readable here. Use branch chevrons selectively.`
-      : `Dense view · ${count} people readable here. Use branch chevrons to reveal only the lines you need.`;
+      ? `Very dense view · ${count} people readable here. Open additional family branches selectively.`
+      : `Dense view · ${count} people readable here. Branch arrows reveal more only where you need it.`;
   }
 }
 

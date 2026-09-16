@@ -4,7 +4,11 @@ Interactive genealogy atlas built from the supplied Ancestry data.
 
 ## Current prototype
 
-The app uses a spherical family-atlas view with fixed physical person plaques anchored to the same globe as the family connectors. The current proof population contains **139 people**, generated deterministically from the supplied GEDCOM: the approved 53-person proof tree plus one non-recursive breadth step of each displayed person's recorded siblings and spouses. The renderer remains scalable to the full genealogy without one DOM element per person.
+The app uses a spherical family-atlas view with fixed physical person plaques anchored to the same globe as the family connectors. The current proof population contains **430 people**, generated deterministically from the supplied GEDCOM. It starts with the approved 53-person proof tree, adds the established non-recursive sibling/spouse breadth step to reach 139 people, then adds every GEDCOM-recorded child of those 139 people plus 42 otherwise-missing co-parents required to keep the displayed child families complete. The child/co-parent expansion is deliberately non-recursive.
+
+The 430-person population is intentionally a family-separation stress test. It includes real cases where one displayed parent has children in more than one GEDCOM family, so the renderer must keep those spouse/child families visually distinct rather than merely handling a tidy ancestor tree.
+
+The renderer remains scalable to the full genealogy without one DOM element per person. Person plaques and relationships remain Canvas/WebGL content; the new hover details use one reusable DOM tooltip rather than a tooltip node for every person.
 
 The working globe radius is **225 physical layout units**, so the visible genealogy occupies a relatively flat-looking patch of the sphere while leaving substantial surface area for deeper generations. Person plaques remain fixed-size physical objects and use the larger portrait/name scale established by the approved visual reference.
 
@@ -53,7 +57,9 @@ Visible family layout uses named physical spacing rules rather than cluster-spec
 
 These constants live in `src/layout.js` as the canonical owner of family spacing. `BETWEEN_FAMILY_GAP` is intentionally larger than `SIBLING_GAP`, but not large enough to visually disconnect adjacent families.
 
-Layout grouping now follows the actual GEDCOM family-of-origin identity. Children belonging to the same `FAM` record remain one contiguous block. If a parent has children with different spouses, those children remain in separate family blocks even though they share that parent. This prevents neighboring families from interleaving and prevents layout geometry from implying a family relationship that the GEDCOM does not contain.
+Layout grouping follows the actual GEDCOM family-of-origin identity. Children belonging to the same `FAM` record remain one contiguous block. If a parent has children with different spouses, those children remain in separate family blocks even though they share that parent. This prevents neighboring families from interleaving and prevents layout geometry from implying a family relationship that the GEDCOM does not contain.
+
+The current 430-person stress population is passed through the same family-aware layout used by the smaller prototype. Automated validation requires all 430 people to receive finite sphere positions and verifies that the stress population includes parents participating in multiple child-bearing GEDCOM families.
 
 The current prototype uses one generation band per genealogical generation rather than compressed mini-clusters. Within a family the sibling gap is consistent; couples use the couple gap; distinct nearby family groups use the between-family gap.
 
@@ -72,17 +78,21 @@ The current label treatment is dark wood with engraved-style lettering and restr
 - Wheel or trackpad movement changes camera distance across a wide near/far range.
 - Camera **angle** changes continuously with zoom through a smooth S-curve. Close views remain nearly perpendicular to the focused family patch; the view leans progressively as distance increases, without an early jump into an overview angle.
 - The focused family moves gradually higher in the viewport as the view widens. At the far end the sphere center remains high enough to keep most of the globe visible instead of leaving a large empty sky area above a low globe.
-- Click a person to rotate that branch into focus.
+- Hover a visible person plaque on desktop to open a compact parchment information card. It shows the named relationship to the home person, lifespan, known birth/death place information, immediate parent/spouse/child counts, profile image or initial, and up to two saved-record titles when available.
+- The hover card is one reusable UI surface driven by the same Canvas hit-testing used for click selection. It is not one DOM element per person.
+- Click a person to rotate that branch into focus and open full Person Details.
 - Wheel zoom preserves the selected person's screen coordinate instead of jumping focus to another person.
 - Use `Return to Tod` or Home to restore the current prototype home person.
-- Search the current sample by name.
+- Search the current population by name.
 - Open People for filters by family side, century, relationship distance, and name.
 - Person Details includes the profile image, named relationship to the home person, GEDCOM ID, saved-record/source section, photo-gallery entry point, and chronological notes.
 - The canonical app version is shown directly beside the app title and derives from `src/version.js`.
 
 ## Family relationships
 
-Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, family rail, and child stems. Relationship strokes are deliberately heavier than the early prototype and use related but distinct brick/iron-oxide tones for couple bars, descent stems, and family rails. A restrained parchment halo separates the genealogy from the map without introducing modern or neon color.
+Couple and descent connectors use conventional genealogy grammar: partner bar, central descent line, family rail, and child stems. Relationship strokes use related but distinct brick/iron-oxide tones for couple bars, descent stems, and family rails, with a restrained parchment halo separating genealogy from map linework.
+
+Primary relationship strokes are intentionally bold. Ancestry-continuation stems remain visually lighter by color because they indicate family continuing outside the displayed scope, but they are no longer physically reduced to hairline weight. The continuation stroke is kept close to the primary relationship weight so it stays readable at normal viewing distances.
 
 Each visible family rail corresponds to one recorded GEDCOM family where a family ID is available. Separate spouse/parent families remain separate routes even when they share one parent. Adaptive child stems normally rise about one portrait-frame height before turning into the horizontal family rail and extend farther only when another documented family route requires additional clearance.
 
@@ -90,7 +100,9 @@ Connectors remain evidence-based. A layout grouping may influence where a person
 
 ## GEDCOM and population coverage
 
-The current view is a deliberately scoped proof population, not the entire genealogy. `src/proof-family.js` defines the deterministic 139-person scope from the supplied GEDCOM and preserves GEDCOM identifiers as stable external identifiers.
+The current view is a deliberately scoped proof/stress population, not the entire genealogy. `src/proof-family.js` defines the deterministic **430-person** scope from the supplied GEDCOM and preserves GEDCOM identifiers as stable external identifiers.
+
+The expansion sequence is deliberately bounded: approved 53-person base → siblings/spouses to 139 → children of those existing 139 people plus required co-parents to 430. Newly added children and co-parents do not recursively expand. This provides a much denser descendant/family-separation test without silently turning the proof renderer into a full-GEDCOM import.
 
 The current prototype reads the supplied GEDCOM directly during the proof phase. Future import, database, and media work must preserve the same stable GEDCOM identifiers and keep sourced facts distinct from inferred or user-entered information.
 
@@ -105,14 +117,14 @@ The globe renderer accepts a person's current `photo` as a display source, but f
 - `src/layout.js` owns GEDCOM-family-aware person placement and the canonical gap hierarchy.
 - `src/globe-webgl.js` owns the GPU UV sphere, Upper Peninsula atlas alignment, layered textures, generated cartographic labels, antique color treatment, texture sharpening, and hidden-surface handling.
 - `src/atlas-map.js` owns atlas asset URLs, provenance metadata, and the canonical home geographic anchor.
-- `src/scene.js` owns interaction, shared runtime sphere rotation/camera state, evidence-based genealogy connectors, adaptive family-route planning, ancestry-continuation stems, physical globe radius, and the 2D person overlay. It consumes the canonical curves from `camera-behavior.js` rather than duplicating zoom behavior.
+- `src/scene.js` owns interaction, shared runtime sphere rotation/camera state, evidence-based genealogy connectors, adaptive family-route planning, ancestry-continuation stems, reusable hover-card hit testing/content, physical globe radius, and the 2D person overlay. It consumes the canonical curves from `camera-behavior.js` rather than duplicating zoom behavior.
 - `src/plaque.js` owns the old-glass portrait medallion and wood nameplate.
 - `src/plaque-metal.js` owns the canonical male, female, and unspecified plaque-metal palettes.
 - `src/plaque-projection.js` maps the rigid plaque artwork onto its projected 3D plane while preserving its sphere attachment point.
 - `src/relationships.js` derives human-readable kinship labels from recorded relationship data.
-- `src/gedcom.js` normalizes preserved alternate names and saved source/citation records for Person Details.
+- `src/gedcom.js` normalizes preserved alternate names and saved source/citation records for Person Details and hover summaries.
 - `src/gedcom-family-parser.js` parses and validates GEDCOM family records used by the proof-tree builder.
-- `src/proof-family.js` owns the current deterministic proof-population scope.
+- `src/proof-family.js` owns the current deterministic proof/stress-population scope.
 - `src/data.js` loads the GEDCOM, validates it, builds the proof population, and attaches prototype portraits.
 - `src/version.js` is the sole application-version source.
 
@@ -126,7 +138,7 @@ Any future Supabase objects for this application must use the project-specific `
 
 GitHub Actions syntax-checks every source module and executes every `tests/*.test.mjs` file. The deterministic suite includes geometry, camera behavior, family routing, family-aware layout, plaque projection and metal palettes, GEDCOM parsing, proof-family scope, relationship labels, interaction, and WebGL atlas tests.
 
-The family-routing and layout regressions specifically guard against merging distinct GEDCOM families, interleaving children from different spouse families, fabricating sibling rails for omitted parents, and attaching unrelated people to a one-child family. The interaction test guards selected-person zoom anchoring so wheel zoom cannot silently switch the focus person.
+The family-routing and layout regressions specifically guard against merging distinct GEDCOM families, interleaving children from different spouse families, fabricating sibling rails for omitted parents, attaching unrelated people to a one-child family, and allowing ancestry continuations to collapse back to hairline strokes. The proof-family stress test runs the full 430-person population through family-aware layout. The interaction test covers reusable hover details as well as selected-person zoom anchoring so wheel zoom cannot silently switch the focus person.
 
 ## Hosting
 

@@ -11,6 +11,8 @@ const {
   familyStemRange,
   planFamilyRoutes,
   RELATIONSHIP_LINE_WIDTH,
+  RELATIONSHIP_COLORS,
+  ANCESTRY_STUB_LENGTH,
   FAMILY_CHILD_STEM_PREFERRED,
   FAMILY_CHILD_STEM_MIN,
   FAMILY_PARALLEL_GAP,
@@ -52,6 +54,27 @@ assert.deepEqual(
   'direct ancestors and their siblings must stay on one documented family rail rather than competing routes',
 );
 
+const continuationPeople = [
+  { id: 'TOP1', cluster: 'F-ORIGIN', role: 'great-grandparent' },
+  { id: 'TOP2', cluster: 'F-ORIGIN', role: 'one-step-sibling' },
+  { id: 'VISIBLE_CHILD', cluster: 'F-VISIBLE', role: 'grandparent' },
+  { id: 'VISIBLE_PARENT', cluster: 'F-OLDER', role: 'great-grandparent' },
+];
+const continuationRelationships = [
+  { type: 'parent', from: 'VISIBLE_PARENT', to: 'VISIBLE_CHILD', familyId: 'F-VISIBLE' },
+];
+const continuationGroups = buildRelationshipGroups(
+  continuationRelationships,
+  new Set(continuationPeople.map(person => person.id)),
+  continuationPeople,
+);
+assert.deepEqual(
+  continuationGroups.ancestryStubs,
+  ['TOP1', 'TOP2', 'VISIBLE_PARENT'],
+  'people with a documented family of origin but no visible parents should receive individual ancestry-continuation stubs rather than a false sibling rail',
+);
+assert.ok(!continuationGroups.ancestryStubs.includes('VISIBLE_CHILD'), 'a person with a visible parent must not receive an omitted-parent stub');
+
 const roomy = familyStemRange(3);
 assert.ok(
   roomy.preferred >= FAMILY_CHILD_STEM_PREFERRED - 1e-9,
@@ -67,6 +90,7 @@ assert.ok(tighter.minimum <= tighter.preferred && tighter.preferred <= tighter.m
 const roomier = familyStemRange(5);
 assert.ok(roomier.maximum > roomy.maximum, 'maximum routing distance derives from actual generation space rather than a hard-coded cap');
 assert.ok(FAMILY_CHILD_STEM_MIN < FAMILY_CHILD_STEM_PREFERRED);
+assert.ok(ANCESTRY_STUB_LENGTH > 0, 'ancestry continuation must have a real surface length');
 
 const points = new Map([
   ['A', { x: -2.0, y: 3.0 }],
@@ -114,6 +138,9 @@ for (let index = 1; index < railYs.length; index += 1) {
   );
 }
 
-assert.ok(RELATIONSHIP_LINE_WIDTH > 1 && RELATIONSHIP_LINE_WIDTH < 2, 'all relationship segments should use one restrained screen-space stroke width');
+assert.ok(RELATIONSHIP_LINE_WIDTH >= 2.8 && RELATIONSHIP_LINE_WIDTH <= 3.4, 'primary relationship strokes should be roughly twice the former weight');
+assert.notEqual(RELATIONSHIP_COLORS.couple, RELATIONSHIP_COLORS.descent, 'couple and descent relationships should remain visually distinguishable');
+assert.notEqual(RELATIONSHIP_COLORS.descent, RELATIONSHIP_COLORS.rail, 'descent stems and family rails should have related but distinct brick-red tones');
+assert.notEqual(RELATIONSHIP_COLORS.continuation, RELATIONSHIP_COLORS.rail, 'omitted-parent continuations should use their own lighter treatment');
 
-console.log('GEDCOM family routes adapt to portrait size, available generation space, and actual family complexity');
+console.log('GEDCOM family routes preserve family topology, adaptive spacing, and restrained relationship-specific styling');

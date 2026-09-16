@@ -32,7 +32,7 @@ const MIN_GAP = 3.8;
 const OVERVIEW_GAP = 155;
 const ABSOLUTE_MAX_GAP = 520;
 
-export const HOVER_DELAY_MS = 2000;
+export const HOVER_DELAY_MS = 1250;
 export const RELATIONSHIP_LINE_WIDTH = 3.35;
 export const RELATIONSHIP_OVERVIEW_LINE_WIDTH = 1.55;
 export const ANCESTRY_CONTINUATION_LINE_WIDTH = 3.0;
@@ -45,12 +45,13 @@ export const SURFACE_LINE_MOVING_MAX_STEPS = 96;
 
 export const FAMILY_CHILD_STEM_PREFERRED = PLAQUE.height * 1.45;
 export const FAMILY_CHILD_STEM_MIN = PLAQUE.height * 1.05;
-export const FAMILY_PARALLEL_GAP = PLAQUE.height * 0.42;
-export const FAMILY_VERTICAL_CLEARANCE = PLAQUE.width * 0.42;
+export const FAMILY_PARALLEL_GAP = PLAQUE.height * 0.48;
+export const FAMILY_VERTICAL_CLEARANCE = PLAQUE.width * 0.62;
 export const FAMILY_SINGLE_CHILD_SNAP_MAX = PLAQUE.width * 0.52;
+export const FAMILY_TRUNK_SHIFT_MAX = PLAQUE.width * 0.62;
 const FAMILY_PARENT_CLEARANCE = PLAQUE.height * 0.72;
 const FAMILY_ROUTE_OVERLAP_MARGIN = PLAQUE.width * 0.12;
-const FAMILY_CROSSING_MARGIN = PLAQUE.width * 0.08;
+const FAMILY_CROSSING_MARGIN = PLAQUE.width * 0.14;
 
 export const RELATIONSHIP_COLORS = Object.freeze({
   couple: 'rgba(108,48,42,.98)',
@@ -130,7 +131,7 @@ export function familyRouteConflictScore(route, railY, plannedRoutes = []) {
         if (a.kind === 'horizontal' && b.kind === 'horizontal') {
           const overlap = intervalOverlapLength(a.x1, a.x2, b.x1, b.x2);
           if (overlap > 0 && Math.abs(a.y1 - b.y1) < FAMILY_PARALLEL_GAP) {
-            score += 80 + overlap * 8;
+            score += 120 + overlap * 12;
           }
           continue;
         }
@@ -138,7 +139,7 @@ export function familyRouteConflictScore(route, railY, plannedRoutes = []) {
           const overlap = intervalOverlapLength(a.y1, a.y2, b.y1, b.y2);
           const xGap = Math.abs(a.x1 - b.x1);
           if (overlap > 0 && xGap < FAMILY_VERTICAL_CLEARANCE) {
-            score += 30 * (1 - xGap / FAMILY_VERTICAL_CLEARANCE) + overlap * 5;
+            score += 95 * (1 - xGap / FAMILY_VERTICAL_CLEARANCE) + overlap * 8;
           }
           continue;
         }
@@ -148,7 +149,7 @@ export function familyRouteConflictScore(route, railY, plannedRoutes = []) {
         if (
           between(vertical.x1, horizontal.x1 - FAMILY_CROSSING_MARGIN, horizontal.x2 + FAMILY_CROSSING_MARGIN)
           && between(horizontal.y1, vertical.y1 - FAMILY_CROSSING_MARGIN, vertical.y2 + FAMILY_CROSSING_MARGIN)
-        ) score += 14;
+        ) score += 52;
       }
     }
   }
@@ -215,15 +216,42 @@ export function planFamilyRoutes(familyGroups, pointForId) {
       return;
     }
 
-    const options = familyStemCandidates(route.stemRange).map((stemLength, index) => {
+    const options = [];
+    const sourceXs = familySourceCandidates(route);
+    familyStemCandidates(route.stemRange).forEach((stemLength, stemIndex) => {
       const railY = railYForStem(route, stemLength);
-      const collision = familyRouteConflictScore(route, railY, planned);
-      const deviation = Math.abs(stemLength - route.stemRange.preferred);
-      return { stemLength, railY, routeSlot: index, cost: collision + deviation * 1.5 };
+      sourceXs.forEach((sourceX, sourceIndex) => {
+        const candidateRoute = {
+          ...route,
+          source: { ...route.source, x: sourceX },
+          minX: Math.min(sourceX, ...route.children.map(entry => entry.point.x)),
+          maxX: Math.max(sourceX, ...route.children.map(entry => entry.point.x)),
+        };
+        const collision = familyRouteConflictScore(candidateRoute, railY, planned);
+        const stemDeviation = Math.abs(stemLength - route.stemRange.preferred);
+        const trunkShift = Math.abs(sourceX - route.source.x);
+        options.push({
+          sourceX,
+          minX: candidateRoute.minX,
+          maxX: candidateRoute.maxX,
+          stemLength,
+          railY,
+          routeSlot: stemIndex,
+          sourceSlot: sourceIndex,
+          cost: collision + stemDeviation * 1.5 + trunkShift * 8,
+        });
+      });
     });
-    options.sort((a, b) => a.cost - b.cost || a.routeSlot - b.routeSlot);
+    options.sort((a, b) => a.cost - b.cost || a.routeSlot - b.routeSlot || a.sourceSlot - b.sourceSlot);
     const selected = options[0];
-    planned.push({ ...route, directSingleChild: false, ...selected });
+    planned.push({
+      ...route,
+      source: { ...route.source, x: selected.sourceX },
+      minX: selected.minX,
+      maxX: selected.maxX,
+      directSingleChild: false,
+      ...selected,
+    });
   });
 
   return planned;
@@ -1001,6 +1029,31 @@ function familyStemCandidates(range) {
   if (!values.some(value => Math.abs(value - range.maximum) < 1e-9)) values.push(range.maximum);
   if (!values.some(value => Math.abs(value - range.minimum) < 1e-9)) values.push(range.minimum);
   return [...new Set(values.map(value => Math.round(value * 1000000) / 1000000))];
+}
+
+function familySourceCandidates(route) {
+  if (route.parentPoints?.length < 2 || route.children?.length <= 1) return [route.source.x];
+  const midpoint = route.source.x;
+  const halfSpan = Math.max(0, (route.parentMaxX - route.parentMinX) / 2);
+  const maxShift = Math.min(FAMILY_TRUNK_SHIFT_MAX, halfSpan * 0.72);
+  if (maxShift < 1e-6) return [midpoint];
+
+  const childMean = average(route.children.map(entry => entry.point.x));
+  const clampToBar = value => clamp(
+    value,
+    Math.max(route.parentMinX, midpoint - maxShift),
+    Math.min(route.parentMaxX, midpoint + maxShift),
+  );
+  const values = [
+    midpoint,
+    clampToBar(childMean),
+    midpoint - maxShift * 0.5,
+    midpoint + maxShift * 0.5,
+    midpoint - maxShift,
+    midpoint + maxShift,
+  ].map(clampToBar);
+  return [...new Set(values.map(value => Math.round(value * 1000000) / 1000000))]
+    .sort((a, b) => Math.abs(a - midpoint) - Math.abs(b - midpoint));
 }
 
 function railYForStem(route, stemLength) {

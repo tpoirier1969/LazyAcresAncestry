@@ -1,15 +1,89 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="1024" viewBox="0 0 2048 1024">
+<svg xmlns="http://www.w3.org/2000/svg" width="8192" height="4096" viewBox="0 0 8192 4096">
   <defs>
-    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#d9c89e"/>
-      <stop offset=".55" stop-color="#cfbc8d"/>
-      <stop offset="1" stop-color="#bea878"/>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d4e5db"/>
+      <stop offset=".55" stop-color="#bfd8cd"/>
+      <stop offset="1" stop-color="#aecbc1"/>
     </linearGradient>
+    <linearGradient id="land" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7e8b9"/>
+      <stop offset=".55" stop-color="#ecd598"/>
+      <stop offset="1" stop-color="#ddc17c"/>
+    </linearGradient>
+    <filter id="paperNoise" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.0025" numOctaves="3" seed="17" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0.34 0 0 0 0.66  0 0.29 0 0 0.60  0 0 0.20 0 0.48  0 0 0 .18 0"/>
+    </filter>
+    <filter id="coastGlow" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feBlend in="SourceGraphic" in2="b" mode="multiply"/>
+    </filter>
+    <pattern id="grid" width="512" height="512" patternUnits="userSpaceOnUse">
+      <path d="M512 0H0V512" fill="none" stroke="#56746d" stroke-width="4" stroke-opacity=".095"/>
+      <path d="M256 0V512M0 256H512" fill="none" stroke="#56746d" stroke-width="2" stroke-opacity=".055"/>
+    </pattern>
   </defs>
-  <rect width="2048" height="1024" fill="url(#paper)"/>
-  <g fill="none" stroke="#776b51" stroke-opacity=".14" stroke-width="1">
-    <path d="M170.7 0V1024M341.3 0V1024M512 0V1024M682.7 0V1024M853.3 0V1024M1024 0V1024M1194.7 0V1024M1365.3 0V1024M1536 0V1024M1706.7 0V1024M1877.3 0V1024"/>
-    <path d="M0 170.7H2048M0 341.3H2048M0 512H2048M0 682.7H2048M0 853.3H2048"/>
+
+  <rect width="8192" height="4096" fill="url(#sea)"/>
+  <rect width="8192" height="4096" fill="url(#grid)"/>
+  <rect width="8192" height="4096" filter="url(#paperNoise)" opacity=".28"/>
+
+  <g fill="url(#land)" stroke="#735a35" stroke-width="18" stroke-linejoin="round" filter="url(#coastGlow)">
+    <path d="M80 480C540 250 980 180 1320 320c250 104 290 278 560 356 340 99 530-78 830 64 220 104 430 362 382 625-41 224-257 335-366 524-140 244-27 484-167 673-151 203-468 241-696 161-287-101-347-344-645-404-267-54-493 77-714-43-270-149-337-547-236-814 102-269 368-352 420-594C733 675 460 583 80 480Z"/>
+    <path d="M1880 124c368-69 771 28 1017 219 184 143 215 316 450 395 258 87 461-24 678 97 185 103 346 342 307 558-47 260-350 334-464 562-118 237 37 471-96 693-138 230-507 340-804 235-305-108-366-365-652-419-291-55-512 130-757 14-255-121-365-456-294-706 65-228 264-369 289-604 28-266-172-496-405-581-148-54-313-43-493-5-177 37-278-28-256-133 23-111 215-247 480-325Z"/>
+    <path d="M3390 310c251-104 539-90 716 49 166 131 163 325 343 421 177 94 361-9 528 89 192 112 270 419 151 621-107 182-337 185-463 344-156 197-75 471-255 633-186 167-529 110-710-47-175-152-153-365-316-482-174-124-398-32-552-172-146-133-144-398-35-560 88-132 245-161 294-301 66-191-110-355-2-472 57-62 164-90 301-123Z"/>
+    <path d="M4700 90c371 21 718 190 844 444 101 203 18 396 185 561 163 160 405 92 578 262 173 170 166 508-6 679-169 168-434 110-594 267-170 167-131 456-357 576-214 113-511-22-646-193-132-169-88-355-232-482-146-129-339-84-470-220-134-138-104-394 18-526 125-136 317-110 382-258 78-179-119-338-59-510 50-142 249-250 357-600Z"/>
+    <path d="M5980 340c378-173 822-134 1089 89 194 163 203 363 422 468 233 112 472-4 682 136 213 142 316 491 175 719-111 179-339 218-436 413-98 198 26 399-127 571-184 207-557 244-792 107-218-128-232-333-445-420-238-98-466 56-661-85-171-124-190-386-85-550 100-156 288-191 348-352 69-186-80-347 3-491 54-94 184-172 327-220-264-44-431-131-451-247-17-98 80-197 251-138Z"/>
+    <path d="M7040 2520c267-93 594-39 767 139 145 149 128 331 286 435 146 97 322 37 438 146 142 133 137 388-5 521-136 126-338 91-455 217-127 137-110 363-289 453-173 88-410 1-515-128-104-128-80-271-197-365-124-99-285-72-386-184-100-111-70-311 28-414 105-112 263-96 316-217 58-135-81-246-34-365 42-106 178-173 316-218Z"/>
   </g>
-  <rect x="1" y="1" width="2046" height="1022" fill="none" stroke="#6d6248" stroke-opacity=".20" stroke-width="2"/>
+
+  <g fill="url(#land)" stroke="#735a35" stroke-width="12" opacity=".96">
+    <path d="M2870 400c110-43 243-29 309 39 64 66 27 143 93 190 81 58 173 12 225 81 46 61 23 160-40 191-73 36-151-9-210 31-64 43-58 140-135 165-86 29-197-43-210-125-12-72 55-111 38-172-18-67-111-73-139-140-31-74 24-193 69-260Z"/>
+    <path d="M4210 2780c127-51 287-25 359 64 64 79 21 173 95 233 76 62 177 27 229 97 54 74 16 188-65 221-77 31-155-19-216 22-67 45-52 150-137 179-89 30-210-48-227-139-15-78 55-126 32-192-24-69-117-72-150-140-34-70 17-199 80-345Z"/>
+    <path d="M5520 2740c116-45 257-18 323 62 58 71 21 153 87 209 68 57 158 27 207 88 51 65 20 169-54 204-71 34-144-10-201 30-61 42-49 132-126 160-83 30-193-39-211-123-16-73 47-117 28-177-20-65-105-72-133-134-29-64 15-177 80-319Z"/>
+  </g>
+
+  <g fill="none" stroke="#806d49" stroke-width="9" stroke-opacity=".34">
+    <path d="M495 930c320 140 535 225 761 447 251 247 383 562 359 894"/>
+    <path d="M2240 770c208 102 430 241 566 451 163 253 200 529 144 787"/>
+    <path d="M3590 650c174 98 348 214 468 384 137 194 196 418 163 630"/>
+    <path d="M5090 500c242 125 436 282 575 506 142 230 192 468 151 701"/>
+    <path d="M6260 820c210 127 383 301 478 506 112 242 124 478 44 693"/>
+  </g>
+
+  <g font-family="Palatino Linotype, Book Antiqua, Georgia, serif" fill="#46544e" text-anchor="middle">
+    <text x="1190" y="700" font-size="118" font-style="italic" letter-spacing="18">TERRA VETUSTA</text>
+    <text x="3070" y="520" font-size="104" font-style="italic" letter-spacing="14">INSULAE MEMORIAE</text>
+    <text x="4590" y="920" font-size="124" font-style="italic" letter-spacing="20">OCEANVS FAMILIAE</text>
+    <text x="6520" y="590" font-size="110" font-style="italic" letter-spacing="17">REGIO INCERTA</text>
+    <text x="2140" y="3130" font-size="102" font-style="italic" letter-spacing="16">MARE SERENUM</text>
+    <text x="4880" y="3370" font-size="108" font-style="italic" letter-spacing="18">TEMPORA OMNIA</text>
+    <text x="6900" y="2990" font-size="96" font-style="italic" letter-spacing="14">PORTVS ANTIQVVS</text>
+  </g>
+
+  <g stroke="#55594a" fill="none" stroke-width="15" opacity=".72">
+    <g transform="translate(1460 2450)">
+      <path d="M0 0c130-90 278-82 385 8-75 26-106 91-109 165-104-65-185-60-276 5 49-65 48-122 0-178Z"/>
+      <path d="M145 26v-224m0 35 99 82-99 1m0-88-75 69 75 1"/>
+      <path d="M-18 180c132 42 285 45 422 5"/>
+    </g>
+    <g transform="translate(5880 2350) scale(.88)">
+      <path d="M0 0c130-90 278-82 385 8-75 26-106 91-109 165-104-65-185-60-276 5 49-65 48-122 0-178Z"/>
+      <path d="M145 26v-224m0 35 99 82-99 1m0-88-75 69 75 1"/>
+      <path d="M-18 180c132 42 285 45 422 5"/>
+    </g>
+    <g transform="translate(3600 3060) scale(.72)">
+      <path d="M30 80c80-146 221-173 313-75 94 99 15 215-88 223-89 7-121-74-58-118 63-44 131 0 121 56-8 47-56 64-94 44"/>
+      <path d="M61 77c-42-65-93-87-141-52 59 13 83 55 88 105"/>
+      <path d="M324 38c54-45 115-47 159-11-52 2-83 29-96 74"/>
+    </g>
+  </g>
+
+  <g transform="translate(7200 860)" stroke="#665438" fill="none" stroke-width="16" opacity=".70">
+    <circle r="260"/><circle r="60"/>
+    <path d="M0-315 48-66 0-12-48-66ZM315 0 66 48 12 0 66-48ZM0 315-48 66 0 12 48 66ZM-315 0-66-48-12 0-66 48Z"/>
+    <path d="M-210-210 0 0 210 210M210-210 0 0-210 210" stroke-width="9"/>
+  </g>
+
+  <rect x="10" y="10" width="8172" height="4076" fill="none" stroke="#705d3d" stroke-width="20" stroke-opacity=".30"/>
 </svg>

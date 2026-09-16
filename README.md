@@ -4,42 +4,45 @@ Interactive spherical genealogy atlas built from the supplied Ancestry GEDCOM.
 
 ## Current prototype
 
-The genealogy scope starts from the established **430-person** map population and recursively follows **every GEDCOM-recorded descendant** of every one of those people. Missing spouses/co-parents are included only when needed to show a descendant family correctly. A newly introduced supporting co-parent does not open unrelated spouse families unless that person was already one of the original 430 people or is also reached legitimately through a descendant path.
+The genealogy scope starts from the established **430-person** map population and recursively follows **every GEDCOM-recorded descendant** of every one of those people. Missing spouses/co-parents are included only when needed to show a descendant family correctly. A supporting co-parent does not automatically open unrelated spouse families unless that person was already part of the seed population or is also reached legitimately through a descendant line.
 
-The current GEDCOM produces a logical tree of **1,645 people**: the 430-person established seed population, 792 deeper descendants, and 423 supporting spouses/co-parents. The complete logical tree remains loaded and searchable even when descendant branches are collapsed in the visible atlas.
+The current GEDCOM produces a logical tree of **1,645 people**: the 430-person established seed population, 792 deeper descendants, and 423 supporting spouses/co-parents. The full logical tree remains loaded and searchable even when only part of it is visible on the sphere.
 
-The renderer remains Canvas/WebGL based rather than creating one DOM element per person. Person plaques and relationship lines stay in Canvas/WebGL; hover details use one reusable tooltip.
+The renderer remains Canvas/WebGL based rather than creating one DOM element per person. Person plaques, relationship lines, and branch controls stay in Canvas/WebGL; hover details use one reusable tooltip.
 
 The working globe radius is **225 physical layout units**. Person plaques keep fixed physical dimensions on the sphere; apparent size and foreshortening come from projection rather than generation-specific sizing.
 
 ## Scalable tree view
 
-v0.4.26 keeps the large-tree model as **full genealogy in memory, curated genealogy on screen**, and makes the controls easier to understand and find.
+v0.4.27 changes the large-tree interaction from “show everybody and collapse afterward” to **start compact and expand where needed**.
 
-- The complete 1,645-person descendant closure remains the authoritative in-memory tree.
-- The focused person can collapse or expand their descendant branch without deleting or unloading genealogy data.
-- The collapse control stays visible at all times. When the focused person has no recorded descendants, the disabled control explains that state instead of disappearing.
-- Search can still reach a person hidden inside a collapsed branch; focusing a hidden result restores the needed tree view.
-- An **Expand all** control reports how many people are currently hidden.
-- A density warning appears when the current viewport contains enough readable plaques to become visually crowded.
-- Dense views are treated as a presentation problem, not as permission to discard relatives from the genealogy.
+- The complete 1,645-person genealogy remains the authoritative in-memory tree.
+- Initial display is limited to the **600 people with the shortest relationship-path distance from the current target person**.
+- Search still covers the full logical tree. Focusing a person outside the current 600-person window recenters the visible window around that person rather than unloading genealogy data.
+- Hidden descendants are exposed with small **family-branch chevrons drawn directly on the tree**. One family gets one branch control, rather than duplicate controls on both parents.
+- A downward chevron reveals the next child generation for that family. The newly revealed children bring their spouses into view so family units remain intelligible.
+- An upward chevron folds a manually expanded family branch back up. Nested manual expansions below that family fold with it.
+- Expansion is deliberately incremental. One click does not recursively dump every deeper descendant onto the sphere; newly revealed generations expose their own branch arrows.
+- **Reset expansions** returns to the target person’s nearest-600 baseline.
+- A compact status readout reports how many people are currently shown out of the complete logical population.
+- Density warnings are based on readable plaques in the current viewport, not the total GEDCOM size.
 
-This is the foundation for supporting the complete GEDCOM at much larger scale. The eventual target is for frame cost to depend primarily on what is visible, while the full graph remains available for navigation, search, relationship logic, notes, and media.
+This model is intended to scale to the complete GEDCOM: **full genealogy in memory, curated genealogy on screen**. Rendering cost should depend primarily on what is visible, while search, relationships, notes, media, and navigation retain access to the complete graph.
 
 ## Large-tree rendering
 
-The large-tree renderer now includes several scale controls exposed by the 1,645-person stress population.
+The large-tree renderer includes several scale controls exposed by the 1,645-person stress population.
 
 - Family relationship topology and route planning are cached when family data changes instead of being rebuilt on every animation frame.
 - Large-tree relationship routing runs in a Web Worker so route-conflict solving does not monopolize the browser UI thread.
-- Relationship conflict scoring keeps cached segment geometry and rejects route pairs whose planar bounds cannot interact before detailed segment comparisons.
-- Person plaques are projected for all relevant people but expensive plaque drawing is limited to the visible hemisphere and nearby viewport.
-- Relationship polylines get a cheap coarse visibility pass before high-resolution spherical sampling.
-- During camera motion, relationship lines remain visible but switch to the cheaper moving sample density and omit expensive shadows. Very small plaques can still be culled while moving.
+- Relationship conflict scoring caches segment geometry and rejects route pairs whose planar bounds cannot interact before detailed segment comparisons.
+- Person plaques are projected only for the visible tree and expensive plaque drawing is limited to the visible hemisphere and nearby viewport.
+- Relationship polylines get a coarse visibility pass before high-resolution spherical sampling.
+- During camera motion, relationship lines remain visible but switch to the cheaper moving sample density and omit expensive shadows. Very small plaques may still be culled while moving.
 - Relationship lines remain present at wide overview distances rather than disappearing behind a hard zoom threshold.
 - The 8192 × 4096 rendered atlas is uploaded once. The shader relief slot uses a tiny neutral texture instead of decoding and uploading the same 8K artwork twice.
 
-These changes preserve the complete descendant population. They improve renderer scaling rather than reducing genealogy scope to conceal performance problems.
+These controls improve renderer scaling rather than reducing genealogy scope to conceal performance problems.
 
 ## Rendered antique atlas
 
@@ -92,9 +95,9 @@ Routing scores visual congestion:
 
 For one-child families, tiny decorative doglegs are suppressed. If the child lies beneath the couple span and the horizontal correction is small, the family uses a straight vertical descent.
 
-At overview scale, line weight and sampling are reduced, but relationship geometry remains continuous during pan, zoom, and overview so the family structure does not blink in and out.
+At overview scale, line weight and sampling are reduced, but relationship geometry remains continuous during pan, zoom, and overview so family structure does not blink in and out.
 
-Connectors remain evidence-based. Layout can change placement, but it cannot invent a parent, spouse, or sibling relationship.
+Connectors remain evidence-based. Layout can change placement, but it cannot invent a parent, spouse, sibling, or child relationship.
 
 ## Person plaques
 
@@ -113,10 +116,12 @@ Name typography remains dominant. Date typography uses a preferred size of about
 - Wheel zoom preserves the selected person's screen coordinate.
 - During motion, relationship lines stay visible using the cheaper moving sample density while very small plaques may be culled.
 - Desktop hover requires **1.25 seconds** of continuous intent before the compact person card appears.
-- Click a person to focus that branch and open full Person Details.
-- The branch control is always visible. When the focused person has recorded children, **Collapse descendants** hides the descendant closure below that person while leaving the focused person and spouse visible.
-- When a focused person has no recorded children, the control remains visible but disabled and says **No descendants to collapse**.
-- **Expand descendants** restores that focused branch; **Expand all** restores every collapsed branch.
+- Click a person to focus that person and open full Person Details.
+- Small parchment/brick chevrons are drawn at family branch junctions where more descendants are hidden.
+- Downward chevron: reveal that family’s next child generation.
+- Upward chevron: fold that manually expanded family branch back up, including nested manual expansions below it.
+- `Reset expansions` restores the nearest-600 baseline around the current target person.
+- Search may retarget the nearest-600 window when the requested person is not currently visible.
 - Dense-view warnings are based on plaques actually readable in the current viewport.
 - `Return to Tod` restores the home person.
 - People can be searched and filtered by family side, century, relationship distance, and name.
@@ -144,10 +149,11 @@ Cross-site links are not inferred from titles alone.
 - `src/camera-behavior.js` owns the zoom-to-view-angle curve, curved zoom-to-pan-speed response, focus framing, and motion timing.
 - `src/layout.js` owns canonical GEDCOM-family-aware base placement, generation assignment, direct-ancestor spine centering, and collateral-family alignment.
 - `src/layout-spacing.js` owns scalable family-block spreading and hard same-row plaque clearance.
+- `src/tree-view.js` owns the nearest-600 visibility window, family-level expansion state derivation, branch boundaries, and descendant-family collapse logic.
 - `src/globe-webgl.js` owns the WebGL UV sphere, atlas texture rendering, and hidden-surface handling.
 - `src/atlas-map.js` owns the rendered atlas, lightweight neutral relief input, and preserved fallback assets.
 - `src/scene-core.js` owns the low-level camera, projection, Canvas plaque drawing, evidence-based relationship grouping, route geometry, surface sampling, and hover mechanics.
-- `src/scene.js` owns the scalable scene layer: family spacing integration, background route worker, collapse/expand state, viewport-density warnings, and moving/overview level-of-detail policy.
+- `src/scene.js` owns the scalable scene layer: family spacing integration, background route worker, nearest-window application, inline family branch controls, viewport-density warnings, and moving level-of-detail policy.
 - `src/relationship-worker.js` performs expensive family-route planning off the UI thread.
 - `src/plaque.js` owns portrait medallions, wood nameplates, and canonical plaque typography.
 - `src/plaque-metal.js` owns the male/female/unspecified metal palettes.
@@ -175,12 +181,14 @@ Regression coverage includes:
 - exact reproduction of the established 430-person seed population;
 - independent verification that every descendant of those 430 seeds is present and unrelated supporting branches are not pulled in;
 - layout of the recursively expanded population;
+- nearest-person visible-window selection with a 600-person default cap;
+- incremental family-level generation expansion without recursively exposing all deeper descendants;
+- one expansion control per GEDCOM family branch, including expand-to-collapse state changes;
+- nested expanded-family cleanup when an ancestor branch is folded back up;
 - distinct GEDCOM family blocks when parents have multiple spouse families;
 - family-aware same-row spacing and non-interleaving origin-family blocks;
 - direct-ancestor spine centering without shifting collateral single-child families;
-- recursive descendant collapse while preserving the selected anchor, its spouse, ancestors, and unrelated branches;
 - relationship-line continuity during camera motion and overview;
-- persistent, discoverable branch-collapse controls;
 - near-parallel and crossing route avoidance;
 - bounded descent-corridor trunk shifting;
 - suppression of tiny single-child doglegs;

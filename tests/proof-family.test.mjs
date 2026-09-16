@@ -19,18 +19,19 @@ assert.equal(validateGedcomFamilyGraph(parsed).length, 0, 'source GEDCOM relatio
 const family = buildProofFamily(parsed);
 assert.equal(PROOF_BASE_EXPECTED_PEOPLE, 53, 'approved proof-tree base must remain 53 people');
 assert.equal(PROOF_PRE_CHILD_EXPECTED_PEOPLE, 139, 'the established pre-child proof tree must remain 139 people');
+assert.equal(PROOF_EXPECTED_PEOPLE, 430, 'child-family stress-test population must remain deterministic');
 
 const expansionSiblings = family.people.filter(person => person.proofExpansionKind === 'sibling');
 const expansionSpouses = family.people.filter(person => person.proofExpansionKind === 'spouse');
 const expansionChildren = family.people.filter(person => person.proofExpansionKind === 'child');
 const expansionCoParents = family.people.filter(person => person.proofExpansionKind === 'co-parent');
-console.log(`proof population ${family.people.length}: base ${PROOF_BASE_EXPECTED_PEOPLE}, siblings ${expansionSiblings.length}, spouses ${expansionSpouses.length}, new children ${expansionChildren.length}, supporting co-parents ${expansionCoParents.length}`);
 assert.equal(family.people.length, PROOF_EXPECTED_PEOPLE, 'expanded proof-tree population must match the canonical expected count');
 assert.equal(family.metadata.basePeople, PROOF_BASE_EXPECTED_PEOPLE);
 assert.equal(family.metadata.preChildPeople, PROOF_PRE_CHILD_EXPECTED_PEOPLE);
 assert.equal(expansionSiblings.length, 53, 'the established breadth step should still add 53 GEDCOM-recorded siblings');
 assert.equal(expansionSpouses.length, 33, 'the established breadth step should still add 33 GEDCOM-recorded spouses');
-assert.ok(expansionChildren.length > 0, 'child stress-test expansion must add recorded children beyond the established 139 people');
+assert.equal(expansionChildren.length, 249, 'the child stress-test step should add the current 249 not-already-visible recorded children');
+assert.equal(expansionCoParents.length, 42, '42 additional co-parents are required to keep those child families complete');
 
 const ids = new Set(family.people.map(person => person.id));
 for (const relation of family.relationships) {

@@ -31,22 +31,22 @@ export function nearestPeopleIds(targetId, people = [], relationships = [], limi
   return visible;
 }
 
-export function visibleIdsForExpandedRoots(baseVisibleIds, expandedRoots, people = [], relationships = []) {
+export function visibleIdsForExpandedFamilies(baseVisibleIds, expandedFamilyIds, people = [], relationships = []) {
   const knownIds = new Set(people.map(person => person.id));
   const visible = new Set([...baseVisibleIds].filter(id => knownIds.has(id)));
-  const roots = expandedRoots instanceof Set ? expandedRoots : new Set(expandedRoots || []);
-  const children = directedChildren(knownIds, relationships);
-  const parents = parentsByChild(knownIds, relationships);
+  const expanded = expandedFamilyIds instanceof Set ? expandedFamilyIds : new Set(expandedFamilyIds || []);
+  const families = familyExpansionGroups(knownIds, relationships);
   const spouses = spouseNeighbors(knownIds, relationships);
 
   let changed = true;
   while (changed) {
     changed = false;
-    for (const rootId of roots) {
-      if (!visible.has(rootId)) continue;
-      for (const childId of children.get(rootId) || []) {
+    for (const familyId of expanded) {
+      const family = families.get(familyId);
+      if (!family || !family.parentIds.some(id => visible.has(id))) continue;
+      for (const parentId of family.parentIds) changed = addVisible(visible, parentId) || changed;
+      for (const childId of family.childIds) {
         changed = addVisible(visible, childId) || changed;
-        for (const parentId of parents.get(childId) || []) changed = addVisible(visible, parentId) || changed;
         for (const spouseId of spouses.get(childId) || []) changed = addVisible(visible, spouseId) || changed;
       }
     }
@@ -55,29 +55,96 @@ export function visibleIdsForExpandedRoots(baseVisibleIds, expandedRoots, people
   return visible;
 }
 
-export function hiddenImmediateDescendantRootIds(visibleIds, people = [], relationships = []) {
+export function branchControlFamilies(visibleIds, expandedFamilyIds, people = [], relationships = []) {
   const knownIds = new Set(people.map(person => person.id));
   const visible = visibleIds instanceof Set ? visibleIds : new Set(visibleIds || []);
-  const children = directedChildren(knownIds, relationships);
+  const expanded = expandedFamilyIds instanceof Set ? expandedFamilyIds : new Set(expandedFamilyIds || []);
+  const families = familyExpansionGroups(knownIds, relationships);
+  const controls = [];
+
+  for (const family of families.values()) {
+    const visibleParents = family.parentIds.filter(id => visible.has(id));
+    if (!visibleParents.length) continue;
+    if (expanded.has(family.familyId)) {
+      controls.push({ ...family, visibleParentIds: visibleParents, action: 'collapse' });
+      continue;
+    }
+    if (family.childIds.some(id => !visible.has(id))) {
+      controls.push({ ...family, visibleParentIds: visibleParents, action: 'expand' });
+    }
+  }
+
+  return controls.sort((a, b) => a.familyId.localeCompare(b.familyId));
+}
+
+export function descendantFamilyIds(rootFamilyId, people = [], relationships = []) {
+  const knownIds = new Set(people.map(person => person.id));
+  const families = familyExpansionGroups(knownIds, relationships);
+  const root = families.get(rootFamilyId);
+  if (!root) return new Set();
+
+  const familiesByParent = new Map();
+  for (const family of families.values()) {
+    for (const parentId of family.parentIds) {
+      if (!familiesByParent.has(parentId)) familiesByParent.set(parentId, new Set());
+      familiesByParent.get(parentId).add(family.familyId);
+    }
+  }
+
   const result = new Set();
-  for (const id of visible) {
-    if ([...(children.get(id) || [])].some(childId => !visible.has(childId))) result.add(id);
+  const peopleQueue = [...root.childIds];
+  const visitedPeople = new Set();
+  while (peopleQueue.length) {
+    const personId = peopleQueue.shift();
+    if (visitedPeople.has(personId)) continue;
+    visitedPeople.add(personId);
+    for (const familyId of familiesByParent.get(personId) || []) {
+      if (familyId === rootFamilyId || result.has(familyId)) continue;
+      result.add(familyId);
+      for (const childId of families.get(familyId)?.childIds || []) peopleQueue.push(childId);
+    }
   }
   return result;
 }
 
-export function descendantIds(rootId, people = [], relationships = []) {
-  const knownIds = new Set(people.map(person => person.id));
-  const children = directedChildren(knownIds, relationships);
-  const descendants = new Set();
-  const queue = [...(children.get(rootId) || [])];
-  while (queue.length) {
-    const id = queue.shift();
-    if (descendants.has(id)) continue;
-    descendants.add(id);
-    for (const childId of children.get(id) || []) queue.push(childId);
+export function familyExpansionGroups(knownIds, relationships = []) {
+  const ids = knownIds instanceof Set ? knownIds : new Set(knownIds || []);
+  const families = new Map();
+  const ensure = key => {
+    if (!families.has(key)) families.set(key, { familyId: key, parentIds: new Set(), childIds: new Set() });
+    return families.get(key);
+  };
+
+  for (const link of relationships || []) {
+    if (!ids.has(link.from) || !ids.has(link.to) || link.from === link.to) continue;
+    if (link.type === 'parent') {
+      const key = familyKey(link, 'parent');
+      const family = ensure(key);
+      family.parentIds.add(link.from);
+      family.childIds.add(link.to);
+    } else if (link.type === 'spouse' && link.familyId) {
+      const family = ensure(String(link.familyId));
+      family.parentIds.add(link.from);
+      family.parentIds.add(link.to);
+    }
   }
-  return descendants;
+
+  return new Map(
+    [...families.entries()]
+      .filter(([, family]) => family.parentIds.size && family.childIds.size)
+      .map(([key, family]) => [key, {
+        familyId: key,
+        parentIds: [...family.parentIds].sort(),
+        childIds: [...family.childIds].sort(),
+      }]),
+  );
+}
+
+function familyKey(link, kind) {
+  if (link.familyId) return String(link.familyId);
+  return kind === 'parent'
+    ? `parent:${String(link.from)}>${String(link.to)}`
+    : `spouse:${[link.from, link.to].sort().join('|')}`;
 }
 
 function undirectedAdjacency(byId, relationships) {
@@ -88,26 +155,6 @@ function undirectedAdjacency(byId, relationships) {
     adjacency.get(link.to).add(link.from);
   }
   return adjacency;
-}
-
-function directedChildren(knownIds, relationships) {
-  const children = new Map();
-  for (const link of relationships || []) {
-    if (link.type !== 'parent' || !knownIds.has(link.from) || !knownIds.has(link.to) || link.from === link.to) continue;
-    if (!children.has(link.from)) children.set(link.from, new Set());
-    children.get(link.from).add(link.to);
-  }
-  return children;
-}
-
-function parentsByChild(knownIds, relationships) {
-  const parents = new Map();
-  for (const link of relationships || []) {
-    if (link.type !== 'parent' || !knownIds.has(link.from) || !knownIds.has(link.to) || link.from === link.to) continue;
-    if (!parents.has(link.to)) parents.set(link.to, new Set());
-    parents.get(link.to).add(link.from);
-  }
-  return parents;
 }
 
 function spouseNeighbors(knownIds, relationships) {

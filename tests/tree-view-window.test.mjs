@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import {
   DEFAULT_VISIBLE_PEOPLE,
-  descendantIds,
-  hiddenImmediateDescendantRootIds,
+  branchControlFamilies,
+  descendantFamilyIds,
   nearestPeopleIds,
-  visibleIdsForExpandedRoots,
+  visibleIdsForExpandedFamilies,
 } from '../src/tree-view.js';
 
 assert.equal(DEFAULT_VISIBLE_PEOPLE, 600, 'the initial visible window must target the nearest 600 people');
@@ -39,19 +39,27 @@ assert.equal(nearest.has('D'), false, 'distant descendants must start outside a 
 assert.equal(nearest.has('X'), false, 'unconnected people must not be pulled into the target window');
 
 const base = new Set(['A', 'SA', 'B', 'SB']);
-const initialBoundaries = hiddenImmediateDescendantRootIds(base, people, relationships);
-assert.equal(initialBoundaries.has('B'), true, 'a visible parent with hidden children must expose an expansion boundary');
-assert.equal(initialBoundaries.has('A'), false, 'a parent whose immediate child is already visible should not show a redundant expansion arrow');
+const initialControls = branchControlFamilies(base, new Set(), people, relationships);
+assert.equal(initialControls.some(control => control.familyId === 'FB' && control.action === 'expand'), true,
+  'a visible family whose children are hidden must expose one family-level expansion control');
+assert.equal(initialControls.some(control => control.familyId === 'FA'), false,
+  'a family whose immediate child is already visible should not show a redundant expansion arrow');
 
-const oneLayer = visibleIdsForExpandedRoots(base, new Set(['B']), people, relationships);
-assert.equal(oneLayer.has('C'), true, 'expanding a boundary reveals its immediate child generation');
+const oneLayer = visibleIdsForExpandedFamilies(base, new Set(['FB']), people, relationships);
+assert.equal(oneLayer.has('C'), true, 'expanding a family boundary reveals its immediate child generation');
 assert.equal(oneLayer.has('SC'), true, 'the newly revealed child keeps its spouse visible as a family unit');
 assert.equal(oneLayer.has('D'), false, 'one branch click must not recursively dump every deeper generation onto the screen');
 
-const nested = visibleIdsForExpandedRoots(base, new Set(['B', 'C']), people, relationships);
-assert.equal(nested.has('D'), true, 'expanding the newly revealed boundary exposes the following generation');
+const oneLayerControls = branchControlFamilies(oneLayer, new Set(['FB']), people, relationships);
+assert.equal(oneLayerControls.some(control => control.familyId === 'FB' && control.action === 'collapse'), true,
+  'an expanded family boundary must turn into a collapse control');
+assert.equal(oneLayerControls.some(control => control.familyId === 'FC' && control.action === 'expand'), true,
+  'the newly revealed generation must expose its own next branch boundary');
 
-const belowB = descendantIds('B', people, relationships);
-assert.deepEqual([...belowB].sort(), ['C', 'D'], 'collapsing an expanded branch must be able to identify all nested descendant expansion roots');
+const nested = visibleIdsForExpandedFamilies(base, new Set(['FB', 'FC']), people, relationships);
+assert.equal(nested.has('D'), true, 'expanding the newly revealed family boundary exposes the following generation');
 
-console.log('nearest-600 window and inline generation expansion regression passed');
+const belowFB = descendantFamilyIds('FB', people, relationships);
+assert.deepEqual([...belowFB].sort(), ['FC'], 'collapsing a family branch must identify nested family expansions below it');
+
+console.log('nearest-600 window and family-level expansion chevrons regression passed');

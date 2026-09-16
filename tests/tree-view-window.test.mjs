@@ -1,13 +1,87 @@
 import assert from 'node:assert/strict';
 import {
+  COLLATERAL_GENERATION_LIMIT,
   DEFAULT_VISIBLE_PEOPLE,
   branchControlFamilies,
   descendantFamilyIds,
-  nearestPeopleIds,
+  lineageWindowIds,
   visibleIdsForExpandedFamilies,
 } from '../src/tree-view.js';
 
-assert.equal(DEFAULT_VISIBLE_PEOPLE, 600, 'the initial visible window must target the nearest 600 people');
+assert.equal(DEFAULT_VISIBLE_PEOPLE, 600, 'the initial visible window must remain capped at 600 people');
+assert.equal(COLLATERAL_GENERATION_LIMIT, 3, 'collateral branches must stop at the second-cousin generation');
+
+const lineagePeople = [
+  { id: 'T', role: 'root' },
+  { id: 'ST' },
+  { id: 'P' },
+  { id: 'GP' },
+  { id: 'GGP' },
+  { id: 'GGG' },
+  { id: 'D1' },
+  { id: 'D2' },
+  { id: 'D3' },
+  { id: 'D4' },
+  { id: 'SD4' },
+  { id: 'S' },
+  { id: 'N' },
+  { id: 'U' },
+  { id: 'C1' },
+  { id: 'C1R' },
+  { id: 'GA' },
+  { id: 'C2P' },
+  { id: 'C2' },
+  { id: 'GGA' },
+  { id: 'C3A' },
+  { id: 'C3B' },
+  { id: 'C3C' },
+  { id: 'C3' },
+  { id: 'X' },
+];
+
+const lineageRelationships = [
+  { type: 'spouse', from: 'T', to: 'ST', familyId: 'FT' },
+  { type: 'parent', from: 'GGG', to: 'GGP', familyId: 'F0' },
+  { type: 'parent', from: 'GGP', to: 'GP', familyId: 'F1' },
+  { type: 'parent', from: 'GP', to: 'P', familyId: 'F2' },
+  { type: 'parent', from: 'P', to: 'T', familyId: 'F3' },
+  { type: 'parent', from: 'T', to: 'D1', familyId: 'FD1' },
+  { type: 'parent', from: 'D1', to: 'D2', familyId: 'FD2' },
+  { type: 'parent', from: 'D2', to: 'D3', familyId: 'FD3' },
+  { type: 'parent', from: 'D3', to: 'D4', familyId: 'FD4' },
+  { type: 'spouse', from: 'D4', to: 'SD4', familyId: 'FSD4' },
+  { type: 'parent', from: 'P', to: 'S', familyId: 'FS' },
+  { type: 'parent', from: 'S', to: 'N', familyId: 'FN' },
+  { type: 'parent', from: 'GP', to: 'U', familyId: 'FU' },
+  { type: 'parent', from: 'U', to: 'C1', familyId: 'FC1' },
+  { type: 'parent', from: 'C1', to: 'C1R', familyId: 'FC1R' },
+  { type: 'parent', from: 'GGP', to: 'GA', familyId: 'FGA' },
+  { type: 'parent', from: 'GA', to: 'C2P', familyId: 'FC2P' },
+  { type: 'parent', from: 'C2P', to: 'C2', familyId: 'FC2' },
+  { type: 'parent', from: 'GGG', to: 'GGA', familyId: 'FGGA' },
+  { type: 'parent', from: 'GGA', to: 'C3A', familyId: 'FC3A' },
+  { type: 'parent', from: 'C3A', to: 'C3B', familyId: 'FC3B' },
+  { type: 'parent', from: 'C3B', to: 'C3C', familyId: 'FC3C' },
+  { type: 'parent', from: 'C3C', to: 'C3', familyId: 'FC3' },
+];
+
+const lineage = lineageWindowIds('T', lineagePeople, lineageRelationships, 50);
+assert.equal(lineage.has('T'), true, 'target person must always remain visible');
+assert.equal(lineage.has('ST'), true, 'target spouse remains attached to the vertical spine');
+assert.equal(lineage.has('GGG'), true, 'deep direct ancestors remain visible beyond the cousin cutoff');
+assert.equal(lineage.has('D4'), true, 'deep direct descendants remain visible beyond the cousin cutoff');
+assert.equal(lineage.has('SD4'), true, 'spouses of direct descendants remain visible when capacity allows');
+assert.equal(lineage.has('S'), true, 'siblings remain visible');
+assert.equal(lineage.has('N'), true, 'close collateral descendants remain visible');
+assert.equal(lineage.has('C1'), true, 'first cousins remain visible');
+assert.equal(lineage.has('C1R'), true, 'first cousins within the three-generation collateral envelope remain visible');
+assert.equal(lineage.has('C2'), true, 'second cousins remain visible');
+assert.equal(lineage.has('C3'), false, 'third cousins and more distant cousin branches must start hidden');
+assert.equal(lineage.has('X'), false, 'unrelated people must not be pulled into the initial working window');
+
+const capped = lineageWindowIds('T', lineagePeople, lineageRelationships, 4);
+assert.ok(capped.size <= 4, 'lineage-first selection must obey the requested visible-person cap');
+assert.equal(capped.has('T'), true, 'the cap must never evict the target person');
 
 const people = [
   { id: 'A', role: 'root' },
@@ -31,12 +105,6 @@ const relationships = [
   { type: 'parent', from: 'C', to: 'D', familyId: 'FC' },
   { type: 'parent', from: 'SC', to: 'D', familyId: 'FC' },
 ];
-
-const nearest = nearestPeopleIds('A', people, relationships, 4);
-assert.equal(nearest.size, 4, 'nearest-person window must obey its requested cap when enough people exist');
-assert.equal(nearest.has('A'), true, 'target person must always be in the nearest-person window');
-assert.equal(nearest.has('D'), false, 'distant descendants must start outside a small nearest-person window');
-assert.equal(nearest.has('X'), false, 'unconnected people must not be pulled into the target window');
 
 const base = new Set(['A', 'SA', 'B', 'SB']);
 const initialControls = branchControlFamilies(base, new Set(), people, relationships);
@@ -62,4 +130,4 @@ assert.equal(nested.has('D'), true, 'expanding the newly revealed family boundar
 const belowFB = descendantFamilyIds('FB', people, relationships);
 assert.deepEqual([...belowFB].sort(), ['FC'], 'collapsing a family branch must identify nested family expansions below it');
 
-console.log('nearest-600 window and family-level expansion chevrons regression passed');
+console.log('lineage-first second-cousin window and family-level expansion chevrons regression passed');

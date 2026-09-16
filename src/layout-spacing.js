@@ -2,9 +2,9 @@ import { tangentPoint } from './geometry.js';
 
 export const FAMILY_VIEW_SPACING = Object.freeze({
   COUPLE_GAP: 1.58,
-  SIBLING_UNIT_GAP: 2.08,
-  FAMILY_BLOCK_GAP: 3.72,
-  MIN_PERSON_GAP: 1.48,
+  SIBLING_UNIT_GAP: 2.32,
+  FAMILY_BLOCK_GAP: 4.65,
+  MIN_PERSON_GAP: 1.52,
 });
 
 export function spreadFamilyLayout(positions, people, relationships, radius) {
@@ -44,10 +44,9 @@ export function spreadFamilyLayout(positions, people, relationships, radius) {
       block.components.forEach((component, componentIndex) => {
         if (componentIndex > 0) cursor += FAMILY_VIEW_SPACING.SIBLING_UNIT_GAP;
         const componentCenter = cursor + component.width / 2;
-        component.members.forEach((id, memberIndex) => {
-          const memberOffset = (memberIndex - (component.members.length - 1) / 2) * FAMILY_VIEW_SPACING.COUPLE_GAP;
+        component.members.forEach(id => {
           const point = planar.get(id);
-          if (point) point.x = componentCenter + memberOffset;
+          if (point) point.x = componentCenter + (component.offsets.get(id) || 0);
         });
         cursor += component.width;
       });
@@ -101,31 +100,87 @@ function buildSpouseComponents(ids, rowSet, spouseAdjacency, planar, byId, origi
   [...ids].sort((a, b) => planar.get(a).x - planar.get(b).x).forEach(startId => {
     if (visited.has(startId)) return;
     const stack = [startId];
-    const members = [];
+    const discovered = [];
     visited.add(startId);
     while (stack.length) {
       const id = stack.pop();
-      members.push(id);
+      discovered.push(id);
       for (const spouseId of spouseAdjacency.get(id) || []) {
         if (!rowSet.has(spouseId) || visited.has(spouseId)) continue;
         visited.add(spouseId);
         stack.push(spouseId);
       }
     }
-    members.sort((a, b) => planar.get(a).x - planar.get(b).x);
-    const desiredCenter = average(members.map(id => planar.get(id).x));
+
+    const layout = spouseComponentLayout(discovered, spouseAdjacency, planar);
+    const members = layout.members;
     const lineageMember = [...members].sort((a, b) => lineagePriority(byId.get(a)) - lineagePriority(byId.get(b)))[0];
     const familyKey = originFamily.get(lineageMember)
       || members.map(id => byId.get(id)?.cluster).find(Boolean)
       || `unit:${members.join('|')}`;
     components.push({
       members,
+      offsets: layout.offsets,
       familyKey,
-      desiredCenter,
-      width: Math.max(0, (members.length - 1) * FAMILY_VIEW_SPACING.COUPLE_GAP),
+      desiredCenter: layout.desiredCenter,
+      width: layout.width,
     });
   });
   return components;
+}
+
+function spouseComponentLayout(ids, spouseAdjacency, planar) {
+  const ordered = [...ids].sort((a, b) => planar.get(a).x - planar.get(b).x || String(a).localeCompare(String(b)));
+  if (ordered.length <= 1) {
+    const id = ordered[0];
+    return {
+      members: ordered,
+      offsets: new Map(id ? [[id, 0]] : []),
+      desiredCenter: id ? planar.get(id).x : 0,
+      width: 0,
+    };
+  }
+
+  if (ordered.length === 2) {
+    const halfGap = FAMILY_VIEW_SPACING.COUPLE_GAP / 2;
+    return {
+      members: ordered,
+      offsets: new Map([[ordered[0], -halfGap], [ordered[1], halfGap]]),
+      desiredCenter: average(ordered.map(id => planar.get(id).x)),
+      width: FAMILY_VIEW_SPACING.COUPLE_GAP,
+    };
+  }
+
+  const memberSet = new Set(ordered);
+  const spouseDegree = id => [...(spouseAdjacency.get(id) || [])]
+    .filter(spouseId => memberSet.has(spouseId)).length;
+  const hub = [...ordered].sort((a, b) => (
+    spouseDegree(b) - spouseDegree(a)
+    || Math.abs(planar.get(a).x) - Math.abs(planar.get(b).x)
+    || String(a).localeCompare(String(b))
+  ))[0];
+  const spouses = ordered.filter(id => id !== hub);
+  const offsets = new Map([[hub, 0]]);
+  let leftIndex = 0;
+  let rightIndex = 0;
+  spouses.forEach((id, index) => {
+    if (index % 2 === 0) {
+      leftIndex += 1;
+      offsets.set(id, -FAMILY_VIEW_SPACING.COUPLE_GAP * leftIndex);
+    } else {
+      rightIndex += 1;
+      offsets.set(id, FAMILY_VIEW_SPACING.COUPLE_GAP * rightIndex);
+    }
+  });
+
+  const sortedMembers = [...ordered].sort((a, b) => offsets.get(a) - offsets.get(b));
+  const values = [...offsets.values()];
+  return {
+    members: sortedMembers,
+    offsets,
+    desiredCenter: planar.get(hub).x,
+    width: Math.max(...values) - Math.min(...values),
+  };
 }
 
 function buildOriginBlocks(components) {

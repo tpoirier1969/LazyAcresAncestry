@@ -736,8 +736,16 @@ void main() {
   vec3 seaPaper = vec3(0.68, 0.69, 0.65);
   vec3 antique = mix(landPaper, seaPaper, water);
 
-  float broadRelief = (sourceLuma - 0.50) * 0.54 + (detailLuma - 0.50) * 0.38;
-  antique += broadRelief * mix(vec3(0.50, 0.41, 0.28), vec3(0.31, 0.34, 0.31), water);
+  // Keep the rendered atlas itself visible. The former treatment used the
+  // texture mostly as a luminance input, which flattened coastlines and terrain
+  // into nearly uniform parchment. Preserve the antique palette while retaining
+  // enough of the source artwork to read as a map behind the genealogy.
+  vec3 sourceTint = mix(vec3(sourceLuma), source.rgb, 0.56);
+  sourceTint = clamp((sourceTint - 0.5) * 1.34 + 0.5, 0.0, 1.0);
+  antique = mix(antique, sourceTint, 0.42);
+
+  float broadRelief = (sourceLuma - 0.50) * 0.48 + (detailLuma - 0.50) * 0.30;
+  antique += broadRelief * mix(vec3(0.44, 0.36, 0.25), vec3(0.28, 0.31, 0.29), water);
 
   float sourceEast = luminance(texture2D(uAtlas, vUv + vec2(uAtlasTexel.x, 0.0)).rgb);
   float sourceWest = luminance(texture2D(uAtlas, vUv - vec2(uAtlasTexel.x, 0.0)).rgb);
@@ -752,38 +760,39 @@ void main() {
   float detailNeighbor = (detailEast + detailWest + detailNorth + detailSouth) * 0.25;
 
   float fineDetail = clamp(
-    (sourceLuma - sourceNeighbor) * 2.1 + (detailLuma - detailNeighbor) * 2.15,
-    -0.20,
-    0.20
+    (sourceLuma - sourceNeighbor) * 3.15 + (detailLuma - detailNeighbor) * 1.45,
+    -0.26,
+    0.26
   );
-  antique += fineDetail * mix(vec3(0.74, 0.60, 0.39), vec3(0.43, 0.47, 0.42), water);
+  antique += fineDetail * mix(vec3(0.66, 0.53, 0.34), vec3(0.39, 0.43, 0.38), water);
 
+  float sourceGradient = length(vec2(sourceEast - sourceWest, sourceNorth - sourceSouth));
   float reliefGradient = length(vec2(detailEast - detailWest, detailNorth - detailSouth));
-  float engraving = smoothstep(0.020, 0.11, reliefGradient);
+  float engraving = smoothstep(0.010, 0.080, max(sourceGradient, reliefGradient));
   antique = mix(
     antique,
-    vec3(0.33, 0.27, 0.18),
-    engraving * mix(0.075, 0.022, water)
+    vec3(0.31, 0.24, 0.16),
+    engraving * mix(0.14, 0.055, water)
   );
 
   vec3 mutedDetail = mix(vec3(detailLuma), detail, 0.10);
-  antique = mix(antique, mutedDetail, 0.022);
+  antique = mix(antique, mutedDetail, 0.015);
 
   float longitudeGrid = gridLine(vUv.x, 24.0);
   float latitudeGrid = gridLine(vUv.y, 12.0);
-  float graticule = max(longitudeGrid, latitudeGrid) * 0.024;
+  float graticule = max(longitudeGrid, latitudeGrid) * 0.018;
   antique = mix(antique, vec3(0.35, 0.29, 0.21), graticule);
 
   vec4 label = texture2D(uLabels, vUv);
-  antique = mix(antique, vec3(0.27, 0.19, 0.13), label.a * 0.36);
+  antique = mix(antique, vec3(0.27, 0.19, 0.13), label.a * 0.30);
 
   float coarseGrain = paperNoise(vUv * vec2(720.0, 360.0)) - 0.5;
   float fineGrain = paperNoise(vUv * vec2(8192.0, 4096.0)) - 0.5;
-  antique += coarseGrain * vec3(0.030, 0.024, 0.016);
-  antique += fineGrain * vec3(0.008, 0.007, 0.005);
+  antique += coarseGrain * vec3(0.022, 0.018, 0.012);
+  antique += fineGrain * vec3(0.006, 0.005, 0.004);
 
   float facing = clamp(-vNormal.z, 0.0, 1.0);
-  float sphereShade = 0.79 + 0.21 * pow(facing, 0.44);
+  float sphereShade = 0.80 + 0.20 * pow(facing, 0.44);
   antique *= sphereShade;
 
   gl_FragColor = vec4(clamp(antique, 0.0, 1.0), source.a);

@@ -15,13 +15,28 @@ assert.match(
 );
 assert.match(
   source,
-  /this\.branchCollapseButton\.hidden = false;/,
-  'collapse control must remain visible instead of disappearing contextually',
+  /drawBranchControls\(\)/,
+  'branch expansion must be rendered on the tree rather than hidden in an unrelated panel',
 );
 assert.match(
   source,
-  /No descendants to collapse/,
-  'collapse control must explain when the focused person has no descendant branch',
+  /action === 'expand'/,
+  'inline branch controls must distinguish expansion arrows',
+);
+assert.match(
+  source,
+  /action === 'collapse'/,
+  'inline branch controls must support folding manually expanded branches back up',
+);
+assert.match(
+  source,
+  /chevrons expand branches/,
+  'the compact tree status must explain the inline chevron interaction',
+);
+assert.doesNotMatch(
+  source,
+  /branchCollapseButton|Collapse descendants/,
+  'the obsolete toolbar-style collapse interaction must not remain active',
 );
 
-console.log('relationship lines remain continuous and collapse controls remain discoverable');
+console.log('relationship lines remain continuous and inline branch chevrons own expand/collapse interaction');

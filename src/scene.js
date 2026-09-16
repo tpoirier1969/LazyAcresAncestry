@@ -29,29 +29,31 @@ const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
 const OVERVIEW_GAP = 155;
 const ABSOLUTE_MAX_GAP = 520;
-export const RELATIONSHIP_LINE_WIDTH = 1.58;
+export const RELATIONSHIP_LINE_WIDTH = 2.70;
 
-// Family routes are rule-driven rather than tied to fixed lane numbers. A child
-// connector should visibly rise about one portrait-frame height above the
-// portrait before it turns into the horizontal family rail. More vertical room
-// is used only when another documented family route needs it.
-export const FAMILY_CHILD_STEM_PREFERRED = PLAQUE.height * 1.45;
-export const FAMILY_CHILD_STEM_MIN = PLAQUE.height * 1.05;
-export const FAMILY_PARALLEL_GAP = PLAQUE.height * 0.28;
-const FAMILY_PARENT_CLEARANCE = PLAQUE.height * 0.72;
+// The portrait itself occupies about two thirds of the plaque texture. Connector
+// rules use that visible portrait frame, not the portrait-plus-name plaque, as
+// their measuring stick.
+export const PORTRAIT_FRAME_HEIGHT = PLAQUE.height * 0.66;
+export const PORTRAIT_TOP_OFFSET = PLAQUE.height * 0.50;
+export const FAMILY_CHILD_STEM_PREFERRED = PORTRAIT_TOP_OFFSET + PORTRAIT_FRAME_HEIGHT;
+export const FAMILY_CHILD_STEM_MIN = PORTRAIT_TOP_OFFSET + PORTRAIT_FRAME_HEIGHT * 0.55;
+export const FAMILY_PARALLEL_GAP = PORTRAIT_FRAME_HEIGHT * 0.38;
+const FAMILY_PARENT_CLEARANCE = PLAQUE.height * 0.68;
 const FAMILY_ROUTE_OVERLAP_MARGIN = PLAQUE.width * 0.12;
-const RELATIONSHIP_COLORS = Object.freeze({
-  couple: 'rgba(119,55,47,.97)',
-  descent: 'rgba(132,62,52,.97)',
-  rail: 'rgba(143,70,58,.94)',
-  railAlt: 'rgba(124,58,51,.95)',
-  railAlt2: 'rgba(153,79,63,.94)',
-  cluster: 'rgba(143,86,73,.60)',
-  halo: 'rgba(247,225,190,.50)',
+
+// Relationship type, not routing lane, owns line color. The palette stays muted
+// enough for the antique atlas while making spouse, descent and omitted-parent
+// sibling evidence distinguishable without turning the tree into bright wiring.
+export const RELATIONSHIP_COLORS = Object.freeze({
+  couple: 'rgba(94,74,55,.98)',
+  descent: 'rgba(139,67,54,.97)',
+  cluster: 'rgba(108,79,91,.90)',
+  halo: 'rgba(247,225,190,.48)',
   shadow: 'rgba(43,28,20,.42)',
 });
 
-export function siblingClusterGuide(points, railOffset = 0.58) {
+export function siblingClusterGuide(points, railOffset = FAMILY_CHILD_STEM_PREFERRED) {
   if (!Array.isArray(points) || points.length < 2) return null;
   const sorted = points
     .filter(point => Number.isFinite(point?.x) && Number.isFinite(point?.y))
@@ -80,7 +82,7 @@ export function familyLaneBand(lane = 0) {
 export function familyStemRange(generationSpan) {
   const span = Math.max(0, Number(generationSpan) || 0);
   const availableBeforeParents = Math.max(0, span - FAMILY_PARENT_CLEARANCE);
-  const emergencyMinimum = PLAQUE.height * 0.70;
+  const emergencyMinimum = PORTRAIT_TOP_OFFSET + PORTRAIT_FRAME_HEIGHT * 0.36;
   const minimum = Math.max(
     emergencyMinimum,
     Math.min(FAMILY_CHILD_STEM_MIN, availableBeforeParents || emergencyMinimum),
@@ -162,7 +164,7 @@ export function planFamilyRoutes(familyGroups, pointForId) {
       stemLength: selectedStem,
       routeSlot: selectedRouteIndex,
       railY: selectedRailY,
-      railColor: familyRailColor(selectedRouteIndex),
+      railColor: RELATIONSHIP_COLORS.descent,
     });
   });
 
@@ -563,11 +565,11 @@ export class GlobeScene {
     ctx.save();
     ctx.fillStyle = RELATIONSHIP_COLORS.halo;
     ctx.beginPath();
-    ctx.arc(q.x, q.y, 3.45, 0, Math.PI * 2);
+    ctx.arc(q.x, q.y, 3.6, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(q.x, q.y, 1.85, 0, Math.PI * 2);
+    ctx.arc(q.x, q.y, 2.05, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -597,15 +599,15 @@ export class GlobeScene {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.strokeStyle = RELATIONSHIP_COLORS.halo;
-    ctx.lineWidth = RELATIONSHIP_LINE_WIDTH + (moving ? 0.82 : 1.15);
+    ctx.lineWidth = RELATIONSHIP_LINE_WIDTH + (moving ? 0.70 : 1.05);
     strokeSegments(ctx, sampled);
     ctx.strokeStyle = stroke || RELATIONSHIP_COLORS.descent;
     ctx.lineWidth = RELATIONSHIP_LINE_WIDTH;
     if (!moving) {
       ctx.shadowColor = RELATIONSHIP_COLORS.shadow;
-      ctx.shadowBlur = 2.0;
-      ctx.shadowOffsetX = 0.5;
-      ctx.shadowOffsetY = 0.9;
+      ctx.shadowBlur = 1.8;
+      ctx.shadowOffsetX = 0.45;
+      ctx.shadowOffsetY = 0.8;
     }
     strokeSegments(ctx, sampled);
     ctx.restore();
@@ -873,13 +875,6 @@ function uniquePairs(links) {
     out.push([link.from, link.to]);
   });
   return out;
-}
-
-function familyRailColor(lane) {
-  const band = Math.abs(Number(lane) || 0) % 3;
-  if (band === 1) return RELATIONSHIP_COLORS.railAlt;
-  if (band === 2) return RELATIONSHIP_COLORS.railAlt2;
-  return RELATIONSHIP_COLORS.rail;
 }
 
 function averagePoint(points) {

@@ -29,7 +29,8 @@ const DEFAULT_GAP = 7.2;
 const MIN_GAP = 3.8;
 const OVERVIEW_GAP = 155;
 const ABSOLUTE_MAX_GAP = 520;
-export const RELATIONSHIP_LINE_WIDTH = 1.58;
+export const RELATIONSHIP_LINE_WIDTH = 3.05;
+export const ANCESTRY_STUB_LENGTH = PLAQUE.height * 1.10;
 
 // Family routes are rule-driven rather than tied to fixed lane numbers. A child
 // connector should visibly rise about one portrait-frame height above the
@@ -40,35 +41,14 @@ export const FAMILY_CHILD_STEM_MIN = PLAQUE.height * 1.05;
 export const FAMILY_PARALLEL_GAP = PLAQUE.height * 0.28;
 const FAMILY_PARENT_CLEARANCE = PLAQUE.height * 0.72;
 const FAMILY_ROUTE_OVERLAP_MARGIN = PLAQUE.width * 0.12;
-const RELATIONSHIP_COLORS = Object.freeze({
-  couple: 'rgba(119,55,47,.97)',
-  descent: 'rgba(132,62,52,.97)',
-  rail: 'rgba(143,70,58,.94)',
-  railAlt: 'rgba(124,58,51,.95)',
-  railAlt2: 'rgba(153,79,63,.94)',
-  cluster: 'rgba(143,86,73,.60)',
-  halo: 'rgba(247,225,190,.50)',
-  shadow: 'rgba(43,28,20,.42)',
+export const RELATIONSHIP_COLORS = Object.freeze({
+  couple: 'rgba(108,48,42,.98)',
+  descent: 'rgba(137,58,48,.98)',
+  rail: 'rgba(154,70,55,.97)',
+  continuation: 'rgba(158,96,80,.68)',
+  halo: 'rgba(247,225,190,.56)',
+  shadow: 'rgba(43,28,20,.44)',
 });
-
-export function siblingClusterGuide(points, railOffset = 0.58) {
-  if (!Array.isArray(points) || points.length < 2) return null;
-  const sorted = points
-    .filter(point => Number.isFinite(point?.x) && Number.isFinite(point?.y))
-    .sort((a, b) => a.x - b.x);
-  if (sorted.length < 2) return null;
-
-  const averageY = sorted.reduce((sum, point) => sum + point.y, 0) / sorted.length;
-  const railY = averageY + railOffset;
-  const minX = sorted[0].x;
-  const maxX = sorted[sorted.length - 1].x;
-  return {
-    rail: [[minX, railY], [maxX, railY]],
-    stems: sorted.map(point => [[point.x, point.y], [point.x, railY]]),
-    railY,
-    averageY,
-  };
-}
 
 export function familyLaneBand(lane = 0) {
   const index = Math.max(0, Number(lane) || 0);
@@ -162,7 +142,6 @@ export function planFamilyRoutes(familyGroups, pointForId) {
       stemLength: selectedStem,
       routeSlot: selectedRouteIndex,
       railY: selectedRailY,
-      railColor: familyRailColor(selectedRouteIndex),
     });
   });
 
@@ -491,7 +470,7 @@ export class GlobeScene {
 
   drawRelationships(camera) {
     const knownIds = new Set(this.positions.keys());
-    const { spousePairs, familyGroups, siblingClusters } = buildRelationshipGroups(
+    const { spousePairs, familyGroups, ancestryStubs } = buildRelationshipGroups(
       this.relationships,
       knownIds,
       this.people,
@@ -501,7 +480,7 @@ export class GlobeScene {
       id => this.surfaceXY(this.positions.get(id)),
     );
 
-    siblingClusters.forEach(ids => this.drawImportedSiblingCluster(ids, camera));
+    ancestryStubs.forEach(id => this.drawAncestryStub(id, camera));
     spousePairs.forEach(([a, b]) => this.drawCoupleBar(a, b, camera));
     familyRoutes.forEach(route => this.drawFamilyRoute(route, camera));
   }
@@ -515,43 +494,39 @@ export class GlobeScene {
   }
 
   drawFamilyRoute(route, camera) {
-    const { source, children, railY, minX, maxX, railColor } = route;
+    const { source, children, railY, minX, maxX } = route;
 
     this.drawSurfacePolyline(
       [[source.x, source.y], [source.x, railY]],
       camera,
-      railColor,
+      RELATIONSHIP_COLORS.descent,
     );
     this.drawSurfacePolyline(
       [[minX, railY], [maxX, railY]],
       camera,
-      railColor,
+      RELATIONSHIP_COLORS.rail,
     );
 
     children.forEach(({ point }) => {
       this.drawSurfacePolyline(
         [[point.x, railY], [point.x, point.y]],
         camera,
-        railColor,
+        RELATIONSHIP_COLORS.descent,
       );
     });
 
-    this.drawSurfaceJunction({ x: source.x, y: railY }, camera, railColor);
+    this.drawSurfaceJunction({ x: source.x, y: railY }, camera, RELATIONSHIP_COLORS.rail);
   }
 
-  drawImportedSiblingCluster(ids, camera) {
-    const members = ids
-      .map(id => this.surfaceXY(this.positions.get(id)))
-      .filter(Boolean);
-    const guide = siblingClusterGuide(members);
-    if (!guide) return;
-
-    this.drawSurfacePolyline(guide.rail, camera, RELATIONSHIP_COLORS.cluster);
-    guide.stems.forEach(stem => this.drawSurfacePolyline(
-      stem,
+  drawAncestryStub(id, camera) {
+    const point = this.surfaceXY(this.positions.get(id));
+    if (!point) return;
+    this.drawSurfacePolyline(
+      [[point.x, point.y], [point.x, point.y + ANCESTRY_STUB_LENGTH]],
       camera,
-      RELATIONSHIP_COLORS.cluster,
-    ));
+      RELATIONSHIP_COLORS.continuation,
+      RELATIONSHIP_LINE_WIDTH * 0.55,
+    );
   }
 
   drawSurfaceJunction(point, camera, color) {
@@ -563,16 +538,16 @@ export class GlobeScene {
     ctx.save();
     ctx.fillStyle = RELATIONSHIP_COLORS.halo;
     ctx.beginPath();
-    ctx.arc(q.x, q.y, 3.45, 0, Math.PI * 2);
+    ctx.arc(q.x, q.y, 4.25, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(q.x, q.y, 1.85, 0, Math.PI * 2);
+    ctx.arc(q.x, q.y, 2.35, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
-  drawSurfacePolyline(xyPoints, camera, stroke = null) {
+  drawSurfacePolyline(xyPoints, camera, stroke = null, width = RELATIONSHIP_LINE_WIDTH) {
     const sampled = [];
     const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
     const steps = moving ? 6 : 12;
@@ -597,13 +572,13 @@ export class GlobeScene {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.strokeStyle = RELATIONSHIP_COLORS.halo;
-    ctx.lineWidth = RELATIONSHIP_LINE_WIDTH + (moving ? 0.82 : 1.15);
+    ctx.lineWidth = width + (moving ? 0.95 : 1.35);
     strokeSegments(ctx, sampled);
     ctx.strokeStyle = stroke || RELATIONSHIP_COLORS.descent;
-    ctx.lineWidth = RELATIONSHIP_LINE_WIDTH;
+    ctx.lineWidth = width;
     if (!moving) {
       ctx.shadowColor = RELATIONSHIP_COLORS.shadow;
-      ctx.shadowBlur = 2.0;
+      ctx.shadowBlur = 2.2;
       ctx.shadowOffsetX = 0.5;
       ctx.shadowOffsetY = 0.9;
     }
@@ -765,17 +740,11 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
     });
   });
 
-  const peopleWithParents = new Set(parentLinks.map(link => link.to));
-  const clusters = new Map();
-  people.forEach(person => {
-    if (!isKnown(person.id) || !person.cluster || peopleWithParents.has(person.id)) return;
-    if (!['great-grandparent', 'grandparent', 'grandparent-sibling', 'one-step-sibling'].includes(person.role)) return;
-    if (!clusters.has(person.cluster)) clusters.set(person.cluster, []);
-    clusters.get(person.cluster).push(person.id);
-  });
-  const siblingClusters = [...clusters.values()]
-    .map(ids => [...new Set(ids)].sort())
-    .filter(ids => ids.length > 1);
+  const peopleWithVisibleParents = new Set(parentLinks.map(link => link.to));
+  const ancestryStubs = people
+    .filter(person => isKnown(person.id) && person.cluster && !peopleWithVisibleParents.has(person.id))
+    .map(person => person.id)
+    .sort();
 
   return {
     spousePairs,
@@ -784,7 +753,7 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
       children: [...new Set(group.children)].sort(),
     })),
     familyGroups,
-    siblingClusters,
+    ancestryStubs,
   };
 }
 
@@ -873,13 +842,6 @@ function uniquePairs(links) {
     out.push([link.from, link.to]);
   });
   return out;
-}
-
-function familyRailColor(lane) {
-  const band = Math.abs(Number(lane) || 0) % 3;
-  if (band === 1) return RELATIONSHIP_COLORS.railAlt;
-  if (band === 2) return RELATIONSHIP_COLORS.railAlt2;
-  return RELATIONSHIP_COLORS.rail;
 }
 
 function averagePoint(points) {

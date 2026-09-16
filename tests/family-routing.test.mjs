@@ -11,6 +11,7 @@ const {
   familyStemRange,
   planFamilyRoutes,
   RELATIONSHIP_LINE_WIDTH,
+  ANCESTRY_CONTINUATION_LINE_WIDTH,
   RELATIONSHIP_COLORS,
   ANCESTRY_STUB_LENGTH,
   FAMILY_CHILD_STEM_PREFERRED,
@@ -138,9 +139,13 @@ for (let index = 1; index < railYs.length; index += 1) {
   );
 }
 
-assert.ok(RELATIONSHIP_LINE_WIDTH >= 2.8 && RELATIONSHIP_LINE_WIDTH <= 3.4, 'primary relationship strokes should be roughly twice the former weight');
+assert.ok(RELATIONSHIP_LINE_WIDTH >= 3.2 && RELATIONSHIP_LINE_WIDTH <= 3.7, 'primary relationship strokes should remain intentionally bold at normal viewing distance');
+assert.ok(
+  ANCESTRY_CONTINUATION_LINE_WIDTH >= RELATIONSHIP_LINE_WIDTH * 0.85,
+  'ancestry-continuation lines may be lighter in color but must not collapse back into hairlines',
+);
 assert.notEqual(RELATIONSHIP_COLORS.couple, RELATIONSHIP_COLORS.descent, 'couple and descent relationships should remain visually distinguishable');
 assert.notEqual(RELATIONSHIP_COLORS.descent, RELATIONSHIP_COLORS.rail, 'descent stems and family rails should have related but distinct brick-red tones');
 assert.notEqual(RELATIONSHIP_COLORS.continuation, RELATIONSHIP_COLORS.rail, 'omitted-parent continuations should use their own lighter treatment');
 
-console.log('GEDCOM family routes preserve family topology, adaptive spacing, and restrained relationship-specific styling');
+console.log('GEDCOM family routes preserve family topology, adaptive spacing, and readable relationship-specific styling');

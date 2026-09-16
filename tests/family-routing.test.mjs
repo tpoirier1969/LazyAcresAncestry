@@ -141,13 +141,15 @@ assert.equal(snapped.directSingleChild, true, 'planned one-child family should m
 const manyFamilies = Array.from({ length: 6 }, (_, index) => ({
   familyId: `FX${index}`,
   parents: [`PX${index}`],
-  children: [`CX${index}`],
+  children: [`CX${index}A`, `CX${index}B`],
   lane: index,
 }));
 const manyPoints = new Map();
 manyFamilies.forEach((group, index) => {
-  manyPoints.set(group.parents[0], { x: index * 0.03, y: 5 });
-  manyPoints.set(group.children[0], { x: index * 0.03, y: 0 });
+  const center = index * 0.03;
+  manyPoints.set(group.parents[0], { x: center, y: 5 });
+  manyPoints.set(group.children[0], { x: center - 0.55, y: 0 });
+  manyPoints.set(group.children[1], { x: center + 0.55, y: 0 });
 });
 const manyRoutes = planFamilyRoutes(manyFamilies, id => manyPoints.get(id));
 assert.equal(manyRoutes.length, 6);
@@ -155,7 +157,7 @@ const railYs = manyRoutes.map(route => route.railY).sort((a, b) => a - b);
 for (let index = 1; index < railYs.length; index += 1) {
   assert.ok(
     railYs[index] - railYs[index - 1] >= FAMILY_PARALLEL_GAP * 0.75,
-    'dense overlapping routes should consume available vertical space before stacking rails nearly on top of one another',
+    'dense overlapping real-width rails should consume available vertical space before stacking nearly on top of one another',
   );
 }
 

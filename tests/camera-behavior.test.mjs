@@ -29,8 +29,11 @@ assert.equal(normal.targetYRatio, medium.targetYRatio, 'zoom must keep one stabl
 assert.equal(medium.targetYRatio, far.targetYRatio, 'wide zoom must still be centered on the focused person');
 
 assert.ok(close.dragSensitivity < normal.dragSensitivity && normal.dragSensitivity < medium.dragSensitivity && medium.dragSensitivity < far.dragSensitivity, 'panning should remain zoom-dependent and slowest during close inspection');
-assert.ok(normal.dragSensitivity < 0.00025, 'normal-view panning should remain substantially slower than v0.4.5');
-assert.ok(far.dragSensitivity <= 0.00058, 'even the far overview should stay restrained');
+assert.ok(normal.dragSensitivity < 0.00016, 'normal-view panning should stay deliberately slow enough to preserve local orientation');
+assert.ok(medium.dragSensitivity < 0.00031, 'the curved response should keep medium zoom substantially slower than the old roughly linear response');
+assert.ok(far.dragSensitivity >= 0.00056 && far.dragSensitivity <= 0.00058, 'far overview should retain useful navigation speed rather than inheriting a global slowdown');
+assert.ok(normal.speedT < 0.02, 'speed curve should remain near its slow plateau around the normal inspection view');
+assert.ok(medium.speedT > 0.30 && medium.speedT < 0.38, 'speed should rise smoothly through the middle rather than jumping');
 
 const height = 900;
 const normalCy = cameraCenterY({ height, targetYRatio: normal.targetYRatio });
@@ -38,4 +41,4 @@ const farCy = cameraCenterY({ height, targetYRatio: far.targetYRatio });
 assert.equal(normalCy, height * 0.58, 'normal focus point should use the canonical stable screen height');
 assert.equal(farCy, normalCy, 'camera principal point must not move merely because zoom changed');
 
-console.log('gradual pivoted camera angle, stable zoom focus, and canonical overview gap ok');
+console.log('gradual camera angle, curved slow-to-fast pan response, stable zoom focus, and canonical overview gap ok');

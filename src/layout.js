@@ -54,12 +54,13 @@ export function layoutSample(people, radius, relationships = []) {
   const { blocksByLevel, blockByPerson } = buildFamilyBlocks(unitsByLevel);
   connectBlockNeighbors(parentLinks, blockByPerson);
   const planar = placeFamilyBlocks(blocksByLevel, root.id, people.length);
+  centerDirectAncestorPeople(planar, people, levels);
   const rootPoint = planar.get(root.id) || { x: 0, y: 0 };
 
-  // Do not independently recenter each generation after family placement. That
-  // old cosmetic pass could pull a parent row away from the child positions the
-  // iterative family layout had just aligned, creating off-center descents such
-  // as a single child's line attaching near the edge of the parents' bar.
+  // Only the actual direct-ancestor people are centered on the ancestry spine.
+  // Collateral people in the same generation keep the positions chosen by the
+  // family layout, so a niece/nephew family cannot be dragged sideways merely
+  // because the home person's ancestor row needs centering.
   for (const person of people) {
     const point = planar.get(person.id);
     if (!point) continue;
@@ -91,9 +92,6 @@ function assignGenerations(people, rootId, parentLinks, spouseLinks) {
   seed(rootId, 0);
   propagateLevels(adjacency, levels, queue);
 
-  // Explicit generation hints are used only where the scoped proof tree omits
-  // the parents that would otherwise establish a person's generation. They do
-  // not create relationships; the GEDCOM family graph remains authoritative.
   people.forEach(person => {
     if (!levels.has(person.id) && Number.isFinite(person.generationHint)) {
       seed(person.id, person.generationHint);
@@ -416,6 +414,26 @@ function placeFamilyBlocks(blocksByLevel, rootId, peopleCount) {
     for (const point of planar.values()) point.x -= rootX;
   }
   return planar;
+}
+
+function centerDirectAncestorPeople(planar, people, levels) {
+  const idsByLevel = new Map();
+  people.forEach(person => {
+    if (!Number.isFinite(person.directAncestorDepth)) return;
+    const level = levels.get(person.id) ?? 0;
+    if (!idsByLevel.has(level)) idsByLevel.set(level, []);
+    idsByLevel.get(level).push(person.id);
+  });
+
+  idsByLevel.forEach(ids => {
+    const points = ids.map(id => planar.get(id)).filter(Boolean);
+    if (!points.length) return;
+    const anchorX = average(points.map(point => point.x));
+    ids.forEach(id => {
+      const point = planar.get(id);
+      if (point) point.x -= anchorX;
+    });
+  });
 }
 
 function packedCenters(blocks) {

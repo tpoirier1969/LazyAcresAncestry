@@ -6,7 +6,7 @@ import {
   DEFAULT_VISIBLE_PEOPLE,
   branchControlFamilies,
   descendantFamilyIds,
-  nearestPeopleIds,
+  lineageWindowIds,
   visibleIdsForExpandedFamilies,
 } from './tree-view.js';
 import {
@@ -43,7 +43,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
     this.viewTargetId = this.homeId;
     this.expandedFamilyIds.clear();
-    this.baseVisibleIds = nearestPeopleIds(
+    this.baseVisibleIds = lineageWindowIds(
       this.viewTargetId,
       this.fullPeople,
       this.fullRelationships,
@@ -141,7 +141,7 @@ export class GlobeScene extends CoreGlobeScene {
     if (!this.fullPeople.some(person => person.id === id)) return;
     this.viewTargetId = id;
     this.expandedFamilyIds.clear();
-    this.baseVisibleIds = nearestPeopleIds(
+    this.baseVisibleIds = lineageWindowIds(
       id,
       this.fullPeople,
       this.fullRelationships,
@@ -323,8 +323,7 @@ export class GlobeScene extends CoreGlobeScene {
 
     if (this.treeWindowCount) {
       const targetName = this.fullPeople.find(person => person.id === this.viewTargetId)?.name || 'target person';
-      const baseCount = Math.min(DEFAULT_VISIBLE_PEOPLE, this.fullPeople.length);
-      this.treeWindowCount.textContent = `${this.people.length.toLocaleString()} of ${this.fullPeople.length.toLocaleString()} shown · nearest ${baseCount.toLocaleString()} to ${targetName} · branch arrows reveal more`;
+      this.treeWindowCount.textContent = `${this.people.length.toLocaleString()} of ${this.fullPeople.length.toLocaleString()} shown · lineage-first around ${targetName} · cousins through 2nd · branch arrows reveal more`;
     }
   }
 

@@ -1,28 +1,28 @@
-// The bundled atlas is a neutral parchment/graticule safety layer. It contains
-// no simplified land or lake polygons, because those shapes become distracting
-// area overlays when magnified on the genealogy sphere.
+// Canonical fictional antique atlas used by the genealogy globe. It is a large
+// vector asset, so it can be rasterized sharply for larger future spheres
+// without tying the family tree to recognizable modern geography.
 export const ATLAS_TEXTURE_URL = 'assets/atlas-base.svg';
 export const ATLAS_TEXTURE_SOURCE_PAGE = '';
-export const ATLAS_TEXTURE_CREDIT = 'Bundled Lazy Acres Ancestry parchment/graticule base';
-export const ATLAS_TEXTURE_SHA1 = 'bundled-local-atlas';
+export const ATLAS_TEXTURE_CREDIT = 'Bundled Lazy Acres Ancestry fictional antique atlas';
+export const ATLAS_TEXTURE_SHA1 = 'bundled-fictional-atlas-v1';
 
-// Keep one real geographic image active at every zoom level. Use Wikimedia's
-// actual 2048px original rather than an invented thumbnail size so the relief
-// layer cannot silently fail back to parchment.
-export const ATLAS_RELIEF_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg';
-export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg/1280px-Solarsystemscope_texture_2k_earth_daymap.jpg';
-export const ATLAS_RELIEF_SOURCE_PAGE = 'https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_2k_earth_daymap.jpg';
-export const ATLAS_RELIEF_CREDIT = 'Solar System Scope, CC BY 4.0; based on NASA elevation and imagery data';
+// Keep the prior neutral parchment/graticule map in the repository as a manual
+// fallback, but use the fictional atlas itself for the detail sampler so real
+// Earth imagery cannot bleed through and make the invented geography look
+// recognizable or soft-focus.
+export const ATLAS_FALLBACK_TEXTURE_URL = 'assets/atlas-base-fallback.svg';
+export const ATLAS_RELIEF_TEXTURE_URL = 'assets/atlas-base.svg';
+export const ATLAS_RELIEF_TEXTURE_FALLBACK_URL = 'assets/atlas-base.svg';
+export const ATLAS_RELIEF_SOURCE_PAGE = '';
+export const ATLAS_RELIEF_CREDIT = 'Bundled fictional atlas detail layer';
 
-// Rectangular regional WMS layers are intentionally disabled. Their straight
-// geographic bounds read as artificial area overlays on the curved sphere and
-// could visibly change or disappear during zoom transitions. Regional detail
-// can return later only with a sphere-aware feathered mask that has no visible
-// rectangular footprint.
+// Rectangular regional WMS layers remain disabled. Their straight geographic
+// bounds are inappropriate for a fictional atlas and read as artificial areas
+// on the curved sphere.
 export const ATLAS_DETAIL_LEVELS = Object.freeze([]);
 export const ATLAS_DETAIL_FADE_MS = 300;
-export const ATLAS_DETAIL_SOURCE_PAGE = 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/';
-export const ATLAS_DETAIL_CREDIT = 'NASA Earth Observatory Blue Marble: Next Generation, reserved for future sphere-masked regional detail';
+export const ATLAS_DETAIL_SOURCE_PAGE = '';
+export const ATLAS_DETAIL_CREDIT = 'Regional real-world detail disabled for fictional atlas mode';
 const ATLAS_DETAIL_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi';
 
 export function atlasDetailLevel() {
@@ -120,8 +120,10 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+// This anchor is now only the default orientation of the fictional sphere; it
+// no longer claims to place the home person over a real-world map location.
 export const ATLAS_HOME_ANCHOR = Object.freeze({
-  latitude: 46.55,
-  longitude: -87.45,
-  label: 'Upper Peninsula, Michigan',
+  latitude: 12,
+  longitude: -28,
+  label: 'Fictional atlas home orientation',
 });

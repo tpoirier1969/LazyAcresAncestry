@@ -8,9 +8,11 @@ globalThis.ResizeObserver = globalThis.ResizeObserver || class { observe() {} };
 const {
   buildRelationshipGroups,
   familyLaneBand,
+  familyStemRange,
   planFamilyRoutes,
   RELATIONSHIP_LINE_WIDTH,
-  FAMILY_CHILD_STEM_MAX,
+  FAMILY_CHILD_STEM_PREFERRED,
+  FAMILY_CHILD_STEM_MIN,
   FAMILY_PARALLEL_GAP,
 } = await import('../src/scene.js');
 
@@ -34,7 +36,7 @@ assert.deepEqual(first.parents, ['A', 'B']);
 assert.deepEqual(first.children, ['C1', 'C2']);
 assert.deepEqual(second.parents, ['A', 'D']);
 assert.deepEqual(second.children, ['C3']);
-assert.notEqual(first.lane, second.lane, 'families sharing a parent must receive separate preferred rail lanes');
+assert.notEqual(first.lane, second.lane, 'families sharing a parent retain distinct preferred ordering');
 assert.notEqual(familyLaneBand(first.lane), familyLaneBand(second.lane));
 
 const directAndCollateral = buildRelationshipGroups([
@@ -50,6 +52,22 @@ assert.deepEqual(
   'direct ancestors and their siblings must stay on one documented family rail rather than competing routes',
 );
 
+const roomy = familyStemRange(3);
+assert.ok(
+  roomy.preferred >= FAMILY_CHILD_STEM_PREFERRED - 1e-9,
+  'normal generation spacing should place the family rail roughly one visible portrait-frame height above the child',
+);
+assert.ok(roomy.minimum <= roomy.preferred);
+assert.ok(roomy.maximum > roomy.preferred, 'roomy generations may grow the connector only when another family needs the lane');
+
+const tighter = familyStemRange(1.5);
+assert.ok(tighter.preferred < roomy.preferred, 'tight generations may compress the preferred stem instead of forcing a fixed layout');
+assert.ok(tighter.minimum <= tighter.preferred && tighter.preferred <= tighter.maximum);
+
+const roomier = familyStemRange(5);
+assert.ok(roomier.maximum > roomy.maximum, 'maximum routing distance derives from actual generation space rather than a hard-coded cap');
+assert.ok(FAMILY_CHILD_STEM_MIN < FAMILY_CHILD_STEM_PREFERRED);
+
 const points = new Map([
   ['A', { x: -2.0, y: 3.0 }],
   ['B', { x: -0.8, y: 3.0 }],
@@ -63,17 +81,39 @@ assert.equal(planned.length, 2);
 const route1 = planned.find(route => route.familyId === 'F1');
 const route2 = planned.find(route => route.familyId === 'F2');
 assert.ok(
-  Math.abs(route1.railY - route2.railY) >= FAMILY_PARALLEL_GAP * 0.75,
-  'overlapping horizontal family routes must receive visibly separate rail heights even when they already have distinct GEDCOM families',
+  Math.abs(route1.railY - route2.railY) >= FAMILY_PARALLEL_GAP * 0.90,
+  'overlapping horizontal family routes must receive comfortably separate rail heights',
 );
-for (const route of planned) {
-  for (const child of route.children) {
-    assert.ok(
-      Math.abs(route.railY - child.point.y) <= FAMILY_CHILD_STEM_MAX + 1e-9,
-      'a child drop may not exceed one portrait-frame height',
-    );
-  }
+assert.ok(
+  planned.some(route => Math.abs(route.stemLength - route.stemRange.preferred) < 1e-6),
+  'at least one unconstrained route should use the preferred portrait-relative stem length',
+);
+assert.ok(
+  planned.some(route => route.stemLength > route.stemRange.preferred),
+  'a colliding family route should grow only as much as needed to make room',
+);
+
+const manyFamilies = Array.from({ length: 6 }, (_, index) => ({
+  familyId: `FX${index}`,
+  parents: [`PX${index}`],
+  children: [`CX${index}`],
+  lane: index,
+}));
+const manyPoints = new Map();
+manyFamilies.forEach((group, index) => {
+  manyPoints.set(group.parents[0], { x: 0, y: 5 });
+  manyPoints.set(group.children[0], { x: index * 0.02, y: 0 });
+});
+const manyRoutes = planFamilyRoutes(manyFamilies, id => manyPoints.get(id));
+assert.equal(manyRoutes.length, 6);
+const railYs = manyRoutes.map(route => route.railY).sort((a, b) => a - b);
+for (let index = 1; index < railYs.length; index += 1) {
+  assert.ok(
+    railYs[index] - railYs[index - 1] >= FAMILY_PARALLEL_GAP * 0.90,
+    'routing must allocate as many separated lanes as the family geometry requires, not a fixed slot count',
+  );
 }
+
 assert.ok(RELATIONSHIP_LINE_WIDTH > 1 && RELATIONSHIP_LINE_WIDTH < 2, 'all relationship segments should use one restrained screen-space stroke width');
 
-console.log('GEDCOM family routes stay separated, compact, and uniformly weighted');
+console.log('GEDCOM family routes adapt to portrait size, available generation space, and actual family complexity');

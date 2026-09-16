@@ -30,11 +30,16 @@ const MIN_GAP = 3.8;
 const OVERVIEW_GAP = 155;
 const ABSOLUTE_MAX_GAP = 520;
 export const RELATIONSHIP_LINE_WIDTH = 1.58;
-export const FAMILY_CHILD_STEM_MAX = PLAQUE.height;
-export const FAMILY_PARALLEL_GAP = 0.24;
-const FAMILY_CHILD_STEM_BASE = 0.30;
-const FAMILY_ROUTE_OVERLAP_MARGIN = 0.12;
-const FAMILY_ROUTE_SLOT_COUNT = 4;
+
+// Family routes are rule-driven rather than tied to fixed lane numbers. A child
+// connector should visibly rise about one portrait-frame height above the
+// portrait before it turns into the horizontal family rail. More vertical room
+// is used only when another documented family route needs it.
+export const FAMILY_CHILD_STEM_PREFERRED = PLAQUE.height * 1.45;
+export const FAMILY_CHILD_STEM_MIN = PLAQUE.height * 1.05;
+export const FAMILY_PARALLEL_GAP = PLAQUE.height * 0.28;
+const FAMILY_PARENT_CLEARANCE = PLAQUE.height * 0.72;
+const FAMILY_ROUTE_OVERLAP_MARGIN = PLAQUE.width * 0.12;
 const RELATIONSHIP_COLORS = Object.freeze({
   couple: 'rgba(119,55,47,.97)',
   descent: 'rgba(132,62,52,.97)',
@@ -72,6 +77,23 @@ export function familyLaneBand(lane = 0) {
   return index % 2 ? magnitude : -magnitude;
 }
 
+export function familyStemRange(generationSpan) {
+  const span = Math.max(0, Number(generationSpan) || 0);
+  const availableBeforeParents = Math.max(0, span - FAMILY_PARENT_CLEARANCE);
+  const emergencyMinimum = PLAQUE.height * 0.70;
+  const minimum = Math.max(
+    emergencyMinimum,
+    Math.min(FAMILY_CHILD_STEM_MIN, availableBeforeParents || emergencyMinimum),
+  );
+  const preferred = Math.max(
+    minimum,
+    Math.min(FAMILY_CHILD_STEM_PREFERRED, availableBeforeParents || minimum),
+  );
+  const maximum = Math.max(preferred, availableBeforeParents);
+
+  return { minimum, preferred, maximum };
+}
+
 export function planFamilyRoutes(familyGroups, pointForId) {
   const candidates = [];
 
@@ -89,6 +111,8 @@ export function planFamilyRoutes(familyGroups, pointForId) {
     const childAnchorY = direction > 0 ? Math.min(...childYs) : Math.max(...childYs);
     const minX = Math.min(source.x, ...children.map(entry => entry.point.x));
     const maxX = Math.max(source.x, ...children.map(entry => entry.point.x));
+    const generationSpan = Math.abs(source.y - childAnchorY);
+    const stemRange = familyStemRange(generationSpan);
 
     candidates.push({
       ...group,
@@ -98,12 +122,14 @@ export function planFamilyRoutes(familyGroups, pointForId) {
       childAnchorY,
       minX,
       maxX,
-      preferredSlot: Math.max(0, Number(group.lane) || 0) % FAMILY_ROUTE_SLOT_COUNT,
+      generationSpan,
+      stemRange,
     });
   });
 
   candidates.sort((a, b) => (
     a.childAnchorY - b.childAnchorY
+    || (Number(a.lane) || 0) - (Number(b.lane) || 0)
     || a.minX - b.minX
     || a.maxX - b.maxX
     || String(a.familyId).localeCompare(String(b.familyId))
@@ -111,32 +137,32 @@ export function planFamilyRoutes(familyGroups, pointForId) {
 
   const planned = [];
   candidates.forEach(route => {
-    const slotOrder = [
-      route.preferredSlot,
-      ...Array.from({ length: FAMILY_ROUTE_SLOT_COUNT }, (_, index) => index)
-        .filter(index => index !== route.preferredSlot),
-    ];
+    const stemLengths = familyStemCandidates(route.stemRange);
+    let selectedStem = stemLengths[0];
+    let selectedRailY = railYForStem(route, selectedStem);
+    let selectedRouteIndex = 0;
 
-    let selectedSlot = slotOrder[0];
-    let selectedRailY = railYForSlot(route, selectedSlot);
-    for (const slot of slotOrder) {
-      const railY = railYForSlot(route, slot);
+    for (let index = 0; index < stemLengths.length; index += 1) {
+      const stemLength = stemLengths[index];
+      const railY = railYForStem(route, stemLength);
       const conflict = planned.some(other => (
         intervalsOverlap(route.minX, route.maxX, other.minX, other.maxX, FAMILY_ROUTE_OVERLAP_MARGIN)
-        && Math.abs(railY - other.railY) < FAMILY_PARALLEL_GAP * 0.78
+        && Math.abs(railY - other.railY) < FAMILY_PARALLEL_GAP * 0.92
       ));
       if (!conflict) {
-        selectedSlot = slot;
+        selectedStem = stemLength;
         selectedRailY = railY;
+        selectedRouteIndex = index;
         break;
       }
     }
 
     planned.push({
       ...route,
-      routeSlot: selectedSlot,
+      stemLength: selectedStem,
+      routeSlot: selectedRouteIndex,
       railY: selectedRailY,
-      railColor: familyRailColor(selectedSlot),
+      railColor: familyRailColor(selectedRouteIndex),
     });
   });
 
@@ -762,11 +788,32 @@ export function buildRelationshipGroups(relationships, knownIds = null, people =
   };
 }
 
-function railYForSlot(route, slot) {
-  const stemLength = Math.min(
-    FAMILY_CHILD_STEM_MAX,
-    FAMILY_CHILD_STEM_BASE + Math.max(0, slot) * FAMILY_PARALLEL_GAP,
-  );
+function familyStemCandidates(range) {
+  const values = [range.preferred];
+
+  for (
+    let length = range.preferred + FAMILY_PARALLEL_GAP;
+    length <= range.maximum + 1e-9;
+    length += FAMILY_PARALLEL_GAP
+  ) {
+    values.push(Math.min(length, range.maximum));
+  }
+
+  for (
+    let length = range.preferred - FAMILY_PARALLEL_GAP;
+    length >= range.minimum - 1e-9;
+    length -= FAMILY_PARALLEL_GAP
+  ) {
+    values.push(Math.max(length, range.minimum));
+  }
+
+  if (!values.some(value => Math.abs(value - range.maximum) < 1e-9)) values.push(range.maximum);
+  if (!values.some(value => Math.abs(value - range.minimum) < 1e-9)) values.push(range.minimum);
+
+  return [...new Set(values.map(value => Math.round(value * 1000000) / 1000000))];
+}
+
+function railYForStem(route, stemLength) {
   return route.childAnchorY + route.direction * stemLength;
 }
 

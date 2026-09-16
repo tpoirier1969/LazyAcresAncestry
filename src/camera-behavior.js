@@ -8,11 +8,16 @@ export function normalizedLogZoom(gap, minGap, maxGap) {
 export function cameraBehavior(gap, minGap, maxGap) {
   const zoomT = normalizedLogZoom(gap, minGap, maxGap);
   const angleT = smootherstep(zoomT);
-  const speedT = smoothstep(zoomT);
+  // Keep close and medium inspection deliberately slow, then let speed rise
+  // more strongly toward the wide overview. This prevents a modest drag from
+  // throwing the user away from the family they were inspecting without making
+  // large-scale navigation painfully slow.
+  const speedT = Math.pow(smootherstep(zoomT), 1.55);
 
   return {
     zoomT,
     angleT,
+    speedT,
     // Camera pitch is applied around the front/focused surface point, not by
     // rotating the globe underneath it. The person therefore stays put while
     // the horizon and visible amount of sphere change continuously.
@@ -20,21 +25,16 @@ export function cameraBehavior(gap, minGap, maxGap) {
     // Zoom itself must not masquerade as panning. The canonical focused point
     // keeps one stable screen height throughout the zoom range.
     targetYRatio: 0.58,
-    // Rotation stays deliberately restrained at every zoom level. Wide views
-    // are a little quicker than close inspection, but never become twitchy.
-    dragSensitivity: lerp(0.00018, 0.00058, speedT),
-    motionEase: lerp(0.070, 0.100, speedT),
-    focusDuration: lerp(1280, 1050, speedT),
+    // The upper bound stays unchanged for broad navigation, but the curved
+    // response makes the close and medium ranges substantially less twitchy.
+    dragSensitivity: lerp(0.00014, 0.00058, speedT),
+    motionEase: lerp(0.064, 0.100, speedT),
+    focusDuration: lerp(1320, 1050, speedT),
   };
 }
 
 export function cameraCenterY({ height, targetYRatio }) {
   return height * targetYRatio;
-}
-
-function smoothstep(t) {
-  const x = clamp(t, 0, 1);
-  return x * x * (3 - 2 * x);
 }
 
 function smootherstep(t) {

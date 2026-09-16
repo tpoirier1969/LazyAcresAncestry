@@ -124,4 +124,33 @@ assert.ok(familyGap >= LAYOUT_GAPS.BETWEEN_FAMILY_GAP - 0.05, 'children from two
 close(Math.abs(multiXY('C1').x - multiXY('C2').x), LAYOUT_GAPS.SIBLING_GAP, 'siblings in F1 should use sibling spacing');
 close(Math.abs(multiXY('C3').x - multiXY('C4').x), LAYOUT_GAPS.SIBLING_GAP, 'siblings in F2 should use sibling spacing');
 
-console.log('GEDCOM family-block multi-generation layout ok');
+const collateralPeople = [
+  { id: 'HOME', name: 'Home', role: 'root', branch: 'center', directAncestorDepth: 0, birth: { date: '1969' } },
+  { id: 'DAD', name: 'Dad', role: 'parent', branch: 'paternal', directAncestorDepth: 1, birth: { date: '1940' } },
+  { id: 'MOM', name: 'Mom', role: 'parent', branch: 'maternal', directAncestorDepth: 1, birth: { date: '1942' } },
+  { id: 'UNCLE', name: 'Collateral Parent', role: 'one-step-sibling', branch: 'paternal', generationHint: 1, cluster: 'FOLDER', birth: { date: '1937' } },
+  { id: 'AUNT', name: 'Collateral Spouse', role: 'one-step-spouse', branch: 'paternal', generationHint: 1, birth: { date: '1942' } },
+  { id: 'CHILD', name: 'Collateral Child', role: 'one-step-child', branch: 'paternal', generationHint: 0, cluster: 'FCOLL', birth: { date: '1965' } },
+  { id: 'NEIGHBOR', name: 'Neighboring Cousin', role: 'one-step-child', branch: 'paternal', generationHint: 0, cluster: 'FOTHER', birth: { date: '1967' } },
+];
+const collateralRelationships = [
+  { type: 'spouse', from: 'DAD', to: 'MOM', familyId: 'FHOME' },
+  { type: 'parent', from: 'DAD', to: 'HOME', familyId: 'FHOME' },
+  { type: 'parent', from: 'MOM', to: 'HOME', familyId: 'FHOME' },
+  { type: 'spouse', from: 'UNCLE', to: 'AUNT', familyId: 'FCOLL' },
+  { type: 'parent', from: 'UNCLE', to: 'CHILD', familyId: 'FCOLL' },
+  { type: 'parent', from: 'AUNT', to: 'CHILD', familyId: 'FCOLL' },
+];
+const collateralPositions = layoutSample(collateralPeople, radius, collateralRelationships);
+const collateralXY = id => inverse(collateralPositions.get(id));
+const collateralParentMidpoint = (collateralXY('UNCLE').x + collateralXY('AUNT').x) / 2;
+assert.ok(
+  Math.abs(collateralParentMidpoint - collateralXY('CHILD').x) < 0.08,
+  'centering the direct ancestry spine must not pull a collateral single-child family away from its parents',
+);
+assert.ok(
+  Math.abs((collateralXY('DAD').x + collateralXY('MOM').x) / 2) < 0.02,
+  'direct parents should remain centered on the home ancestry spine without moving collateral families',
+);
+
+console.log('GEDCOM family-block layout preserves separate families and centered collateral single-child descents');

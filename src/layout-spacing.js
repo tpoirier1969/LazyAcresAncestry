@@ -26,15 +26,31 @@ export function spreadFamilyLayout(positions, people, relationships, radius) {
 
   const spouseAdjacency = buildSpouseAdjacency(relationships);
   const originFamily = buildOriginFamilyMap(relationships);
+  const parentingFamilies = buildParentingFamilyMap(relationships);
+  const childrenByFamily = buildChildrenByFamilyMap(relationships);
 
-  rowIds.forEach(ids => {
+  // Lay out younger rows before their parents. A parent/couple block can then
+  // center itself over its own recorded children instead of being packed into
+  // one wide sibling block with an aunt/uncle family beside it. That prevents
+  // collateral family connectors from visually masquerading as extra parents.
+  const rows = [...rowIds.entries()].sort((a, b) => Number(a[0]) - Number(b[0]));
+  rows.forEach(([, ids]) => {
     if (ids.length < 2) return;
     const anchorIds = ids.filter(id => Number.isFinite(byId.get(id)?.directAncestorDepth));
     const anchorBefore = anchorIds.length
       ? average(anchorIds.map(id => planar.get(id).x))
       : null;
     const rowSet = new Set(ids);
-    const components = buildSpouseComponents(ids, rowSet, spouseAdjacency, planar, byId, originFamily);
+    const components = buildSpouseComponents(
+      ids,
+      rowSet,
+      spouseAdjacency,
+      planar,
+      byId,
+      originFamily,
+      parentingFamilies,
+      childrenByFamily,
+    );
     const blocks = buildOriginBlocks(components);
     if (!blocks.length) return;
 
@@ -94,7 +110,37 @@ function buildOriginFamilyMap(relationships) {
   return result;
 }
 
-function buildSpouseComponents(ids, rowSet, spouseAdjacency, planar, byId, originFamily) {
+function buildParentingFamilyMap(relationships) {
+  const result = new Map();
+  (relationships || []).forEach(link => {
+    if (link.type !== 'parent' || !link.familyId) return;
+    if (!result.has(link.from)) result.set(link.from, new Set());
+    result.get(link.from).add(String(link.familyId));
+  });
+  return result;
+}
+
+function buildChildrenByFamilyMap(relationships) {
+  const result = new Map();
+  (relationships || []).forEach(link => {
+    if (link.type !== 'parent' || !link.familyId) return;
+    const familyId = String(link.familyId);
+    if (!result.has(familyId)) result.set(familyId, new Set());
+    result.get(familyId).add(link.to);
+  });
+  return result;
+}
+
+function buildSpouseComponents(
+  ids,
+  rowSet,
+  spouseAdjacency,
+  planar,
+  byId,
+  originFamily,
+  parentingFamilies,
+  childrenByFamily,
+) {
   const visited = new Set();
   const components = [];
   [...ids].sort((a, b) => planar.get(a).x - planar.get(b).x).forEach(startId => {
@@ -115,18 +161,40 @@ function buildSpouseComponents(ids, rowSet, spouseAdjacency, planar, byId, origi
     const layout = spouseComponentLayout(discovered, spouseAdjacency, planar);
     const members = layout.members;
     const lineageMember = [...members].sort((a, b) => lineagePriority(byId.get(a)) - lineagePriority(byId.get(b)))[0];
-    const familyKey = originFamily.get(lineageMember)
-      || members.map(id => byId.get(id)?.cluster).find(Boolean)
-      || `unit:${members.join('|')}`;
+    const parentingFamilyIds = parentingFamilyIdsForMembers(members, parentingFamilies);
+    const familyKey = parentingFamilyIds.length
+      ? `parenting:${parentingFamilyIds.join('|')}`
+      : originFamily.get(lineageMember)
+        || members.map(id => byId.get(id)?.cluster).find(Boolean)
+        || `unit:${members.join('|')}`;
+    const childCenter = childFamilyCenter(parentingFamilyIds, childrenByFamily, planar);
     components.push({
       members,
       offsets: layout.offsets,
       familyKey,
-      desiredCenter: layout.desiredCenter,
+      desiredCenter: Number.isFinite(childCenter) ? childCenter : layout.desiredCenter,
       width: layout.width,
     });
   });
   return components;
+}
+
+function parentingFamilyIdsForMembers(members, parentingFamilies) {
+  const ids = new Set();
+  members.forEach(id => {
+    for (const familyId of parentingFamilies.get(id) || []) ids.add(String(familyId));
+  });
+  return [...ids].sort();
+}
+
+function childFamilyCenter(familyIds, childrenByFamily, planar) {
+  if (!familyIds.length) return null;
+  const childIds = new Set();
+  familyIds.forEach(familyId => {
+    for (const childId of childrenByFamily.get(familyId) || []) childIds.add(childId);
+  });
+  const xs = [...childIds].map(id => planar.get(id)?.x).filter(Number.isFinite);
+  return xs.length ? average(xs) : null;
 }
 
 function spouseComponentLayout(ids, spouseAdjacency, planar) {

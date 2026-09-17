@@ -85,6 +85,12 @@ export function buildSphereMesh(longitudeSegments = 360, latitudeSegments = 180)
   };
 }
 
+export function embeddedRasterSource(svgText) {
+  if (typeof svgText !== 'string') return null;
+  const match = svgText.match(/<image\b[^>]*\bhref=["'](data:image\/(?:jpeg|jpg|png|webp);base64,[^"']+)["']/i);
+  return match?.[1] || null;
+}
+
 export class GlobeWebGLRenderer {
   constructor(canvas, textureUrl, onReady = null) {
     this.canvas = canvas;
@@ -103,6 +109,7 @@ export class GlobeWebGLRenderer {
     });
     this.available = Boolean(this.gl);
     this.ready = false;
+    this.textureError = null;
 
     if (!this.available) return;
 
@@ -155,24 +162,43 @@ export class GlobeWebGLRenderer {
     gl.frontFace(gl.CW);
   }
 
-  loadTexture() {
-    const image = new Image();
-    image.decoding = 'async';
-    image.crossOrigin = 'anonymous';
-    image.addEventListener('load', () => {
-      if (!this.available) return;
-      const gl = this.gl;
-      gl.bindTexture(gl.TEXTURE_2D, this.texture);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, ATLAS_FLIP_Y);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-      configureTextureQuality(gl, image);
-      this.ready = true;
-      this.onReady?.();
-    }, { once: true });
-    image.addEventListener('error', () => {
-      console.error('Atlas base texture failed to load', this.textureUrl);
-    }, { once: true });
-    image.src = this.textureUrl;
+  async loadTexture() {
+    const candidates = await textureSourceCandidates(this.textureUrl);
+    let lastError = null;
+
+    for (const source of candidates) {
+      try {
+        const image = await loadImage(source);
+        this.uploadTexture(image);
+        this.ready = true;
+        this.textureError = null;
+        this.onReady?.();
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    this.textureError = lastError || new Error('Unknown atlas texture load failure');
+    console.error('Atlas base texture failed to load', this.textureUrl, this.textureError);
+    this.onReady?.();
+  }
+
+  uploadTexture(image) {
+    if (!this.available) throw new Error('WebGL renderer is not available');
+    const gl = this.gl;
+    clearGlErrors(gl);
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, ATLAS_FLIP_Y);
+
+    const source = textureUploadSource(gl, image);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    configureTextureQuality(gl, source);
+
+    const error = gl.getError();
+    if (error !== gl.NO_ERROR) {
+      throw new Error(`WebGL rejected atlas texture upload (error ${error})`);
+    }
   }
 
   resize(cssWidth, cssHeight, dpr) {
@@ -237,6 +263,57 @@ export function atlasUvBounds(bounds) {
     right: (bounds.east + 180) / 360,
     bottom: (90 - bounds.south) / 180,
   };
+}
+
+async function textureSourceCandidates(textureUrl) {
+  const sources = [];
+
+  if (/\.svg(?:$|[?#])/i.test(textureUrl)) {
+    try {
+      const response = await fetch(textureUrl, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Atlas SVG request failed with HTTP ${response.status}`);
+      const svgText = await response.text();
+      const embedded = embeddedRasterSource(svgText);
+      if (embedded) sources.push(embedded);
+    } catch (error) {
+      console.warn('Unable to inspect atlas SVG wrapper; trying it directly', error);
+    }
+  }
+
+  sources.push(textureUrl);
+  return [...new Set(sources)];
+}
+
+function loadImage(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.addEventListener('load', () => resolve(image), { once: true });
+    image.addEventListener('error', () => reject(new Error(`Unable to decode atlas image source: ${source.startsWith('data:') ? 'embedded raster' : source}`)), { once: true });
+    image.src = source;
+  });
+}
+
+function textureUploadSource(gl, image) {
+  const width = image.naturalWidth || image.width || 1;
+  const height = image.naturalHeight || image.height || 1;
+  const maximum = Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || Math.max(width, height);
+  if (width <= maximum && height <= maximum) return image;
+
+  const scale = Math.min(maximum / width, maximum / height);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.floor(width * scale));
+  canvas.height = Math.max(1, Math.floor(height * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Unable to create atlas downsampling canvas');
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+function clearGlErrors(gl) {
+  while (gl.getError() !== gl.NO_ERROR) {
+    // Drain stale WebGL errors so the texture upload can be validated itself.
+  }
 }
 
 function inverseRotatePoint(point, yaw, pitch) {
@@ -421,11 +498,6 @@ varying vec3 vNormal;
 
 void main() {
   vec4 source = texture2D(uAtlas, vUv);
-
-  // The rendered atlas is the sphere surface. Do not repaint it with generated
-  // parchment, synthetic graticules, labels, grain, relief, or land/sea colors.
-  // Lighting only darkens the far edge slightly so the flat artwork still reads
-  // as wrapped around a sphere.
   float facing = clamp(-vNormal.z, 0.0, 1.0);
   float sphereShade = 0.90 + 0.10 * pow(facing, 0.45);
   gl_FragColor = vec4(clamp(source.rgb * sphereShade, 0.0, 1.0), source.a);

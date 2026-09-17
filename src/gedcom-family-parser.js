@@ -213,8 +213,39 @@ export function parseGedcomFamilies(text) {
     }
   });
 
+  // FAMC may legitimately occur more than once for biological, adoptive,
+  // foster, guardian, or other household relationships. Keep every source
+  // link, but put the best-supported ancestry family first so legacy consumers
+  // that expect one family of origin do not accidentally promote a collateral
+  // household into the direct ancestry spine.
+  for (const individual of individuals.values()) {
+    individual.famc = orderedFamiliesOfOrigin(individual);
+  }
+
   const relationships = buildRelationships(individuals, families, warnings);
   return { individuals, families, sources, relationships, warnings };
+}
+
+function pedigreeRank(value) {
+  const pedigree = String(value || '').trim().toLowerCase();
+  if (['birth', 'biological', 'natural'].includes(pedigree)) return 0;
+  if (!pedigree) return 1;
+  if (pedigree === 'adopted') return 2;
+  if (pedigree === 'foster') return 3;
+  if (pedigree === 'sealing') return 4;
+  if (['guardian', 'step', 'other'].includes(pedigree)) return 5;
+  return 4;
+}
+
+export function orderedFamiliesOfOrigin(individual) {
+  return (individual?.famc || [])
+    .map((entry, sourceOrder) => ({ ...entry, sourceOrder }))
+    .sort((a, b) => pedigreeRank(a.pedigree) - pedigreeRank(b.pedigree) || a.sourceOrder - b.sourceOrder)
+    .map(({ sourceOrder, ...entry }) => entry);
+}
+
+export function primaryFamilyOfOrigin(individual) {
+  return orderedFamiliesOfOrigin(individual)[0]?.familyId || null;
 }
 
 function childPedigree(individual, familyId) {
@@ -241,8 +272,12 @@ function buildRelationships(individuals, families, warnings) {
         continue;
       }
       const pedigree = childPedigree(child, family.id);
+      const primaryFamilyId = primaryFamilyOfOrigin(child);
+      const relationshipType = !primaryFamilyId || primaryFamilyId === family.id
+        ? 'parent'
+        : 'alternate-parent';
       for (const parentId of parents) {
-        relationships.push({ type: 'parent', from: parentId, to: childId, familyId: family.id, pedigree });
+        relationships.push({ type: relationshipType, from: parentId, to: childId, familyId: family.id, pedigree });
       }
     }
   }

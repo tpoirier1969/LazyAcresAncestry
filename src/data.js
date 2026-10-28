@@ -1,5 +1,5 @@
 import { SAMPLE_PORTRAITS } from './sample-portraits.js';
-import { parseGedcomFamilies, validateGedcomFamilyGraph } from './gedcom-family-parser.js';
+import { parseGedcomFamilies, savedRecordsForIndividual, validateGedcomFamilyGraph } from './gedcom-family-parser.js';
 import { buildProofFamily } from './proof-family.js';
 
 const GEDCOM_PATH = 'Poirier - Hillman - Kauppila - Eilola - Bucco - Sortonen - Perreault - Stella families..ged';
@@ -27,6 +27,10 @@ function attachPortraits(family) {
   return family;
 }
 
+function relationshipKey(link) {
+  return `${link.type}|${link.familyId || ''}|${link.from}|${link.to}`;
+}
+
 function includeCompleteGedcom(proof, parsed) {
   const existing = new Set(proof.people.map(person => person.id));
   for (const [id, individual] of parsed.individuals) {
@@ -49,12 +53,16 @@ function includeCompleteGedcom(proof, parsed) {
       rawGedcom: {
         gedcom_name: individual.name || '',
         alternate_names: individual.alternateNames || [],
-        saved_records: [],
+        saved_records: savedRecordsForIndividual(individual, parsed.sources),
       },
     });
   }
   // Preserve every original GEDCOM relationship and marriage family.
-  proof.relationships = parsed.relationships.map(link => ({ ...link }));
+  const annotatedLinks = new Map(proof.relationships.map(link => [relationshipKey(link), link]));
+  proof.relationships = parsed.relationships.map(link => ({
+    ...link,
+    ...(annotatedLinks.get(relationshipKey(link))?.pedigree === 'adopted' ? { pedigree: 'adopted' } : {}),
+  }));
   proof.families = [...parsed.families.values()].map(family => ({
     id: family.id,
     husb: family.husb || null,

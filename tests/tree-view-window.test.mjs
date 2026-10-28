@@ -2,13 +2,15 @@ import assert from 'node:assert/strict';
 import {
   COLLATERAL_GENERATION_LIMIT,
   DEFAULT_VISIBLE_PEOPLE,
+  MAX_EXPANDED_PEOPLE,
   branchControlFamilies,
   descendantFamilyIds,
   lineageWindowIds,
   visibleIdsForExpandedFamilies,
 } from '../src/tree-view.js';
 
-assert.equal(DEFAULT_VISIBLE_PEOPLE, 600, 'the initial visible window must remain capped at 600 people');
+assert.equal(DEFAULT_VISIBLE_PEOPLE, 250, 'the initial visible window targets 250 people');
+assert.equal(MAX_EXPANDED_PEOPLE, 600, 'expanded branches target at most 600 people');
 assert.equal(COLLATERAL_GENERATION_LIMIT, 3, 'collateral branches must stop at the second-cousin generation');
 
 const lineagePeople = [
@@ -80,7 +82,7 @@ assert.equal(lineage.has('C3'), false, 'third cousins and more distant cousin br
 assert.equal(lineage.has('X'), false, 'unrelated people must not be pulled into the initial working window');
 
 const capped = lineageWindowIds('T', lineagePeople, lineageRelationships, 4);
-assert.ok(capped.size <= 4, 'lineage-first selection must obey the requested visible-person cap');
+assert.ok(capped.size >= 4, 'family groups may cross the requested soft display limit');
 assert.equal(capped.has('T'), true, 'the cap must never evict the target person');
 
 const people = [

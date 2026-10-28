@@ -17,14 +17,38 @@ export function lineageWindowIds(targetId, people = [], relationships = [], limi
   const vertical = new Set([...ancestors.keys(), ...descendants.keys()]);
 
   const visible = new Set();
+  // A soft budget: never split a nuclear family just to hit a round number.
+  // The budget applies between groups, not between siblings or spouses.
   const add = id => {
-    if (!id || !knownIds.has(id) || visible.has(id) || visible.size >= requestedLimit) return false;
+    if (!id || !knownIds.has(id) || visible.has(id)) return false;
     visible.add(id);
     return true;
   };
+  const familyGroups = familyExpansionGroups(knownIds, relationships);
+  const familiesByChild = new Map();
+  for (const family of familyGroups.values()) {
+    for (const childId of family.childIds) {
+      if (!familiesByChild.has(childId)) familiesByChild.set(childId, []);
+      familiesByChild.get(childId).push(family);
+    }
+  }
+  const addGroup = ids => {
+    const group = new Set(ids.filter(id => knownIds.has(id)));
+    for (const id of [...group]) for (const spouseId of spouses.get(id) || []) group.add(spouseId);
+    if (visible.size >= requestedLimit && ![...group].some(id => visible.has(id))) return false;
+    for (const id of group) add(id);
+    return true;
+  };
+  const addWithSiblings = id => {
+    const group = new Set([id]);
+    for (const family of familiesByChild.get(id) || []) {
+      family.parentIds.forEach(parentId => group.add(parentId));
+      family.childIds.forEach(childId => group.add(childId));
+    }
+    return addGroup([...group]);
+  };
 
-  add(target);
-  for (const spouseId of sortedIds(spouses.get(target) || [])) add(spouseId);
+  addWithSiblings(target);
 
   const verticalEntries = [];
   for (const [id, depth] of ancestors) {
@@ -34,12 +58,12 @@ export function lineageWindowIds(targetId, people = [], relationships = [], limi
     if (id !== target) verticalEntries.push({ id, depth, direction: 1 });
   }
   verticalEntries.sort((a, b) => a.depth - b.depth || a.direction - b.direction || a.id.localeCompare(b.id));
-  for (const entry of verticalEntries) add(entry.id);
+  for (const entry of verticalEntries) addWithSiblings(entry.id);
 
   // Keep spouses/co-parents attached to the vertical spine before spending
   // the remaining display budget on collateral branches.
   for (const entry of verticalEntries) {
-    for (const spouseId of sortedIds(spouses.get(entry.id) || [])) add(spouseId);
+    if (visible.has(entry.id)) addGroup([entry.id]);
   }
 
   const collateral = new Map();
@@ -66,7 +90,7 @@ export function lineageWindowIds(targetId, people = [], relationships = [], limi
     || a.candidateDepth - b.candidateDepth
     || a.id.localeCompare(b.id));
 
-  for (const entry of collateralEntries) add(entry.id);
+  for (const entry of collateralEntries) addWithSiblings(entry.id);
   for (const entry of collateralEntries) {
     for (const spouseId of sortedIds(spouses.get(entry.id) || [])) add(spouseId);
   }

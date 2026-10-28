@@ -1,10 +1,11 @@
-export const DEFAULT_VISIBLE_PEOPLE = 600;
+export const DEFAULT_VISIBLE_PEOPLE = 250;
+export const MAX_EXPANDED_PEOPLE = 600;
 export const COLLATERAL_GENERATION_LIMIT = 3;
 
 export function lineageWindowIds(targetId, people = [], relationships = [], limit = DEFAULT_VISIBLE_PEOPLE) {
   const byId = new Map(people.map(person => [person.id, person]));
   const knownIds = new Set(byId.keys());
-  const requestedLimit = Math.max(1, Math.floor(Number(limit) || DEFAULT_VISIBLE_PEOPLE));
+  const requestedLimit = Math.min(MAX_EXPANDED_PEOPLE, Math.max(1, Math.floor(Number(limit) || DEFAULT_VISIBLE_PEOPLE)));
   const target = byId.has(targetId)
     ? targetId
     : people.find(person => person.role === 'root')?.id || people[0]?.id || null;
@@ -91,9 +92,6 @@ export function lineageWindowIds(targetId, people = [], relationships = [], limi
     || a.id.localeCompare(b.id));
 
   for (const entry of collateralEntries) addWithSiblings(entry.id);
-  for (const entry of collateralEntries) {
-    for (const spouseId of sortedIds(spouses.get(entry.id) || [])) add(spouseId);
-  }
 
   return visible;
 }
@@ -104,6 +102,7 @@ export function visibleIdsForExpandedFamilies(baseVisibleIds, expandedFamilyIds,
   const expanded = expandedFamilyIds instanceof Set ? expandedFamilyIds : new Set(expandedFamilyIds || []);
   const families = familyExpansionGroups(knownIds, relationships);
   const spouses = spouseNeighbors(knownIds, relationships);
+  const maxVisible = Math.max(MAX_EXPANDED_PEOPLE, visible.size);
 
   let changed = true;
   while (changed) {
@@ -111,11 +110,14 @@ export function visibleIdsForExpandedFamilies(baseVisibleIds, expandedFamilyIds,
     for (const familyId of expanded) {
       const family = families.get(familyId);
       if (!family || !family.parentIds.some(id => visible.has(id))) continue;
-      for (const parentId of family.parentIds) changed = addVisible(visible, parentId) || changed;
-      for (const childId of family.childIds) {
-        changed = addVisible(visible, childId) || changed;
-        for (const spouseId of spouses.get(childId) || []) changed = addVisible(visible, spouseId) || changed;
+      const group = new Set([...family.parentIds, ...family.childIds]);
+      for (const personId of [...group]) {
+        for (const spouseId of spouses.get(personId) || []) group.add(spouseId);
       }
+      const newIds = [...group].filter(id => !visible.has(id));
+      // Preserve complete family groups, even when the last expansion crosses 600.
+      if (visible.size >= maxVisible && newIds.length) continue;
+      for (const personId of newIds) changed = addVisible(visible, personId) || changed;
     }
   }
 

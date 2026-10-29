@@ -34,6 +34,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.expandedFamilyIds = new Set();
     this.revealedParentFamilyIds = new Set();
     this.branchFamilies = [];
+    this.parentBranchFamilies = [];
     this.branchControlAreas = [];
     this.viewTargetId = null;
     this.lastDensityCount = null;
@@ -297,7 +298,7 @@ export class GlobeScene extends CoreGlobeScene {
 
     this.resetTreeButton?.addEventListener('click', () => {
       this.expandedFamilyIds.clear();
-    this.revealedParentFamilyIds.clear();
+      this.revealedParentFamilyIds.clear();
       this.applyWindowView();
     });
   }
@@ -328,7 +329,8 @@ export class GlobeScene extends CoreGlobeScene {
       link => actualIds.has(link.from) && actualIds.has(link.to),
     );
 
-    this.parentBranchFamilies = parentBranchControls(actualIds, this.fullPeople, this.fullRelationships);
+    this.parentBranchFamilies = parentBranchControls(actualIds, this.fullPeople, this.fullRelationships)
+      .filter(family => !this.revealedParentFamilyIds.has(family.familyId));
     for (const familyId of this.revealedParentFamilyIds) {
       const family = allFamilyGroups.get(familyId);
       if (family && family.childIds.some(id => actualIds.has(id))) {

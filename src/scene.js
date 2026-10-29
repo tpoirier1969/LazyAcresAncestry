@@ -342,36 +342,67 @@ export class GlobeScene extends CoreGlobeScene {
     const groups = familyExpansionGroups(new Set(this.fullPeople.map(p => p.id)), this.fullRelationships);
     const family = groups.get(familyId);
     if (!family) return;
-    const spouseLinks = this.fullRelationships.filter(link => link.type === 'spouse');
-    const parents = new Map();
+    const parents = new Map(), children = new Map(), partners = new Map();
+    const connect = (map, a, b) => {
+      if (!map.has(a)) map.set(a, new Set());
+      map.get(a).add(b);
+    };
     for (const link of this.fullRelationships) {
-      if (link.type !== 'parent') continue;
-      if (!parents.has(link.to)) parents.set(link.to, new Set());
-      parents.get(link.to).add(link.from);
-    }
-    // Opening the ancestors of one spouse closes the other spouse's
-    // ancestral branch, without hiding the couple, siblings or children.
-    const expandedSpouses = new Set(family.childIds);
-    const otherSpouses = new Set();
-    for (const link of spouseLinks) {
-      if (expandedSpouses.has(link.from)) otherSpouses.add(link.to);
-      if (expandedSpouses.has(link.to)) otherSpouses.add(link.from);
-    }
-    const protectedIds = new Set([...family.childIds, ...family.parentIds]);
-    const protectedQueue = [...protectedIds];
-    while (protectedQueue.length) {
-      for (const parent of parents.get(protectedQueue.shift()) || []) {
-        if (!protectedIds.has(parent)) { protectedIds.add(parent); protectedQueue.push(parent); }
+      if (link.type === 'parent') {
+        connect(parents, link.to, link.from);
+        connect(children, link.from, link.to);
+      } else if (link.type === 'spouse') {
+        connect(partners, link.from, link.to);
+        connect(partners, link.to, link.from);
       }
     }
-    const queue = [...otherSpouses];
-    const seen = new Set(queue);
+    const selectedPeople = new Set(family.childIds);
+    const otherSpouses = new Set();
+    for (const id of selectedPeople) {
+      for (const spouse of partners.get(id) || []) otherSpouses.add(spouse);
+    }
+    // Protect the selected ancestry and the two spouses themselves.
+    const protectedIds = new Set([...selectedPeople, ...otherSpouses]);
+    const queueProtected = [...selectedPeople];
+    while (queueProtected.length) {
+      for (const parent of parents.get(queueProtected.shift()) || []) {
+        if (protectedIds.has(parent)) continue;
+        protectedIds.add(parent);
+        queueProtected.push(parent);
+      }
+    }
+    // Preserve immediate descendants of the couple and their spouses.
+    const childQueue = [...selectedPeople, ...otherSpouses];
+    const seenChildren = new Set(childQueue);
+    while (childQueue.length) {
+      for (const child of children.get(childQueue.shift()) || []) {
+        if (seenChildren.has(child)) continue;
+        seenChildren.add(child);
+        protectedIds.add(child);
+        childQueue.push(child);
+        for (const partner of partners.get(child) || []) protectedIds.add(partner);
+      }
+    }
+    // Keep siblings and their spouses in the immediate-family overview.
+    for (const id of [...selectedPeople, ...otherSpouses]) {
+      for (const parent of parents.get(id) || []) {
+        for (const sibling of children.get(parent) || []) {
+          protectedIds.add(sibling);
+          for (const partner of partners.get(sibling) || []) protectedIds.add(partner);
+        }
+      }
+    }
+    // Visit the entire competing parental network, including collateral
+    // relatives, without crossing back through the selected family.
+    const visited = new Set(protectedIds);
+    const queue = [...otherSpouses].flatMap(id => [...(parents.get(id) || [])]);
     while (queue.length) {
-      for (const parent of parents.get(queue.shift()) || []) {
-        if (seen.has(parent)) continue;
-        seen.add(parent);
-        queue.push(parent);
-        if (!protectedIds.has(parent)) this.suppressedAncestorIds.add(parent);
+      const id = queue.shift();
+      if (visited.has(id)) continue;
+      visited.add(id);
+      this.suppressedAncestorIds.add(id);
+      for (const next of [...(parents.get(id) || []), ...(children.get(id) || []), ...(partners.get(id) || [])]) {
+        if (!visited.has(next)) queue.push(next);
       }
     }
   }

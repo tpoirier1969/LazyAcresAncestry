@@ -32,4 +32,12 @@ new vm.Script(leafletJS, { filename: 'leaflet-1.9.4.js' });
 const mapSource = read('src/places-view.js');
 assert.ok(mapSource.includes("'vendor/leaflet-1.9.4'"), 'map should use bundled, pinned Leaflet assets');
 assert.ok(read('places.css').includes('mix-blend-mode:normal'), 'map tiles should not wash out over parchment');
+const worldSVG = read('assets/geographic-world.svg');
+assert.ok(worldSVG.includes('Natural Earth 110m'));
+assert.ok(worldSVG.includes('viewBox="0 0 1280 1280"'));
+assert.ok(worldSVG.match(/<path d="/g)?.length > 200);
+assert.ok(read('assets/GEOGRAPHIC-WORLD-SOURCE.txt').includes('world-atlas license'));
+assert.ok(mapSource.includes('assets/geographic-world.svg'));
+assert.ok(read('places.css').includes("url('assets/geographic-world.svg')"));
+
 console.log('Bundled places geography and map library integrity passed');

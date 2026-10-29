@@ -7,6 +7,7 @@ import {
   branchControlFamilies,
   descendantFamilyIds,
   lineageWindowIds,
+  parentBranchControls,
   visibleIdsForExpandedFamilies,
 } from './tree-view.js';
 import {
@@ -30,6 +31,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.visibleIds = new Set();
     this.baseVisibleIds = new Set();
     this.expandedFamilyIds = new Set();
+    this.revealedParentFamilyIds = new Set();
     this.branchFamilies = [];
     this.branchControlAreas = [];
     this.viewTargetId = null;
@@ -43,6 +45,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
     this.viewTargetId = this.homeId;
     this.expandedFamilyIds.clear();
+    this.revealedParentFamilyIds.clear();
     this.baseVisibleIds = lineageWindowIds(
       this.viewTargetId,
       this.fullPeople,
@@ -141,6 +144,7 @@ export class GlobeScene extends CoreGlobeScene {
     if (!this.fullPeople.some(person => person.id === id)) return;
     this.viewTargetId = id;
     this.expandedFamilyIds.clear();
+    this.revealedParentFamilyIds.clear();
     this.baseVisibleIds = lineageWindowIds(
       id,
       this.fullPeople,
@@ -179,8 +183,9 @@ export class GlobeScene extends CoreGlobeScene {
     const ctx = this.ctx;
     const hitsById = new Map(this.hitAreas.map(hit => [hit.id, hit]));
 
-    for (const family of this.branchFamilies) {
-      const parentHits = family.visibleParentIds.map(id => hitsById.get(id)).filter(Boolean);
+    for (const family of [...this.branchFamilies, ...this.parentBranchFamilies]) {
+      const isParentControl = family.action === 'expand-parents' || family.action === 'collapse-parents';
+      const parentHits = (isParentControl ? family.childIds : family.visibleParentIds).map(id => hitsById.get(id)).filter(Boolean);
       if (!parentHits.length) continue;
       if (parentHits.every(hit => hit.r < BRANCH_CONTROL_MIN_HIT_RADIUS)) continue;
 
@@ -199,6 +204,10 @@ export class GlobeScene extends CoreGlobeScene {
         baseRadius = hit.r;
       }
 
+      if (isParentControl) {
+        x = parentHits.reduce((sum, hit) => sum + hit.x, 0) / parentHits.length;
+        y = Math.min(...parentHits.map(hit => hit.y - hit.r)) - 13;
+      }
       const radius = Math.max(9, Math.min(13, baseRadius * 0.24));
       const action = family.action;
 
@@ -220,7 +229,7 @@ export class GlobeScene extends CoreGlobeScene {
       ctx.lineJoin = 'round';
       ctx.strokeStyle = 'rgba(101,49,40,.98)';
       ctx.lineWidth = Math.max(1.7, radius * 0.18);
-      if (action === 'expand') {
+      if (action === 'expand' || action === 'expand-parents') {
         ctx.moveTo(x - radius * 0.38, y - radius * 0.18);
         ctx.lineTo(x, y + radius * 0.22);
         ctx.lineTo(x + radius * 0.38, y - radius * 0.18);
@@ -255,7 +264,11 @@ export class GlobeScene extends CoreGlobeScene {
   }
 
   toggleFamilyBranch(familyId, action) {
-    if (action === 'expand') {
+    if (action === 'expand-parents') {
+      this.revealedParentFamilyIds.add(familyId);
+    } else if (action === 'collapse-parents') {
+      this.revealedParentFamilyIds.delete(familyId);
+    } else if (action === 'expand') {
       this.expandedFamilyIds.add(familyId);
     } else if (action === 'collapse') {
       const below = descendantFamilyIds(familyId, this.fullPeople, this.fullRelationships);
@@ -283,6 +296,7 @@ export class GlobeScene extends CoreGlobeScene {
 
     this.resetTreeButton?.addEventListener('click', () => {
       this.expandedFamilyIds.clear();
+    this.revealedParentFamilyIds.clear();
       this.applyWindowView();
     });
   }
@@ -295,6 +309,13 @@ export class GlobeScene extends CoreGlobeScene {
       this.fullPeople,
       this.fullRelationships,
     );
+    // Ancestor expansion is explicit and never triggered by camera zoom.
+    // Family groups are indexed independently of visibility for parent reveals.
+    const parentLinks = this.fullRelationships.filter(link => link.type === 'parent' && this.revealedParentFamilyIds.has(String(link.familyId)));
+    for (const link of parentLinks) {
+      visibleIds.add(link.from);
+      visibleIds.add(link.to);
+    }
     const previousFocus = this.focusedId;
     if (previousFocus && !visibleIds.has(previousFocus)) this.focusedId = this.viewTargetId;
     if (this.focusedId) visibleIds.add(this.focusedId);
@@ -305,6 +326,7 @@ export class GlobeScene extends CoreGlobeScene {
       link => actualIds.has(link.from) && actualIds.has(link.to),
     );
 
+    this.parentBranchFamilies = parentBranchControls(actualIds, this.fullPeople, this.fullRelationships);
     this.branchFamilies = branchControlFamilies(
       actualIds,
       this.expandedFamilyIds,
@@ -319,7 +341,7 @@ export class GlobeScene extends CoreGlobeScene {
 
   updateTreeViewControls() {
     if (!this.resetTreeButton) return;
-    this.resetTreeButton.hidden = this.expandedFamilyIds.size === 0;
+    this.resetTreeButton.hidden = this.expandedFamilyIds.size === 0 && this.revealedParentFamilyIds.size === 0;
 
     if (this.treeWindowCount) {
       const targetName = this.fullPeople.find(person => person.id === this.viewTargetId)?.name || 'target person';

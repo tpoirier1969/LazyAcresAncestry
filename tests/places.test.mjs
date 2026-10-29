@@ -62,4 +62,26 @@ assert.equal(PlacesView.prototype.eventsFor.call({ personId: null }, ishpeming).
   'general Places retains the complete GEDCOM record');
 assert.equal(PlacesView.prototype.peopleCountFor.call({ personId: null }, ishpeming), 3);
 
-console.log('Places index and full-size population checks passed');
+// The explicit Reset button must restore the original all-family map extent,
+// including when a single person's events or a single place was selected.
+const calls = [];
+const resetHarness = {
+  active: true,
+  personId: 'roy',
+  query: 'Ishpeming',
+  selected: ishpeming,
+  resultsLimit: 105,
+  eventLimit: 70,
+  map: { stop() { calls.push('stop'); } },
+  showList() { calls.push('show-all-places'); },
+  updateMarkers(fit) { calls.push(['fit-all-markers', fit]); },
+};
+PlacesView.prototype.reset.call(resetHarness);
+assert.equal(resetHarness.personId, null);
+assert.equal(resetHarness.query, '');
+assert.equal(resetHarness.selected, null);
+assert.equal(resetHarness.resultsLimit, 35);
+assert.equal(resetHarness.eventLimit, 35);
+assert.deepEqual(calls, ['stop', 'show-all-places', ['fit-all-markers', true]]);
+
+console.log('Places index, original world-map reset, and full-size population checks passed');

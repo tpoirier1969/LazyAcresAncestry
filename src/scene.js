@@ -42,6 +42,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.viewTargetId = null;
     this.lastDensityCount = null;
     this.lineageHighlight = null;
+    this.relationshipView = null;
     this.installTreeViewControls();
   }
 
@@ -146,7 +147,7 @@ export class GlobeScene extends CoreGlobeScene {
   focus(id, options = {}) {
     if (this.fullPeople.length && !this.visibleIds.has(id)) this.setViewTarget(id);
     super.focus(id, options);
-    this.setLineageHighlight(id);
+    if (!this.relationshipView) this.setLineageHighlight(id);
     this.updateTreeViewControls();
   }
 
@@ -164,6 +165,51 @@ export class GlobeScene extends CoreGlobeScene {
       DEFAULT_VISIBLE_PEOPLE,
     );
     this.applyWindowView();
+  }
+
+  showRelationshipPath(result, targetPoint = null) {
+    if (!this.relationshipView) {
+      this.relationshipView = {
+        baseVisibleIds: new Set(this.baseVisibleIds),
+        expandedFamilyIds: new Set(this.expandedFamilyIds),
+        revealedParentFamilyIds: new Set(this.revealedParentFamilyIds),
+        pinnedFamilyIds: new Set(this.pinnedFamilyIds),
+        suppressedAncestorIds: new Set(this.suppressedAncestorIds),
+        viewTargetId: this.viewTargetId,
+        focusedId: this.focusedId,
+        lineageHighlight: this.lineageHighlight,
+      };
+    }
+    this.relationshipPath = result;
+    const ids = new Set(result.visibleIds);
+    this.baseVisibleIds = ids;
+    this.expandedFamilyIds.clear();
+    this.revealedParentFamilyIds.clear();
+    this.suppressedAncestorIds.clear();
+    this.applyWindowView();
+    const middle = result.path[Math.floor(result.path.length / 2)];
+    // Frame the middle of the path and pull back for longer connections.
+    // The relationship-specific people remain visible independently of zoom.
+    this.focus(middle, { targetPoint, resetZoom: true });
+    const gap = Math.min(155, Math.max(7.2, result.path.length * 2.8));
+    this.targetCameraGap = gap;
+    this.requestMotion();
+  }
+
+  exitRelationshipPath() {
+    const saved = this.relationshipView;
+    if (!saved) return;
+    this.relationshipView = null;
+    this.relationshipPath = null;
+    this.baseVisibleIds = saved.baseVisibleIds;
+    this.expandedFamilyIds = saved.expandedFamilyIds;
+    this.revealedParentFamilyIds = saved.revealedParentFamilyIds;
+    this.pinnedFamilyIds = saved.pinnedFamilyIds;
+    this.suppressedAncestorIds = saved.suppressedAncestorIds;
+    this.viewTargetId = saved.viewTargetId;
+    this.applyWindowView();
+    this.lineageHighlight = saved.lineageHighlight;
+    if (saved.focusedId && this.visibleIds.has(saved.focusedId)) this.focus(saved.focusedId);
   }
 
   setLineageHighlight(id) {

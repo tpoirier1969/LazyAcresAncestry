@@ -2,6 +2,8 @@
 // The marker must be bumped whenever a new revision is published.
 export function startVersionChecker(currentVersion, { intervalMs = 30000 } = {}) {
   let reloading = false;
+  const attemptKey = 'lazy-acres-ancestry-update-attempt';
+  const loadedRevision = new URL(import.meta.url).searchParams.get('appv');
   const check = async () => {
     if (reloading) return;
     try {
@@ -12,7 +14,15 @@ export function startVersionChecker(currentVersion, { intervalMs = 30000 } = {})
       const source = await response.text();
       const match = source.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
       const remoteVersion = match?.[1];
-      if (!remoteVersion || remoteVersion === currentVersion) return;
+      if (!remoteVersion || remoteVersion === currentVersion) {
+        if (remoteVersion === currentVersion) sessionStorage.removeItem(attemptKey);
+        return;
+      }
+      // A stale cached module may continue reporting the old version after
+      // navigation. Never repeatedly reload the same revision.
+      const attempted = sessionStorage.getItem(attemptKey);
+      if (attempted === remoteVersion || loadedRevision === remoteVersion) return;
+      sessionStorage.setItem(attemptKey, remoteVersion);
       reloading = true;
       // Remove stale application assets, including any previously installed
       // service-worker cache, before reloading with a unique revision URL.
@@ -26,7 +36,7 @@ export function startVersionChecker(currentVersion, { intervalMs = 30000 } = {})
       }
       const url = new URL(location.href);
       url.searchParams.set('appv', remoteVersion);
-      url.searchParams.set('refresh', String(Date.now()));
+      url.searchParams.delete('refresh');
       location.replace(url.toString());
     } catch {
       reloading = false;

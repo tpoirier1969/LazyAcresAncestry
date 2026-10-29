@@ -245,6 +245,7 @@ export class GlobeScene extends CoreGlobeScene {
 
   drawPeople(camera) {
     super.drawPeople(camera);
+    this.drawRelationshipHighlights();
     this.branchControlAreas = [];
     const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
     // Keep branch arrows visible and their hit areas synchronized with the
@@ -265,6 +266,33 @@ export class GlobeScene extends CoreGlobeScene {
     }
     super.drawPlaque(entry, camera);
 
+  }
+
+  drawRelationshipHighlights() {
+    if (!this.relationshipPath) return;
+    const hits = new Map(this.hitAreas.map(hit => [hit.id, hit]));
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#f6cb68';
+    ctx.shadowColor = 'rgba(255,202,90,.55)';
+    ctx.shadowBlur = 8;
+    for (const link of this.relationshipPath.links) {
+      const a = hits.get(link.from), b = hits.get(link.to);
+      if (!a || !b) continue;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    for (const id of this.relationshipPath.visibleIds) {
+      const hit = hits.get(id);
+      if (!hit) continue;
+      ctx.beginPath();
+      ctx.arc(hit.x, hit.y, Math.max(8, hit.r * .7), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   drawBranchControls() {

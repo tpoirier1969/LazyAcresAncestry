@@ -266,11 +266,26 @@ export class PlacesView {
     });
   }
 
+  sizeMapViewport() {
+    const shell = this.workspace.parentElement?.getBoundingClientRect();
+    if (!shell?.width || !shell?.height) return;
+    // Leaflet's renderer needs a concrete pixel viewport, just like the
+    // globe canvas. Size from the actual atlas shell, not stale hidden layout.
+    const width = Math.round(shell.width) + 'px';
+    const height = Math.round(shell.height) + 'px';
+    this.workspace.style.width = width;
+    this.workspace.style.height = height;
+    const mapElement = this.workspace.querySelector('#placesMap');
+    mapElement.style.width = width;
+    mapElement.style.height = height;
+  }
+
   async ensureMap() {
     // Leaflet must measure the container AFTER Places becomes visible.
     // A zero-size first measurement produces a nearly blank tile canvas.
     await new Promise(resolve => requestAnimationFrame(resolve));
     if (!this.active) return;
+    this.sizeMapViewport();
     if (this.map) {
       this.map.invalidateSize({ pan: false });
       return;
@@ -279,6 +294,7 @@ export class PlacesView {
     if (!this.active) return;
     await new Promise(resolve => requestAnimationFrame(resolve));
     if (!this.active) return;
+    this.sizeMapViewport();
     this.map = L.map('placesMap', {
       zoomControl: true,
       minZoom: 2,
@@ -304,8 +320,12 @@ export class PlacesView {
     const element = this.workspace.querySelector('#placesMap');
     if (typeof ResizeObserver !== 'undefined') {
       this.mapResizeObserver = new ResizeObserver(() => {
-        if (this.active && !this.workspace.hidden) this.map.invalidateSize({ pan: false });
+        if (this.active && !this.workspace.hidden) {
+          this.sizeMapViewport();
+          this.map.invalidateSize({ pan: false });
+        }
       });
+      this.mapResizeObserver.observe(this.workspace.parentElement);
       this.mapResizeObserver.observe(element);
     }
     requestAnimationFrame(() => this.map.invalidateSize({ pan: false }));

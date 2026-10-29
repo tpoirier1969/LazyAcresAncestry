@@ -25,7 +25,7 @@ let selectedPerson = null;
 let distances = new Map();
 const PEOPLE_INDEX_BATCH = 50;
 let alphabeticalPeople = [];
-let peopleIndexLimit = PEOPLE_INDEX_BATCH;
+let peopleIndexPage = 0;
 const peopleIndexRelationshipCache = new Map();
 
 if (appVersion) appVersion.textContent = `v${APP_VERSION}`;
@@ -324,12 +324,16 @@ function showPeopleIndex() {
     </div>
     <div class="people-count" id="peopleCount"></div>
     <div class="people-index" id="peopleIndex"></div>
-    <button type="button" id="peopleIndexMore" hidden>Show 50 more</button>`;
+    <div class="people-index-pager">
+      <button type="button" id="peopleIndexPrev">Previous 50</button>
+      <span id="peopleIndexPage">Page 1</span>
+      <button type="button" id="peopleIndexNext">Next 50</button>
+    </div>`;
   openPanel();
-  peopleIndexLimit = PEOPLE_INDEX_BATCH;
+  peopleIndexPage = 0;
   ['filterSide', 'filterCentury', 'filterDistance', 'filterName'].forEach(id =>
     document.getElementById(id).addEventListener('input', () => {
-      peopleIndexLimit = PEOPLE_INDEX_BATCH;
+      peopleIndexPage = 0;
       renderPeopleList();
     }),
   );
@@ -337,8 +341,12 @@ function showPeopleIndex() {
     const button = event.target.closest('button[data-id]');
     if (button) selectPerson(button.dataset.id);
   });
-  document.getElementById('peopleIndexMore').addEventListener('click', () => {
-    peopleIndexLimit += PEOPLE_INDEX_BATCH;
+  document.getElementById('peopleIndexPrev').addEventListener('click', () => {
+    peopleIndexPage = Math.max(0, peopleIndexPage - 1);
+    renderPeopleList();
+  });
+  document.getElementById('peopleIndexNext').addEventListener('click', () => {
+    peopleIndexPage += 1;
     renderPeopleList();
   });
   renderPeopleList();
@@ -359,9 +367,15 @@ function renderPeopleList() {
     }
     return !name || person.name.toLowerCase().includes(name);
   });
-  const shown = matches.slice(0, peopleIndexLimit);
+  const pageCount = Math.max(1, Math.ceil(matches.length / PEOPLE_INDEX_BATCH));
+  peopleIndexPage = Math.min(peopleIndexPage, pageCount - 1);
+  const start = peopleIndexPage * PEOPLE_INDEX_BATCH;
+  const shown = matches.slice(start, start + PEOPLE_INDEX_BATCH);
   document.getElementById('peopleCount').textContent =
-    `Showing ${shown.length} of ${matches.length} matches · ${family.people.length} people total`;
+    `Showing ${matches.length ? start + 1 : 0}–${start + shown.length} of ${matches.length} matches · ${family.people.length} people total`;
+  document.getElementById('peopleIndexPage').textContent = `Page ${peopleIndexPage + 1} of ${pageCount}`;
+  document.getElementById('peopleIndexPrev').disabled = peopleIndexPage === 0;
+  document.getElementById('peopleIndexNext').disabled = peopleIndexPage >= pageCount - 1;
   const list = document.getElementById('peopleIndex');
   // Relationship calculations scan the family graph, so compute them only
   // for the visible page, and never rebuild thousands of DOM nodes at once.
@@ -372,7 +386,7 @@ function renderPeopleList() {
     }
     return `<button type="button" data-id="${escapeHtml(person.id)}"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(yearFrom(person.birth?.date) || 'date unknown')} · ${escapeHtml(peopleIndexRelationshipCache.get(person.id))}</span></button>`;
   }).join('') || '<p class="empty-copy">No people match these filters.</p>';
-  document.getElementById('peopleIndexMore').hidden = shown.length >= matches.length;
+
 }
 
 function showSectionStatus(section) {

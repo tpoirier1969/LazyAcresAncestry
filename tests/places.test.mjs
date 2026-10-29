@@ -52,4 +52,14 @@ assert.equal(large.length, 1);
 assert.equal(large[0].personIds.size, 9099);
 assert.equal(large[0].events.length, 9099);
 
+const { PlacesView } = await import('../src/places-view.js');
+const ishpeming = places.find(p => p.name.startsWith('Ishpeming'));
+const personScope = { personId: 'roy' };
+assert.equal(PlacesView.prototype.eventsFor.call(personScope, ishpeming).length, 2,
+  'person-specific place view must exclude other family members events');
+assert.equal(PlacesView.prototype.peopleCountFor.call(personScope, ishpeming), 1);
+assert.equal(PlacesView.prototype.eventsFor.call({ personId: null }, ishpeming).length, 4,
+  'general Places retains the complete GEDCOM record');
+assert.equal(PlacesView.prototype.peopleCountFor.call({ personId: null }, ishpeming), 3);
+
 console.log('Places index and full-size population checks passed');

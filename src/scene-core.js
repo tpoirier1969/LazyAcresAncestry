@@ -653,13 +653,15 @@ export class GlobeScene {
     if (!a || !b) return;
     const metrics = relationshipLineMetrics(camera.centerZ - RADIUS);
     const y = (a.y + b.y) / 2;
-    this.drawSurfacePolyline(
-      [[a.x, y], [b.x, y]],
-      camera,
-      RELATIONSHIP_COLORS.couple,
-      metrics.primary,
-      metrics.haloExtra,
-    );
+    const line = [[a.x, y], [b.x, y]];
+    if (this.relationshipPath?.highlightedCouples?.has(pairKey(aId, bId))) {
+      // Draw a luminous halo UNDER the original routed family connector.
+      const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
+      const sampled = this.sampleSurfacePolyline(line, camera, moving);
+      this.strokeSampledSurfacePolyline(sampled, 'rgba(255,219,37,.23)', metrics.primary + 15, moving);
+      this.strokeSampledSurfacePolyline(sampled, 'rgba(255,239,114,.82)', metrics.primary + 5, moving);
+    }
+    this.drawSurfacePolyline(line, camera, RELATIONSHIP_COLORS.couple, metrics.primary, metrics.haloExtra);
   }
 
   drawFamilyRoute(route, camera) {
@@ -705,6 +707,17 @@ export class GlobeScene {
       ...part,
       sampled: this.sampleSurfacePolyline(part.points, camera, moving),
     })).filter(part => part.sampled.length);
+    const emphasized = this.relationshipPath && route.children.some(child =>
+      route.parents.some(parentId =>
+        this.relationshipPath.highlightedParentChild.has(parentId + '>' + child.id)));
+    if (emphasized) {
+      // Reuse precisely the normal family's surface-routed geometry, so
+      // the glow never cuts diagonally through a person or another generation.
+      sampledParts.forEach(part => {
+        this.strokeSampledSurfacePolyline(part.sampled, 'rgba(255,220,30,.26)', part.width + 15, moving);
+        this.strokeSampledSurfacePolyline(part.sampled, 'rgba(255,239,112,.88)', part.width + 5, moving);
+      });
+    }
     sampledParts.forEach(part => this.strokeSampledSurfacePolyline(
       part.sampled,
       RELATIONSHIP_COLORS.halo,

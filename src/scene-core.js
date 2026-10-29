@@ -901,18 +901,21 @@ export class GlobeScene {
       placement.f,
     );
     const lineage = this.lineageHighlight;
-    const highlighted = lineage && (person.id === lineage.selected
-      || lineage.ancestors.has(person.id) || lineage.descendants.has(person.id));
+    const onRelationshipPath = Boolean(this.relationshipPath?.visibleIds?.has(person.id));
+    const highlighted = onRelationshipPath || (lineage && (person.id === lineage.selected
+      || lineage.ancestors.has(person.id) || lineage.descendants.has(person.id)));
     if (highlighted) {
-      const selected = person.id === lineage.selected;
+      const selected = onRelationshipPath
+        ? person.id === this.relationshipPath.firstId || person.id === this.relationshipPath.secondId
+        : person.id === lineage.selected;
       // The gold silhouette follows the portrait above and the narrower
       // engraved nameplate below, rather than enclosing both in a rectangle.
       const w = tex.width;
       const h = tex.height;
       const gold = ctx.createLinearGradient(0, -h * .10, 0, h * .48);
-      gold.addColorStop(0, selected ? '#f5d17a' : '#dfb960');
-      gold.addColorStop(.55, selected ? '#d8a646' : '#c49b4e');
-      gold.addColorStop(1, selected ? '#aa792d' : '#9b773a');
+      gold.addColorStop(0, onRelationshipPath ? '#fff9b4' : selected ? '#f5d17a' : '#dfb960');
+      gold.addColorStop(.55, onRelationshipPath ? '#ffe94d' : selected ? '#d8a646' : '#c49b4e');
+      gold.addColorStop(1, onRelationshipPath ? '#d5a928' : selected ? '#aa792d' : '#9b773a');
       ctx.beginPath();
       ctx.ellipse(0, -h * .205, w * .265, h * .355, 0, Math.PI, Math.PI * 2);
       ctx.lineTo(w * .265, h * .125);
@@ -927,12 +930,13 @@ export class GlobeScene {
       ctx.lineTo(-w * .265, h * .125);
       ctx.closePath();
       ctx.fillStyle = gold;
-      ctx.shadowColor = selected ? 'rgba(227,178,71,.4)' : 'rgba(191,145,58,.22)';
-      ctx.shadowBlur = selected ? 18 : 10;
+      ctx.shadowColor = onRelationshipPath ? 'rgba(255,230,39,.95)'
+        : selected ? 'rgba(227,178,71,.4)' : 'rgba(191,145,58,.22)';
+      ctx.shadowBlur = onRelationshipPath ? (selected ? 34 : 27) : (selected ? 18 : 10);
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.lineWidth = selected ? 3 : 2;
-      ctx.strokeStyle = selected ? '#ffe3a2' : '#e5c887';
+      ctx.lineWidth = onRelationshipPath ? (selected ? 5 : 3.5) : (selected ? 3 : 2);
+      ctx.strokeStyle = onRelationshipPath ? '#fff4a3' : selected ? '#ffe3a2' : '#e5c887';
       ctx.stroke();
     }
     ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);

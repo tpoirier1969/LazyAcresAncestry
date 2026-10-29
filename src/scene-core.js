@@ -890,21 +890,34 @@ export class GlobeScene {
       || lineage.ancestors.has(person.id) || lineage.descendants.has(person.id));
     if (highlighted) {
       const selected = person.id === lineage.selected;
-      const margin = selected ? 17 : 12;
-      const x = -tex.width / 2 - margin;
-      const y = -tex.height / 2 - margin;
-      const w = tex.width + margin * 2;
-      const h = tex.height + margin * 2;
-      const radius = 19;
+      // The gold silhouette follows the portrait above and the narrower
+      // engraved nameplate below, rather than enclosing both in a rectangle.
+      const w = tex.width;
+      const h = tex.height;
+      const gold = ctx.createLinearGradient(0, -h * .10, 0, h * .48);
+      gold.addColorStop(0, selected ? '#f5d17a' : '#dfb960');
+      gold.addColorStop(.55, selected ? '#d8a646' : '#c49b4e');
+      gold.addColorStop(1, selected ? '#aa792d' : '#9b773a');
       ctx.beginPath();
-      ctx.roundRect(x, y, w, h, radius);
-      ctx.fillStyle = selected ? '#b18a40' : '#917341';
-      ctx.shadowColor = selected ? 'rgba(226,178,80,.48)' : 'rgba(186,146,72,.26)';
-      ctx.shadowBlur = selected ? 23 : 13;
+      ctx.ellipse(0, -h * .205, w * .265, h * .355, 0, Math.PI, Math.PI * 2);
+      ctx.lineTo(w * .265, h * .125);
+      ctx.lineTo(w * .47, h * .125);
+      ctx.quadraticCurveTo(w * .505, h * .125, w * .505, h * .165);
+      ctx.lineTo(w * .505, h * .47);
+      ctx.quadraticCurveTo(w * .505, h * .51, w * .465, h * .51);
+      ctx.lineTo(-w * .465, h * .51);
+      ctx.quadraticCurveTo(-w * .505, h * .51, -w * .505, h * .47);
+      ctx.lineTo(-w * .505, h * .165);
+      ctx.quadraticCurveTo(-w * .505, h * .125, -w * .47, h * .125);
+      ctx.lineTo(-w * .265, h * .125);
+      ctx.closePath();
+      ctx.fillStyle = gold;
+      ctx.shadowColor = selected ? 'rgba(227,178,71,.4)' : 'rgba(191,145,58,.22)';
+      ctx.shadowBlur = selected ? 18 : 10;
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.lineWidth = selected ? 5 : 3;
-      ctx.strokeStyle = selected ? '#f0d49a' : '#c6aa77';
+      ctx.lineWidth = selected ? 3 : 2;
+      ctx.strokeStyle = selected ? '#ffe3a2' : '#e5c887';
       ctx.stroke();
     }
     ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);

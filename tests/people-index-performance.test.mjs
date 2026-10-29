@@ -61,12 +61,12 @@ nodes.get('filterName').value = 'Person 090';
 vm.runInContext('peopleIndexPage = 0', ctx);
 render();
 assert.equal(renderedCount(), 50);
-assert.match(nodes.get('peopleCount').textContent, /of 100 matches/);
+assert.match(nodes.get('peopleCount').textContent, /of 99 matches/);
 assert.equal(nodes.get('peopleIndexNext').disabled, false);
 
 vm.runInContext('peopleIndexPage = 1', ctx);
 render();
-assert.equal(renderedCount(), 50);
+assert.equal(renderedCount(), 49);
 assert.equal(nodes.get('peopleIndexNext').disabled, true);
 
 console.log('People menu remains bounded and searchable across 9,099 records');

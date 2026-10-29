@@ -285,7 +285,7 @@ export function describePairRelationship(firstId, secondId, people = [], relatio
 function generationalAncestor(depth, sex) {
   if (depth === 1) return sexed(sex, 'Father', 'Mother', 'Parent');
   const grand = sexed(sex, 'Grandfather', 'Grandmother', 'Grandparent');
-  return depth === 2 ? grand : 'Great-'.repeat(depth - 2) + grand;
+  return depth === 2 ? grand : 'Great-'.repeat(depth - 2) + grand.toLowerCase();
 }
 
 function generationalDescendant(depth, sex) {

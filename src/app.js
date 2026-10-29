@@ -1,4 +1,4 @@
-import { APP_VERSION } from './version.js?v=0.4.45';
+import { APP_VERSION } from './version.js?v=0.4.46';
 import { startVersionChecker } from './version-checker.js';
 import { loadFamily } from './data.js';
 import { extractAlternateNames, extractSavedRecords } from './gedcom.js';

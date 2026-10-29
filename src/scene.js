@@ -40,6 +40,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.branchControlAreas = [];
     this.viewTargetId = null;
     this.lastDensityCount = null;
+    this.lineageHighlight = null;
     this.installTreeViewControls();
   }
 
@@ -143,6 +144,7 @@ export class GlobeScene extends CoreGlobeScene {
   focus(id, options = {}) {
     if (this.fullPeople.length && !this.visibleIds.has(id)) this.setViewTarget(id);
     super.focus(id, options);
+    this.setLineageHighlight(id);
     this.updateTreeViewControls();
   }
 
@@ -160,6 +162,33 @@ export class GlobeScene extends CoreGlobeScene {
       DEFAULT_VISIBLE_PEOPLE,
     );
     this.applyWindowView();
+  }
+
+  setLineageHighlight(id) {
+    const parents = new Map();
+    const children = new Map();
+    for (const link of this.fullRelationships) {
+      if (link.type !== 'parent') continue;
+      if (!parents.has(link.to)) parents.set(link.to, new Set());
+      if (!children.has(link.from)) children.set(link.from, new Set());
+      parents.get(link.to).add(link.from);
+      children.get(link.from).add(link.to);
+    }
+    const trace = adjacency => {
+      const seen = new Set();
+      const queue = [id];
+      while (queue.length) {
+        const current = queue.shift();
+        for (const next of adjacency.get(current) || []) {
+          if (next === id || seen.has(next)) continue;
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+      return seen;
+    };
+    this.lineageHighlight = { selected: id, ancestors: trace(parents), descendants: trace(children) };
+    this.requestDraw();
   }
 
   drawRelationships(camera) {
@@ -185,6 +214,25 @@ export class GlobeScene extends CoreGlobeScene {
       if (approximateWidth < MOVING_PLAQUE_MIN_WIDTH_PX) return;
     }
     super.drawPlaque(entry, camera);
+    const id = entry.person?.id;
+    const highlight = this.lineageHighlight;
+    if (!highlight || !id) return;
+    const color = id === highlight.selected ? '#f5d56b'
+      : highlight.ancestors.has(id) ? '#43b7ff'
+      : highlight.descendants.has(id) ? '#69d894' : null;
+    if (!color) return;
+    const hit = this.hitAreas.find(area => area.id === id);
+    if (!hit) return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = id === highlight.selected ? 4 : 2.5;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(hit.x, hit.y, Math.max(11, hit.r * 0.72), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   drawBranchControls() {

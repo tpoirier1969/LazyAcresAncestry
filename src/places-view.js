@@ -65,6 +65,12 @@ export class PlacesView {
     this.resultsLimit = MAX_LIST;
     this.eventLimit = 35;
     this.openToken = 0;
+    // One delegated listener survives panel redraws without accumulating handlers.
+    this.details.addEventListener('click', event => {
+      if (!this.active) return;
+      const button = event.target.closest('button[data-person-id]');
+      if (button && this.details.contains(button)) this.selectPerson(button.dataset.personId);
+    });
   }
 
   async open({ personId = null } = {}) {
@@ -75,6 +81,7 @@ export class PlacesView {
     this.query = '';
     this.resultsLimit = MAX_LIST;
     this.workspace.hidden = false;
+    document.body.classList.add('places-mode');
     this.details.classList.add('open');
     this.details.classList.add('places-panel');
     this.details.innerHTML = '<div class="panel-kicker">FAMILY GEOGRAPHY</div><h2>Places</h2>' +
@@ -109,6 +116,7 @@ export class PlacesView {
     this.active = false;
     this.openToken++;
     this.workspace.hidden = true;
+    document.body.classList.remove('places-mode');
     this.details.classList.remove('places-panel');
   }
 
@@ -126,15 +134,8 @@ export class PlacesView {
       '<div class="panel-kicker">FAMILY GEOGRAPHY</div>' + contents;
     this.details.classList.add('open');
     document.getElementById('personCloseInner')?.addEventListener('click', () => this.close());
-    this.details.addEventListener('click', this.handlePersonClick, { once: true });
   }
 
-  handlePersonClick = event => {
-    const button = event.target.closest('button[data-person-id]');
-    if (button && this.details.contains(button)) this.selectPerson(button.dataset.personId);
-    // Install again if the user clicked anywhere else in the panel.
-    if (this.active) this.details.addEventListener('click', this.handlePersonClick, { once: true });
-  };
 
   filtered() {
     return filterPlaces(this.places || [], this.query, this.personId);

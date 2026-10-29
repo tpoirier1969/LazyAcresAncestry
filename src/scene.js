@@ -199,7 +199,9 @@ export class GlobeScene extends CoreGlobeScene {
     super.drawPeople(camera);
     this.branchControlAreas = [];
     const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
-    if (!moving) this.drawBranchControls();
+    // Keep branch arrows visible and their hit areas synchronized with the
+    // moving plaques while the globe is dragged, zoomed, or focused.
+    this.drawBranchControls();
     if (moving) return;
     const count = this.hitAreas.length;
     if (count === this.lastDensityCount) return;

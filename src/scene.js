@@ -216,25 +216,7 @@ export class GlobeScene extends CoreGlobeScene {
       if (approximateWidth < MOVING_PLAQUE_MIN_WIDTH_PX) return;
     }
     super.drawPlaque(entry, camera);
-    const id = entry.person?.id;
-    const highlight = this.lineageHighlight;
-    if (!highlight || !id) return;
-    const color = id === highlight.selected ? '#f5d56b'
-      : highlight.ancestors.has(id) ? '#43b7ff'
-      : highlight.descendants.has(id) ? '#69d894' : null;
-    if (!color) return;
-    const hit = this.hitAreas.find(area => area.id === id);
-    if (!hit) return;
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = id === highlight.selected ? 4 : 2.5;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.arc(hit.x, hit.y, Math.max(11, hit.r * 0.72), 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
+
   }
 
   drawBranchControls() {

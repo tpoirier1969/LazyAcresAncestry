@@ -141,6 +141,42 @@ function showPerson(person) {
   wireRelationshipFinder(person);
 }
 
+function wireRelationshipFinder(person) {
+  const input = document.getElementById('relationSearch');
+  const matches = document.getElementById('relationMatches');
+  input.addEventListener('input', () => {
+    const query = input.value.trim().toLowerCase();
+    const found = query.length < 2 ? [] : family.people.filter(p =>
+      p.id !== person.id && p.name.toLowerCase().includes(query)).slice(0, 8);
+    matches.innerHTML = found.map(p =>
+      '<button type="button" data-id="' + escapeHtml(p.id) + '">' +
+      escapeHtml(p.name) + '</button>').join('');
+  });
+  matches.addEventListener('click', event => {
+    const button = event.target.closest('button[data-id]');
+    if (!button) return;
+    const target = byId.get(button.dataset.id);
+    const result = findRelationshipPath(person.id, target.id, family.people, family.relationships);
+    matches.innerHTML = '';
+    input.value = target.name;
+    const output = document.getElementById('relationResult');
+    if (!result) {
+      output.textContent = 'No documented connection found in this GEDCOM.';
+      return;
+    }
+    scene.showRelationshipPath(result, visibleMapFocusPoint());
+    const chain = result.path.map(id => escapeHtml(byId.get(id)?.name || id)).join(' → ');
+    output.innerHTML = '<p><strong>' + escapeHtml(person.name) + ' ↔ ' +
+      escapeHtml(target.name) + '</strong></p><p>' + chain +
+      '</p><button type="button" id="exitRelationView">Return to previous tree</button>';
+    document.getElementById('exitRelationView').addEventListener('click', () => {
+      scene.exitRelationshipPath();
+      output.innerHTML = '';
+      input.value = '';
+    });
+  });
+}
+
 function renderProfileImage(person) {
   if (person.photo) {
     return `<button class="person-profile person-profile-button" id="profilePhotoBtn" type="button" aria-label="Open ${escapeHtml(person.name)} photo gallery"><img src="${escapeHtml(person.photo)}" alt="${escapeHtml(person.name)}"></button>`;

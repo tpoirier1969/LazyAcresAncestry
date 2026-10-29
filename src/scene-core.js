@@ -885,6 +885,28 @@ export class GlobeScene {
       placement.e,
       placement.f,
     );
+    const lineage = this.lineageHighlight;
+    const highlighted = lineage && (person.id === lineage.selected
+      || lineage.ancestors.has(person.id) || lineage.descendants.has(person.id));
+    if (highlighted) {
+      const selected = person.id === lineage.selected;
+      const margin = selected ? 17 : 12;
+      const x = -tex.width / 2 - margin;
+      const y = -tex.height / 2 - margin;
+      const w = tex.width + margin * 2;
+      const h = tex.height + margin * 2;
+      const radius = 19;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, radius);
+      ctx.fillStyle = selected ? '#b18a40' : '#917341';
+      ctx.shadowColor = selected ? 'rgba(226,178,80,.48)' : 'rgba(186,146,72,.26)';
+      ctx.shadowBlur = selected ? 23 : 13;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = selected ? 5 : 3;
+      ctx.strokeStyle = selected ? '#f0d49a' : '#c6aa77';
+      ctx.stroke();
+    }
     ctx.drawImage(tex, -tex.width / 2, -tex.height / 2);
     ctx.restore();
     this.hitAreas.push({

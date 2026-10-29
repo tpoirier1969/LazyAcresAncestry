@@ -38,6 +38,9 @@ assert.ok(worldSVG.includes('viewBox="0 0 1280 1280"'));
 assert.ok(worldSVG.match(/<path d="/g)?.length > 200);
 assert.ok(read('assets/GEOGRAPHIC-WORLD-SOURCE.txt').includes('world-atlas license'));
 assert.ok(mapSource.includes('assets/geographic-world.svg'));
-assert.ok(read('places.css').includes("url('assets/geographic-world.svg')"));
+assert.ok(!read('places.css').includes("url('assets/geographic-world.svg')"),
+  'map container must not show a stationary geography image behind the panning Leaflet map');
+assert.ok(mapSource.includes('L.imageOverlay('),
+  'offline geography fallback must live inside georeferenced Leaflet layers so it pans and zooms');
 
 console.log('Bundled places geography and map library integrity passed');

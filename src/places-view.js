@@ -145,6 +145,7 @@ export class PlacesView {
       '<div class="panel-kicker">FAMILY GEOGRAPHY</div>' + contents;
     this.details.classList.add('open');
     document.getElementById('personCloseInner')?.addEventListener('click', () => this.close());
+    this.details.querySelector('#placesReset')?.addEventListener('click', () => this.reset());
   }
 
 
@@ -162,6 +163,20 @@ export class PlacesView {
     return this.personId ? Number(place.personIds.has(this.personId)) : place.personIds.size;
   }
 
+  reset() {
+    if (!this.active) return;
+    // Reset the entire Places workspace, not just the selected marker.
+    // A person-scoped or filtered map must return to the initial all-family view.
+    this.personId = null;
+    this.selected = null;
+    this.query = '';
+    this.resultsLimit = MAX_LIST;
+    this.eventLimit = 35;
+    this.map?.stop();
+    this.showList();
+    this.updateMarkers(true);
+  }
+
   showList() {
     if (!this.active) return;
     this.selected = null;
@@ -177,7 +192,9 @@ export class PlacesView {
     const name = this.personId ? this.personName(this.personId) : '';
     const shown = matches.slice(0, this.resultsLimit);
     this.renderFrame(
-      '<h2>' + (this.personId ? 'Places: ' + escape(name) : 'Places') + '</h2>' +
+      '<div class="places-title-row"><h2>' +
+        (this.personId ? 'Places: ' + escape(name) : 'Places') + '</h2>' +
+        '<button type="button" class="places-reset-action" id="placesReset" aria-label="Reset map to all family places">Reset map</button></div>' +
       '<p class="places-summary">' + stats.places.toLocaleString() + ' recorded places · ' +
         stats.events.toLocaleString() + ' events · ' + stats.mapped.toLocaleString() + ' with map references</p>' +
       '<label class="places-search-label" for="placesSearch">Search locations' +
@@ -251,7 +268,8 @@ export class PlacesView {
         '</strong><span>' + escape(geocode.label) + '</span>' +
         '<a href="' + escape(mapLink(geocode)) + '" rel="noopener noreferrer" target="_blank">Open in OpenStreetMap</a></div>' :
         '<p class="places-unmapped">No reliable map coordinates are linked to this spelling of the place. The family records are still shown below.</p>') +
-      '<h3 class="places-events-heading">Recorded family events</h3>' +
+      '<div class="places-events-header"><h3 class="places-events-heading">Recorded family events</h3>' +
+        '<button type="button" class="places-reset-action" id="placesReset" aria-label="Reset map to all family places">Reset map</button></div>' +
       '<div class="places-events-list">' + shown.map(event => displayEvent(event, this.peopleById)).join('') + '</div>' +
       (shown.length < events.length ? '<button type="button" class="places-small-action" id="placesMoreEvents">Show more events</button>' : '') +
       '<p class="places-provenance">Birth, death and marriage details are taken from the current GEDCOM, not inferred from the map position.</p>',

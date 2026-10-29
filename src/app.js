@@ -323,7 +323,7 @@ async function showPlaces({ personId = null } = {}) {
   rail.querySelectorAll('button[data-action]').forEach(button =>
     button.classList.toggle('active', button.dataset.action === 'places'));
   if (!placesView) {
-    placesImportPromise ||= import('./places-view.js');
+    placesImportPromise ||= import('./places-view.js?appv=' + encodeURIComponent(APP_VERSION));
     const { PlacesView } = await placesImportPromise;
     if (!placesView) {
       placesView = new PlacesView({

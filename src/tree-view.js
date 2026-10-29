@@ -36,7 +36,7 @@ export function lineageWindowIds(targetId, people = [], relationships = [], limi
   const addGroup = ids => {
     const group = new Set(ids.filter(id => knownIds.has(id)));
     for (const id of [...group]) for (const spouseId of spouses.get(id) || []) group.add(spouseId);
-    if (visible.size >= requestedLimit && ![...group].some(id => visible.has(id))) return false;
+    if (visible.size >= requestedLimit) return false;
     for (const id of group) add(id);
     return true;
   };

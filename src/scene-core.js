@@ -539,14 +539,16 @@ export class GlobeScene {
     this.focusFrame = null;
   }
 
-  focus(id, { resetZoom = false, targetPoint = null } = {}) {
+  focus(id, { resetZoom = false, zoomToPerson = false, targetPoint = null } = {}) {
     const local = this.positions.get(id);
     if (!local) return;
     this.clearHover();
     this.stopMotion();
     this.cancelFocus();
     this.focusedId = id;
-    const targetGap = resetZoom ? DEFAULT_GAP : this.cameraGap;
+    // Search navigation should bring a plaque into readable view even when
+    // the globe was previously zoomed far out.
+    const targetGap = resetZoom ? DEFAULT_GAP : zoomToPerson ? DEFAULT_GAP : this.cameraGap;
     const targetCamera = this.cameraAt(targetGap);
     const dpr = targetCamera.dpr || 1;
     const viewportWidth = this.canvas.width / dpr;

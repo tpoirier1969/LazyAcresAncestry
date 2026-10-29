@@ -33,6 +33,8 @@ export class GlobeScene extends CoreGlobeScene {
     this.baseVisibleIds = new Set();
     this.expandedFamilyIds = new Set();
     this.revealedParentFamilyIds = new Set();
+    this.pinnedFamilyIds = new Set();
+    this.activeFamilyId = null;
     this.branchFamilies = [];
     this.parentBranchFamilies = [];
     this.branchControlAreas = [];
@@ -48,6 +50,8 @@ export class GlobeScene extends CoreGlobeScene {
     this.viewTargetId = this.homeId;
     this.expandedFamilyIds.clear();
     this.revealedParentFamilyIds.clear();
+    this.pinnedFamilyIds.clear();
+    this.activeFamilyId = null;
     this.baseVisibleIds = lineageWindowIds(
       this.viewTargetId,
       this.fullPeople,
@@ -147,6 +151,8 @@ export class GlobeScene extends CoreGlobeScene {
     this.viewTargetId = id;
     this.expandedFamilyIds.clear();
     this.revealedParentFamilyIds.clear();
+    this.pinnedFamilyIds.clear();
+    this.activeFamilyId = null;
     this.baseVisibleIds = lineageWindowIds(
       id,
       this.fullPeople,
@@ -266,18 +272,40 @@ export class GlobeScene extends CoreGlobeScene {
   }
 
   toggleFamilyBranch(familyId, action) {
-    if (action === 'expand-parents') {
-      this.revealedParentFamilyIds.add(familyId);
+    const opening = action === 'expand' || action === 'expand-parents';
+    if (opening) {
+      // Keep the immediate-family overview, but close other unpinned
+      // manually opened branches when the user explores a new one.
+      for (const id of [...this.expandedFamilyIds]) {
+        if (id !== familyId && !this.pinnedFamilyIds.has(id)) this.expandedFamilyIds.delete(id);
+      }
+      for (const id of [...this.revealedParentFamilyIds]) {
+        if (id !== familyId && !this.pinnedFamilyIds.has(id)) this.revealedParentFamilyIds.delete(id);
+      }
+      this.activeFamilyId = familyId;
+      if (action === 'expand-parents') this.revealedParentFamilyIds.add(familyId);
+      else this.expandedFamilyIds.add(familyId);
     } else if (action === 'collapse-parents') {
       this.revealedParentFamilyIds.delete(familyId);
-    } else if (action === 'expand') {
-      this.expandedFamilyIds.add(familyId);
+      this.pinnedFamilyIds.delete(familyId);
     } else if (action === 'collapse') {
       const below = descendantFamilyIds(familyId, this.fullPeople, this.fullRelationships);
       this.expandedFamilyIds.delete(familyId);
-      for (const descendantFamilyId of below) this.expandedFamilyIds.delete(descendantFamilyId);
+      this.pinnedFamilyIds.delete(familyId);
+      for (const id of below) {
+        this.expandedFamilyIds.delete(id);
+        this.pinnedFamilyIds.delete(id);
+      }
     }
+    if (!opening && this.activeFamilyId === familyId) this.activeFamilyId = null;
     this.applyWindowView();
+  }
+
+  toggleActiveBranchPin() {
+    if (!this.activeFamilyId) return;
+    if (this.pinnedFamilyIds.has(this.activeFamilyId)) this.pinnedFamilyIds.delete(this.activeFamilyId);
+    else this.pinnedFamilyIds.add(this.activeFamilyId);
+    this.updateTreeViewControls();
   }
 
   installTreeViewControls() {
@@ -287,18 +315,22 @@ export class GlobeScene extends CoreGlobeScene {
     const controls = document.createElement('div');
     controls.className = 'tree-view-controls';
     controls.innerHTML = `
-      <button type="button" class="tree-reset" hidden>Reset expansions</button>
+      <button type="button" class="tree-reset" hidden>Reset expansions</button>\n      <button type="button" class="tree-pin" hidden>Pin active branch</button>
       <div class="tree-window-count" aria-live="polite"></div>
       <div class="density-warning" hidden role="status" aria-live="polite"></div>`;
     shell.appendChild(controls);
 
     this.resetTreeButton = controls.querySelector('.tree-reset');
+    this.pinTreeButton = controls.querySelector('.tree-pin');
+    this.pinTreeButton?.addEventListener('click', () => this.toggleActiveBranchPin());
     this.treeWindowCount = controls.querySelector('.tree-window-count');
     this.densityWarning = controls.querySelector('.density-warning');
 
     this.resetTreeButton?.addEventListener('click', () => {
       this.expandedFamilyIds.clear();
       this.revealedParentFamilyIds.clear();
+    this.pinnedFamilyIds.clear();
+    this.activeFamilyId = null;
       this.applyWindowView();
     });
   }
@@ -352,6 +384,10 @@ export class GlobeScene extends CoreGlobeScene {
   updateTreeViewControls() {
     if (!this.resetTreeButton) return;
     this.resetTreeButton.hidden = this.expandedFamilyIds.size === 0 && this.revealedParentFamilyIds.size === 0;
+    if (this.pinTreeButton) {
+      this.pinTreeButton.hidden = !this.activeFamilyId;
+      this.pinTreeButton.textContent = this.pinnedFamilyIds.has(this.activeFamilyId) ? 'Unpin active branch' : 'Pin active branch';
+    }
 
     if (this.treeWindowCount) {
       const targetName = this.fullPeople.find(person => person.id === this.viewTargetId)?.name || 'target person';

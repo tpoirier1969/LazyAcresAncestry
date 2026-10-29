@@ -1,0 +1,40 @@
+/* Places module: the same parchment, bronze and brick-red visual language
+   as the main genealogy atlas. Independent controls, shared app chrome. */
+.places-workspace{position:absolute;inset:0;z-index:8;background:#dfc89a}
+.places-workspace[hidden]{display:none!important}
+.places-map{position:absolute;inset:0;background:#e7d5b0}
+.places-map-status{position:absolute;bottom:62px;left:100px;z-index:520;max-width:min(390px,calc(100vw - 130px));padding:9px 12px;border:1px solid rgba(95,64,35,.55);background:rgba(239,222,186,.96);box-shadow:0 3px 10px rgba(42,28,14,.20);font:12px/1.45 Georgia,"Times New Roman",serif;color:#583e25;pointer-events:none}
+.places-mode .scale-pill,.places-mode .source-pill,.places-mode .interaction-hint,.places-mode .atlas-caption,.places-mode .home-person{display:none}
+.person-panel.places-panel{width:min(460px,calc(100vw - 38px))}
+.places-panel h2{font-size:24px;line-height:1.18;overflow-wrap:anywhere}
+.places-summary{font:13px/1.5 Georgia,"Times New Roman",serif;color:#674a2c;margin:7px 0 16px}
+.places-search-label{display:block;font:12px/1.5 Georgia,"Times New Roman",serif;color:#6a4b2c}
+.places-search-label input{display:block;width:100%;margin:7px 0 12px;padding:12px;border:1px solid #9c7844;border-radius:3px;background:#f9edcd;color:#392a19;font:15px Arial,Helvetica,sans-serif}
+.places-search-label input:focus{outline:2px solid #c08a43;outline-offset:1px}
+.places-count{margin:7px 0;padding:7px 0;border-bottom:1px solid #b89a6d;font:12px Georgia,"Times New Roman",serif;color:#725135}
+.places-results{display:grid;gap:5px;max-width:100%}
+.places-place-button{display:grid;gap:5px;width:100%;text-align:left;padding:11px 12px;border:1px solid rgba(128,83,45,.32);background:rgba(249,233,192,.7);color:#3e2a1b;cursor:pointer}
+.places-place-button:hover,.places-place-button:focus-visible{background:#f8e0ac;border-color:#a77d41;outline:0}
+.places-place-button strong{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.places-place-button span{font:11px/1.4 Arial,Helvetica,sans-serif;color:#76583a}
+.places-small-action{display:inline-block;max-width:100%;padding:9px 13px;margin:8px 0;border:1px solid #9a7342;background:#f2dfb5;color:#4d3320;cursor:pointer;font:13px Georgia,"Times New Roman",serif}
+.places-small-action:hover,.places-small-action:focus-visible{background:#e3c58e;outline:2px solid #997243;outline-offset:1px}
+.places-provenance{padding:12px 0 3px;margin:14px 0 0;border-top:1px solid rgba(101,65,34,.24);font-size:11px;line-height:1.45;color:#785b3e}
+.places-geo-quality{display:grid;gap:6px;margin:14px 0;padding:12px;background:#f1e0ba;border-left:4px solid #a8793c;font-size:12px;line-height:1.4}
+.places-geo-quality strong{color:#5e3f24}
+.places-geo-quality span{color:#5f4d34}
+.places-geo-quality a{color:#633a24;text-decoration:underline}
+.places-unmapped{font-size:12px;line-height:1.4;color:#6d5437}
+.places-events-heading{margin:22px 0 10px;font-size:16px;font-weight:600}
+.places-events-list{display:grid;gap:7px}
+.places-event{padding:10px;border:1px solid rgba(128,83,45,.22);background:rgba(251,240,208,.58)}
+.places-event-meta{display:flex;gap:9px;justify-content:space-between;align-items:center;font:11px/1.3 Arial,Helvetica,sans-serif;color:#725133}
+.places-event-meta strong{font-weight:600;color:#71442b}
+.places-event-people{margin-top:5px;line-height:1.5}
+.places-event-people button{border:0;background:transparent;padding:2px 0;color:#65422b;text-align:left;cursor:pointer;text-decoration:underline;font-size:13px}
+.places-event-people button:hover{color:#9d5c30}
+.places-workspace .leaflet-control-attribution{background:rgba(241,225,190,.92);color:#66482c}
+.places-workspace .leaflet-control-attribution a{color:#633b28}
+.places-workspace .leaflet-bar a{background:#f3e0b7;color:#71462a;border-color:#ad8756}
+@media(max-width:860px){.places-map-status{bottom:55px;left:91px;font-size:11px}.person-panel.places-panel{width:min(420px,calc(100vw - 24px))}}
+@media(max-width:440px){.places-map-status{bottom:12px;left:90px;max-width:calc(100vw - 104px);font-size:10px}.person-panel.places-panel{right:8px;top:91px;max-height:calc(100vh - 100px);width:calc(100vw - 16px)}}

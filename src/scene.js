@@ -315,7 +315,8 @@ export class GlobeScene extends CoreGlobeScene {
     const controls = document.createElement('div');
     controls.className = 'tree-view-controls';
     controls.innerHTML = `
-      <button type="button" class="tree-reset" hidden>Reset expansions</button>\n      <button type="button" class="tree-pin" hidden>Pin active branch</button>
+      <button type="button" class="tree-reset" hidden>Reset expansions</button>
+      <button type="button" class="tree-pin" hidden>Pin active branch</button>
       <div class="tree-window-count" aria-live="polite"></div>
       <div class="density-warning" hidden role="status" aria-live="polite"></div>`;
     shell.appendChild(controls);
@@ -329,8 +330,8 @@ export class GlobeScene extends CoreGlobeScene {
     this.resetTreeButton?.addEventListener('click', () => {
       this.expandedFamilyIds.clear();
       this.revealedParentFamilyIds.clear();
-    this.pinnedFamilyIds.clear();
-    this.activeFamilyId = null;
+      this.pinnedFamilyIds.clear();
+      this.activeFamilyId = null;
       this.applyWindowView();
     });
   }

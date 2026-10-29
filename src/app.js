@@ -3,6 +3,7 @@ import { startVersionChecker } from './version-checker.js';
 import { loadFamily } from './data.js';
 import { extractAlternateNames, extractSavedRecords } from './gedcom.js';
 import { describeRelationship } from './relationships.js';
+import { findRelationshipPath } from './relationship-path.js';
 import { GlobeScene } from './scene.js';
 
 const config = window.LAZY_ACRES_ANCESTRY_CONFIG || {};
@@ -88,6 +89,7 @@ function goHome() {
 function selectPerson(id, options = {}) {
   const person = byId.get(id);
   if (!person) return;
+  if (scene.relationshipView) scene.exitRelationshipPath();
   selectedPerson = person;
   showPerson(person);
   scene.focus(id, {
@@ -130,11 +132,13 @@ function showPerson(person) {
     </dl>
     ${renderGedcomDetails(person)}
     ${person.note ? `<p class="data-note"><strong>Data-quality note:</strong> ${escapeHtml(person.note)}</p>` : ''}
+    <section class="relationship-finder"><h3>Find relationship</h3><input type="search" id="relationSearch" placeholder="Search another person…" autocomplete="off"><div id="relationMatches"></div><div id="relationResult" role="status"></div></section>
     <p class="panel-note">Click another person to bring them to the center of the visible map. <strong>Return to ${escapeHtml(homePerson?.name || 'home')}</strong> restores the home view.</p>`;
   openPanel();
   document.getElementById('galleryBtn').addEventListener('click', () => showGallery(person));
   document.getElementById('notesBtn').addEventListener('click', () => showNotes(person));
   document.getElementById('profilePhotoBtn')?.addEventListener('click', () => showGallery(person));
+  wireRelationshipFinder(person);
 }
 
 function renderProfileImage(person) {

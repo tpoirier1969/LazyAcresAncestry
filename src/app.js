@@ -165,7 +165,9 @@ function wireRelationshipFinder(person) {
       return;
     }
     scene.showRelationshipPath(result, visibleMapFocusPoint());
-    const chain = result.path.map(id => escapeHtml(byId.get(id)?.name || id)).join(' → ');
+    const chain = result.segments.map(segment =>
+      segment.ids.map(id => escapeHtml(byId.get(id)?.name || id)).join(' & ')
+    ).join(' → ');
     output.innerHTML = '<p><strong>' + escapeHtml(person.name) + ' ↔ ' +
       escapeHtml(target.name) + '</strong></p><p>' + chain +
       '</p><button type="button" id="exitRelationView">Return to previous tree</button>';

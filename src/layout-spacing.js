@@ -78,9 +78,54 @@ export function spreadFamilyLayout(positions, people, relationships, radius, ful
     }
   });
 
+  alignSingleChildHouseholds(planar, relationships, spouseAdjacency);
+
   const out = new Map();
   planar.forEach((point, id) => out.set(id, tangentPoint(point.x, point.y, radius)));
   return out;
+}
+
+// Move a one-child household beneath its visible parent(s) when there is
+// sufficient empty space. Do not reorder the siblings in larger families.
+function alignSingleChildHouseholds(planar, relationships, spouseAdjacency) {
+  const parentsByChild = new Map();
+  const childrenByParent = new Map();
+  for (const link of relationships) {
+    if (link.type !== 'parent' || !planar.has(link.from) || !planar.has(link.to)) continue;
+    if (!parentsByChild.has(link.to)) parentsByChild.set(link.to, new Set());
+    if (!childrenByParent.has(link.from)) childrenByParent.set(link.from, new Set());
+    parentsByChild.get(link.to).add(link.from);
+    childrenByParent.get(link.from).add(link.to);
+  }
+  const moved = new Set();
+  for (const [childId, parents] of parentsByChild) {
+    const siblings = new Set();
+    for (const parent of parents) for (const id of childrenByParent.get(parent) || []) siblings.add(id);
+    if (siblings.size !== 1) continue;
+    const child = planar.get(childId);
+    const parentPoints = [...parents].map(id => planar.get(id));
+    const target = average(parentPoints.map(point => point.x));
+    const household = new Set([childId]);
+    for (const spouse of spouseAdjacency.get(childId) || []) {
+      if (planar.has(spouse) && Math.abs(planar.get(spouse).y - child.y) < 0.02) household.add(spouse);
+    }
+    if ([...household].some(id => moved.has(id))) continue;
+    const center = average([...household].map(id => planar.get(id).x));
+    const shift = target - center;
+    if (Math.abs(shift) < 0.01) continue;
+    const clear = [...household].every(id => {
+      const point = planar.get(id);
+      const nextX = point.x + shift;
+      return [...planar.entries()].every(([otherId, other]) =>
+        household.has(otherId) || Math.abs(other.y - point.y) > 0.02
+        || Math.abs(other.x - nextX) >= FAMILY_VIEW_SPACING.MIN_PERSON_GAP);
+    });
+    if (!clear) continue;
+    for (const id of household) {
+      planar.get(id).x += shift;
+      moved.add(id);
+    }
+  }
 }
 
 function buildSpouseAdjacency(relationships) {

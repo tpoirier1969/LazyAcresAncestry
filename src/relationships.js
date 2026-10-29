@@ -201,9 +201,15 @@ export function describePairRelationship(firstId, secondId, people = [], relatio
 
   if (isSpouse(firstId, secondId)) return sexed(sex, 'Husband', 'Wife', 'Spouse');
   if (sharesParent(firstId, secondId)) {
-    const shared = [...parents(firstId)].filter(p => parents(secondId).has(p));
+    const firstParents = parents(firstId);
+    const secondParents = parents(secondId);
+    const shared = [...firstParents].filter(p => secondParents.has(p));
+    const distinctParents = [...firstParents].some(p => !secondParents.has(p))
+      && [...secondParents].some(p => !firstParents.has(p));
     const label = sexed(sex, 'Brother', 'Sister', 'Sibling');
-    return shared.length === 1 ? 'Half-' + label.toLowerCase() : label;
+    // One documented shared parent does not prove a half relationship
+    // when the other parent is simply unknown in the source GEDCOM.
+    return shared.length === 1 && distinctParents ? 'Half-' + label.toLowerCase() : label;
   }
 
   // Only call someone a step-relative when there is a documented marriage

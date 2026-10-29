@@ -1,8 +1,8 @@
 /* Places module: the same parchment, bronze and brick-red visual language
    as the main genealogy atlas. Independent controls, shared app chrome. */
-.places-workspace{position:absolute;inset:0;z-index:8;background:#dfc89a}
+.places-workspace{position:absolute;inset:0;width:100%;height:100%;z-index:8;background:#dfc89a;overflow:hidden}
 .places-workspace[hidden]{display:none!important}
-.places-map{position:absolute;inset:0;background:#e7d5b0}
+.places-map{position:absolute;inset:0;width:100%;height:100%;min-height:300px;background:#e7d5b0}
 .places-map-status{position:absolute;bottom:62px;left:100px;z-index:520;max-width:min(390px,calc(100vw - 130px));padding:9px 12px;border:1px solid rgba(95,64,35,.55);background:rgba(239,222,186,.96);box-shadow:0 3px 10px rgba(42,28,14,.20);font:12px/1.45 Georgia,"Times New Roman",serif;color:#583e25;pointer-events:none}
 .places-mode .scale-pill,.places-mode .source-pill,.places-mode .interaction-hint,.places-mode .atlas-caption,.places-mode .home-person{display:none}
 .person-panel.places-panel{width:min(460px,calc(100vw - 38px))}

@@ -290,6 +290,12 @@ export class PlacesView {
   updateMarkers(fit = false) {
     if (!this.map || !this.markerLayer || !this.active) return;
     const L = window.L;
+    const element = this.workspace.querySelector('#placesMap');
+    // Expose the measured viewport for diagnosing incomplete tile layouts.
+    const measured = this.map.getSize();
+    element.dataset.mapViewport = measured.x + 'x' + measured.y;
+    element.dataset.cssViewport = element.clientWidth + 'x' + element.clientHeight;
+    element.dataset.workspaceViewport = this.workspace.clientWidth + 'x' + this.workspace.clientHeight;
     this.markerLayer.clearLayers();
     const locations = this.selected ? [this.selected] : this.filtered();
     const groups = new Map();

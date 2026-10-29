@@ -38,6 +38,7 @@
 .places-event-people{margin-top:5px;line-height:1.5}
 .places-event-people button{border:0;background:transparent;padding:2px 0;color:#65422b;text-align:left;cursor:pointer;text-decoration:underline;font-size:13px}
 .places-event-people button:hover{color:#9d5c30}
+.places-workspace .leaflet-container img.leaflet-tile{mix-blend-mode:normal}
 .places-workspace .leaflet-control-attribution{background:rgba(241,225,190,.92);color:#66482c}
 .places-workspace .leaflet-control-attribution a{color:#633b28}
 .places-workspace .leaflet-bar a{background:#f3e0b7;color:#71462a;border-color:#ad8756}

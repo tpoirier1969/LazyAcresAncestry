@@ -190,10 +190,9 @@ export class GlobeScene extends CoreGlobeScene {
     const middle = result.path[Math.floor(result.path.length / 2)];
     // Frame the middle of the path and pull back for longer connections.
     // The relationship-specific people remain visible independently of zoom.
-    this.focus(middle, { targetPoint, resetZoom: true });
+    this.focus(middle, { targetPoint, fitGap: Math.min(155, Math.max(7.2, result.path.length * 2.8)) });
     const gap = Math.min(155, Math.max(7.2, result.path.length * 2.8));
-    this.targetCameraGap = gap;
-    this.requestMotion();
+
   }
 
   exitRelationshipPath() {

@@ -7,7 +7,7 @@ export const FAMILY_VIEW_SPACING = Object.freeze({
   MIN_PERSON_GAP: 1.52,
 });
 
-export function spreadFamilyLayout(positions, people, relationships, radius) {
+export function spreadFamilyLayout(positions, people, relationships, radius, fullRelationships = relationships) {
   if (!positions?.size || !people?.length) return positions;
 
   const planar = new Map();
@@ -51,7 +51,7 @@ export function spreadFamilyLayout(positions, people, relationships, radius) {
       parentingFamilies,
       childrenByFamily,
     );
-    prioritizeHomeSiblingOrder(components, byId, relationships, planar);
+    prioritizeHomeSiblingOrder(components, byId, fullRelationships);
     const blocks = buildOriginBlocks(components);
     if (!blocks.length) return;
 
@@ -182,7 +182,7 @@ function buildSpouseComponents(
 
 // Keep the home person's sibling household at the right edge of the
 // sibling set, so the home spouse's parents can approach from outside.
-function prioritizeHomeSiblingOrder(components, byId, relationships, planar) {
+function prioritizeHomeSiblingOrder(components, byId, relationships) {
   const root = [...byId.values()].find(person => person.role === 'root');
   if (!root) return;
   const home = components.find(component => component.members.includes(root.id));
@@ -195,14 +195,27 @@ function prioritizeHomeSiblingOrder(components, byId, relationships, planar) {
   const siblings = components.filter(component => component !== home &&
     component.members.some(id => siblingIds.has(id)));
   if (!siblings.length) return;
-  // Preserve the order of people inside the home couple: root then spouse.
+
+  // Stable household order is determined from the complete genealogy,
+  // including ancestors that are currently collapsed. Place siblings to
+  // the left of the home couple, with the spouse on its outside edge.
   const gap = FAMILY_VIEW_SPACING.COUPLE_GAP / 2;
   home.members = [root.id, spouse];
   home.offsets = new Map([[root.id, -gap], [spouse, gap]]);
-  // Ordering uses desired centers, not input order, in buildOriginBlocks.
-  // Push the home household just beyond the other sibling households.
-  const rightmost = Math.max(...siblings.map(component => component.desiredCenter + component.width / 2));
-  home.desiredCenter = Math.max(home.desiredCenter, rightmost + FAMILY_VIEW_SPACING.SIBLING_UNIT_GAP + home.width / 2);
+  const familyKey = `home-siblings:${root.id}`;
+  const ordered = [...siblings].sort((a, b) =>
+    String(a.members.find(id => siblingIds.has(id))).localeCompare(
+      String(b.members.find(id => siblingIds.has(id)))));
+  const group = [...ordered, home];
+  const width = group.reduce((total, component) => total + component.width, 0)
+    + FAMILY_VIEW_SPACING.SIBLING_UNIT_GAP * (group.length - 1);
+  const center = home.desiredCenter - width / 2 + home.width / 2;
+  let cursor = center - width / 2;
+  group.forEach(component => {
+    component.familyKey = familyKey;
+    component.desiredCenter = cursor + component.width / 2;
+    cursor += component.width + FAMILY_VIEW_SPACING.SIBLING_UNIT_GAP;
+  });
 }
 
 function parentingFamilyIdsForMembers(members, parentingFamilies) {

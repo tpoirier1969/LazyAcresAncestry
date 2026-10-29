@@ -54,6 +54,7 @@ export function layoutSample(people, radius, relationships = []) {
   const { blocksByLevel, blockByPerson } = buildFamilyBlocks(unitsByLevel);
   connectBlockNeighbors(parentLinks, blockByPerson);
   const planar = placeFamilyBlocks(blocksByLevel, root.id, people.length);
+  separateRootSpouseAncestry(planar, root.id, spouseAdjacency, parentsByChild);
   centerDirectAncestorPeople(planar, people, levels);
   const rootPoint = planar.get(root.id) || { x: 0, y: 0 };
 
@@ -68,6 +69,43 @@ export function layoutSample(people, radius, relationships = []) {
   }
 
   return positions;
+}
+
+// Preserve an outward corridor for each side of the selected home couple.
+// A sibling may be shifted with the root's family, but should not sit between
+// the root couple and the spouse's visible parents.
+function separateRootSpouseAncestry(planar, rootId, spouseAdjacency, parentsByChild) {
+  const rootPoint = planar.get(rootId);
+  if (!rootPoint) return;
+  const spouses = [...(spouseAdjacency.get(rootId) || [])].filter(id => planar.has(id));
+  if (spouses.length !== 1) return;
+  const spouseId = spouses[0];
+  const spousePoint = planar.get(spouseId);
+  if (!spousePoint || spousePoint.x <= rootPoint.x) return;
+  const spouseParents = [...(parentsByChild.get(spouseId) || [])].filter(id => planar.has(id));
+  if (!spouseParents.length) return;
+  const rootParents = new Set(parentsByChild.get(rootId) || []);
+  const siblingIds = new Set();
+  for (const [id, parentIds] of parentsByChild) {
+    if (id === rootId || id === spouseId || !planar.has(id)) continue;
+    if ([...parentIds].some(parentId => rootParents.has(parentId))) siblingIds.add(id);
+  }
+  // Move siblings and their partners away from the spouse-side corridor.
+  const toMove = new Set(siblingIds);
+  for (const siblingId of siblingIds) {
+    for (const partnerId of spouseAdjacency.get(siblingId) || []) {
+      if (planar.has(partnerId) && partnerId !== rootId && partnerId !== spouseId) toMove.add(partnerId);
+    }
+  }
+  const leftEdge = rootPoint.x - LAYOUT_GAPS.SIBLING_GAP;
+  const crowded = [...toMove].filter(id => planar.get(id).x > leftEdge);
+  if (!crowded.length) return;
+  const maxX = Math.max(...crowded.map(id => planar.get(id).x));
+  const shift = maxX - leftEdge;
+  for (const id of toMove) {
+    const point = planar.get(id);
+    if (point) point.x -= shift;
+  }
 }
 
 function assignGenerations(people, rootId, parentLinks, spouseLinks) {
@@ -277,6 +315,13 @@ function memberSeed(a, b, byId, rootId) {
 
 function orderUnitMembers(component, rootId, byId, spouseAdjacency, parentsByChild, distances) {
   const members = [...component];
+  // For the home couple, put the root's own ancestry toward the left
+  // and the spouse's ancestry toward the right. This leaves a clear
+  // outward route for the spouse's parents beside the sibling group.
+  if (members.length === 2 && members.includes(rootId)) {
+    const spouseId = members.find(id => id !== rootId);
+    return [rootId, spouseId];
+  }
   const baseSort = (a, b) => {
     if (a === rootId) return -1;
     if (b === rootId) return 1;

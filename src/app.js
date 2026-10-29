@@ -2,7 +2,7 @@ import { APP_VERSION } from './version.js?v=0.4.41';
 import { startVersionChecker } from './version-checker.js';
 import { loadFamily } from './data.js';
 import { extractAlternateNames, extractSavedRecords } from './gedcom.js';
-import { describeRelationship } from './relationships.js';
+import { describeRelationship, describePairRelationship } from './relationships.js';
 import { findRelationshipPath } from './relationship-path.js';
 import { GlobeScene } from './scene.js';
 
@@ -164,12 +164,16 @@ function wireRelationshipFinder(person) {
       output.textContent = 'No documented connection found in this GEDCOM.';
       return;
     }
+    const relationshipName = describePairRelationship(
+      person.id, target.id, family.people, family.relationships, result.path,
+    );
     scene.showRelationshipPath(result, visibleMapFocusPoint());
     const chain = result.segments.map(segment =>
       segment.ids.map(id => escapeHtml(byId.get(id)?.name || id)).join(' & ')
     ).join(' → ');
     output.innerHTML = '<p><strong>' + escapeHtml(person.name) + ' ↔ ' +
-      escapeHtml(target.name) + '</strong></p><p>' + chain +
+      escapeHtml(target.name) + '</strong></p><p><strong>Relationship: ' +
+      escapeHtml(relationshipName) + '</strong></p><p>' + chain +
       '</p><button type="button" id="exitRelationView">Return to previous tree</button>';
     document.getElementById('exitRelationView').addEventListener('click', () => {
       scene.exitRelationshipPath();

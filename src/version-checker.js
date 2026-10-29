@@ -1,19 +1,44 @@
+// Check the deployed release marker without using the browser's HTTP cache.
+// The marker must be bumped whenever a new revision is published.
 export function startVersionChecker(currentVersion, { intervalMs = 30000 } = {}) {
+  let reloading = false;
   const check = async () => {
+    if (reloading) return;
     try {
-      const response = await fetch(`src/version.js?vcheck=${Date.now()}`, { cache: 'no-store' });
+      const response = await fetch(new URL(`src/version.js?vcheck=${Date.now()}`, document.baseURI), {
+        cache: 'no-store',
+      });
       if (!response.ok) return;
-      const text = await response.text();
-      const match = text.match(/APP_VERSION\s*=\s*['\"]([^'\"]+)['\"]/);
+      const source = await response.text();
+      const match = source.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
       const remoteVersion = match?.[1];
       if (!remoteVersion || remoteVersion === currentVersion) return;
+      reloading = true;
+      // Remove stale application assets, including any previously installed
+      // service-worker cache, before reloading with a unique revision URL.
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.allSettled(registrations.map(reg => reg.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.allSettled(keys.map(key => caches.delete(key)));
+      }
       const url = new URL(location.href);
       url.searchParams.set('appv', remoteVersion);
+      url.searchParams.set('refresh', String(Date.now()));
       location.replace(url.toString());
     } catch {
-      // Version checks must never interfere with normal use.
+      reloading = false;
+      // An offline version check must never interrupt normal use.
     }
   };
   setTimeout(check, 2500);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) check();
+  });
+  window.addEventListener('pageshow', event => {
+    if (event.persisted) check();
+  });
   return setInterval(check, intervalMs);
 }

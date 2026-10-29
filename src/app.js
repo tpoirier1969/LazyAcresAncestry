@@ -23,6 +23,10 @@ let byId = new Map();
 let homePerson = null;
 let selectedPerson = null;
 let distances = new Map();
+const PEOPLE_INDEX_BATCH = 50;
+let alphabeticalPeople = [];
+let peopleIndexLimit = PEOPLE_INDEX_BATCH;
+const peopleIndexRelationshipCache = new Map();
 
 if (appVersion) appVersion.textContent = `v${APP_VERSION}`;
 
@@ -34,6 +38,7 @@ boot().catch(error => {
 async function boot() {
   family = await loadFamily(config);
   byId = new Map(family.people.map(person => [person.id, person]));
+  alphabeticalPeople = [...family.people].sort((a, b) => a.name.localeCompare(b.name));
   homePerson = family.people.find(person => person.role === 'root') || family.people[0] || null;
   distances = computeDistances(homePerson?.id);
   scene.setFamily(family.people, family.relationships);
@@ -318,9 +323,24 @@ function showPeopleIndex() {
       <label>Name<input id="filterName" type="search" placeholder="Filter names"></label>
     </div>
     <div class="people-count" id="peopleCount"></div>
-    <div class="people-index" id="peopleIndex"></div>`;
+    <div class="people-index" id="peopleIndex"></div>
+    <button type="button" id="peopleIndexMore" hidden>Show 50 more</button>`;
   openPanel();
-  ['filterSide', 'filterCentury', 'filterDistance', 'filterName'].forEach(id => document.getElementById(id).addEventListener('input', renderPeopleList));
+  peopleIndexLimit = PEOPLE_INDEX_BATCH;
+  ['filterSide', 'filterCentury', 'filterDistance', 'filterName'].forEach(id =>
+    document.getElementById(id).addEventListener('input', () => {
+      peopleIndexLimit = PEOPLE_INDEX_BATCH;
+      renderPeopleList();
+    }),
+  );
+  document.getElementById('peopleIndex').addEventListener('click', event => {
+    const button = event.target.closest('button[data-id]');
+    if (button) selectPerson(button.dataset.id);
+  });
+  document.getElementById('peopleIndexMore').addEventListener('click', () => {
+    peopleIndexLimit += PEOPLE_INDEX_BATCH;
+    renderPeopleList();
+  });
   renderPeopleList();
 }
 
@@ -329,7 +349,7 @@ function renderPeopleList() {
   const century = document.getElementById('filterCentury').value;
   const distance = document.getElementById('filterDistance').value;
   const name = document.getElementById('filterName').value.trim().toLowerCase();
-  const matches = family.people.filter(person => {
+  const matches = alphabeticalPeople.filter(person => {
     if (side !== 'all' && (person.branch || 'center') !== side) return false;
     if (century !== 'all' && String(centuryFrom(person.birth?.date)) !== century) return false;
     const d = distances.get(person.id);
@@ -338,11 +358,21 @@ function renderPeopleList() {
       if (distance !== '4+' && d !== Number(distance)) return false;
     }
     return !name || person.name.toLowerCase().includes(name);
-  }).sort((a, b) => a.name.localeCompare(b.name));
-  document.getElementById('peopleCount').textContent = `${matches.length} of ${family.people.length} people`;
+  });
+  const shown = matches.slice(0, peopleIndexLimit);
+  document.getElementById('peopleCount').textContent =
+    `Showing ${shown.length} of ${matches.length} matches · ${family.people.length} people total`;
   const list = document.getElementById('peopleIndex');
-  list.innerHTML = matches.map(person => `<button type="button" data-id="${escapeHtml(person.id)}"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(yearFrom(person.birth?.date) || 'date unknown')} · ${escapeHtml(describeRelationship(homePerson?.id, person.id, family.people, family.relationships))}</span></button>`).join('') || '<p class="empty-copy">No people match these filters.</p>';
-  list.querySelectorAll('button[data-id]').forEach(button => button.addEventListener('click', () => selectPerson(button.dataset.id)));
+  // Relationship calculations scan the family graph, so compute them only
+  // for the visible page, and never rebuild thousands of DOM nodes at once.
+  list.innerHTML = shown.map(person => {
+    if (!peopleIndexRelationshipCache.has(person.id)) {
+      peopleIndexRelationshipCache.set(person.id,
+        describeRelationship(homePerson?.id, person.id, family.people, family.relationships));
+    }
+    return `<button type="button" data-id="${escapeHtml(person.id)}"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(yearFrom(person.birth?.date) || 'date unknown')} · ${escapeHtml(peopleIndexRelationshipCache.get(person.id))}</span></button>`;
+  }).join('') || '<p class="empty-copy">No people match these filters.</p>';
+  document.getElementById('peopleIndexMore').hidden = shown.length >= matches.length;
 }
 
 function showSectionStatus(section) {

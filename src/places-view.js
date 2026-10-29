@@ -2,22 +2,33 @@ import { buildPlaceIndex, filterPlaces, placeStats } from './places.js';
 
 const MAX_LIST = 35;
 const MAX_MAP_LOCATIONS = 160;
-const LEAFLET_VERSION = '1.9.4';
+const LEAFLET_ASSET_BASE = 'vendor/leaflet-1.9.4';
 let leafletPromise;
 
+// Load the exact, locally bundled library and its stylesheet together.
+// Do not initialize the map before Leaflet's pane/tile positioning CSS loads.
 function loadLeaflet() {
   if (window.L?.map) return Promise.resolve(window.L);
   if (leafletPromise) return leafletPromise;
   leafletPromise = new Promise((resolve, reject) => {
     const css = document.createElement('link');
     css.rel = 'stylesheet';
-    css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/' + LEAFLET_VERSION + '/leaflet.css';
-    document.head.append(css);
+    css.href = new URL(LEAFLET_ASSET_BASE + '.css', document.baseURI).href;
     const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/' + LEAFLET_VERSION + '/leaflet.js';
+    script.src = new URL(LEAFLET_ASSET_BASE + '.js', document.baseURI).href;
     script.async = true;
-    script.onload = () => window.L?.map ? resolve(window.L) : reject(new Error('Map library unavailable'));
-    script.onerror = () => reject(new Error('Map library did not load'));
+    let loadedStyles = false;
+    let loadedRuntime = false;
+    const ready = () => {
+      if (loadedStyles && loadedRuntime) {
+        window.L?.map ? resolve(window.L) : reject(new Error('Map library unavailable'));
+      }
+    };
+    css.onload = () => { loadedStyles = true; ready(); };
+    css.onerror = () => reject(new Error('Map stylesheet did not load'));
+    script.onload = () => { loadedRuntime = true; ready(); };
+    script.onerror = () => reject(new Error('Map runtime did not load'));
+    document.head.append(css);
     document.head.append(script);
   }).catch(error => { leafletPromise = null; throw error; });
   return leafletPromise;

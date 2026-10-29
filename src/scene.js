@@ -8,6 +8,7 @@ import {
   descendantFamilyIds,
   lineageWindowIds,
   parentBranchControls,
+  familyExpansionGroups,
   visibleIdsForExpandedFamilies,
 } from './tree-view.js';
 import {
@@ -311,10 +312,11 @@ export class GlobeScene extends CoreGlobeScene {
     );
     // Ancestor expansion is explicit and never triggered by camera zoom.
     // Family groups are indexed independently of visibility for parent reveals.
-    const parentLinks = this.fullRelationships.filter(link => link.type === 'parent' && this.revealedParentFamilyIds.has(String(link.familyId)));
-    for (const link of parentLinks) {
-      visibleIds.add(link.from);
-      visibleIds.add(link.to);
+    const allFamilyGroups = familyExpansionGroups(new Set(this.fullPeople.map(person => person.id)), this.fullRelationships);
+    for (const familyId of this.revealedParentFamilyIds) {
+      const family = allFamilyGroups.get(familyId);
+      if (!family) continue;
+      for (const id of [...family.parentIds, ...family.childIds]) visibleIds.add(id);
     }
     const previousFocus = this.focusedId;
     if (previousFocus && !visibleIds.has(previousFocus)) this.focusedId = this.viewTargetId;
@@ -327,6 +329,12 @@ export class GlobeScene extends CoreGlobeScene {
     );
 
     this.parentBranchFamilies = parentBranchControls(actualIds, this.fullPeople, this.fullRelationships);
+    for (const familyId of this.revealedParentFamilyIds) {
+      const family = allFamilyGroups.get(familyId);
+      if (family && family.childIds.some(id => actualIds.has(id))) {
+        this.parentBranchFamilies.push({ ...family, action: 'collapse-parents' });
+      }
+    }
     this.branchFamilies = branchControlFamilies(
       actualIds,
       this.expandedFamilyIds,

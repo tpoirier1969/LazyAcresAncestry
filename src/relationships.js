@@ -225,7 +225,9 @@ export function describePairRelationship(firstId, secondId, people = [], relatio
     return sexed(sex, 'Stepbrother', 'Stepsister', 'Stepsibling');
   }
 
-  if (!hasSpouseStep) {
+  {
+    // Identify documented biological/genealogical ancestry independently
+    // of the camera path, which might use a shorter marriage connection.
     const ancestors = id => {
       const depths = new Map([[id, 0]]);
       const queue = [id];

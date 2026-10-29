@@ -35,6 +35,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.revealedParentFamilyIds = new Set();
     this.pinnedFamilyIds = new Set();
     this.activeFamilyId = null;
+    this.suppressedAncestorIds = new Set();
     this.branchFamilies = [];
     this.parentBranchFamilies = [];
     this.branchControlAreas = [];
@@ -52,6 +53,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.expandedFamilyIds.clear();
     this.revealedParentFamilyIds.clear();
     this.pinnedFamilyIds.clear();
+    this.suppressedAncestorIds.clear();
     this.activeFamilyId = null;
     this.baseVisibleIds = lineageWindowIds(
       this.viewTargetId,
@@ -269,15 +271,12 @@ export class GlobeScene extends CoreGlobeScene {
       ctx.lineJoin = 'round';
       ctx.strokeStyle = 'rgba(101,49,40,.98)';
       ctx.lineWidth = Math.max(1.7, radius * 0.18);
-      if (action === 'expand' || action === 'expand-parents') {
-        ctx.moveTo(x - radius * 0.38, y - radius * 0.18);
-        ctx.lineTo(x, y + radius * 0.22);
-        ctx.lineTo(x + radius * 0.38, y - radius * 0.18);
-      } else {
-        ctx.moveTo(x - radius * 0.38, y + radius * 0.18);
-        ctx.lineTo(x, y - radius * 0.22);
-        ctx.lineTo(x + radius * 0.38, y + radius * 0.18);
-      }
+      // Arrows point outward when opening, inward when closing.
+      const upward = action === 'expand-parents' || action === 'collapse';
+      const direction = upward ? -1 : 1;
+      ctx.moveTo(x - radius * 0.38, y - direction * radius * 0.16);
+      ctx.lineTo(x, y + direction * radius * 0.25);
+      ctx.lineTo(x + radius * 0.38, y - direction * radius * 0.16);
       ctx.stroke();
       ctx.restore();
 
@@ -315,6 +314,8 @@ export class GlobeScene extends CoreGlobeScene {
         if (id !== familyId && !this.pinnedFamilyIds.has(id)) this.revealedParentFamilyIds.delete(id);
       }
       this.activeFamilyId = familyId;
+      if (action === 'expand-parents') this.suppressCompetingSpouseAncestry(familyId);
+      else this.suppressedAncestorIds.clear();
       if (action === 'expand-parents') this.revealedParentFamilyIds.add(familyId);
       else this.expandedFamilyIds.add(familyId);
     } else if (action === 'collapse-parents') {
@@ -329,8 +330,50 @@ export class GlobeScene extends CoreGlobeScene {
         this.pinnedFamilyIds.delete(id);
       }
     }
-    if (!opening && this.activeFamilyId === familyId) this.activeFamilyId = null;
+    if (!opening && this.activeFamilyId === familyId) {
+      this.activeFamilyId = null;
+      this.suppressedAncestorIds.clear();
+    }
     this.applyWindowView();
+  }
+
+  suppressCompetingSpouseAncestry(familyId) {
+    this.suppressedAncestorIds.clear();
+    const groups = familyExpansionGroups(new Set(this.fullPeople.map(p => p.id)), this.fullRelationships);
+    const family = groups.get(familyId);
+    if (!family) return;
+    const spouseLinks = this.fullRelationships.filter(link => link.type === 'spouse');
+    const parents = new Map();
+    for (const link of this.fullRelationships) {
+      if (link.type !== 'parent') continue;
+      if (!parents.has(link.to)) parents.set(link.to, new Set());
+      parents.get(link.to).add(link.from);
+    }
+    // Opening the ancestors of one spouse closes the other spouse's
+    // ancestral branch, without hiding the couple, siblings or children.
+    const expandedSpouses = new Set(family.childIds);
+    const otherSpouses = new Set();
+    for (const link of spouseLinks) {
+      if (expandedSpouses.has(link.from)) otherSpouses.add(link.to);
+      if (expandedSpouses.has(link.to)) otherSpouses.add(link.from);
+    }
+    const protectedIds = new Set([...family.childIds, ...family.parentIds]);
+    const protectedQueue = [...protectedIds];
+    while (protectedQueue.length) {
+      for (const parent of parents.get(protectedQueue.shift()) || []) {
+        if (!protectedIds.has(parent)) { protectedIds.add(parent); protectedQueue.push(parent); }
+      }
+    }
+    const queue = [...otherSpouses];
+    const seen = new Set(queue);
+    while (queue.length) {
+      for (const parent of parents.get(queue.shift()) || []) {
+        if (seen.has(parent)) continue;
+        seen.add(parent);
+        queue.push(parent);
+        if (!protectedIds.has(parent)) this.suppressedAncestorIds.add(parent);
+      }
+    }
   }
 
   toggleActiveBranchPin() {
@@ -383,6 +426,9 @@ export class GlobeScene extends CoreGlobeScene {
       const family = allFamilyGroups.get(familyId);
       if (!family) continue;
       for (const id of [...family.parentIds, ...family.childIds]) visibleIds.add(id);
+    }
+    for (const id of this.suppressedAncestorIds) {
+      if (id !== this.viewTargetId && !this.pinnedFamilyIds.size) visibleIds.delete(id);
     }
     const previousFocus = this.focusedId;
     if (previousFocus && !visibleIds.has(previousFocus)) this.focusedId = this.viewTargetId;

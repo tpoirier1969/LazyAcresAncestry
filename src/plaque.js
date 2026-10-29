@@ -298,7 +298,7 @@ function drawText(ctx, w, h, person, metal) {
     weight: 700,
   });
   ctx.fillStyle = '#f3dfac';
-  ctx.font = `700 ${name.fontSize}px Georgia, serif`;
+  ctx.font = `700 ${name.fontSize}px Arial, Helvetica, sans-serif`;
   const nameLineHeight = name.fontSize * 1.02;
   const nameCenterY = h * 0.735;
   const firstNameY = nameCenterY - ((name.lines.length - 1) * nameLineHeight) / 2;
@@ -325,7 +325,7 @@ function drawText(ctx, w, h, person, metal) {
     weight: 600,
   });
   ctx.fillStyle = '#f0dca8';
-  ctx.font = `600 ${date.fontSize}px Georgia, serif`;
+  ctx.font = `600 ${date.fontSize}px Arial, Helvetica, sans-serif`;
   const dateLineHeight = date.fontSize * 1.02;
   const dateCenterY = h * 0.864;
   const firstDateY = dateCenterY - ((date.lines.length - 1) * dateLineHeight) / 2;
@@ -338,7 +338,7 @@ function fitWrappedText(ctx, text, { maxWidth, maxLines, startSize, minSize, wei
   let fontSize = startSize;
   let lines = [String(text || '')];
   while (fontSize >= minSize) {
-    ctx.font = `${weight} ${fontSize}px Georgia, serif`;
+    ctx.font = `${weight} ${fontSize}px Arial, Helvetica, sans-serif`;
     lines = wrapWords(ctx, String(text || ''), maxWidth);
     if (lines.length <= maxLines && lines.every(line => ctx.measureText(line).width <= maxWidth)) {
       return { lines, fontSize };
@@ -346,7 +346,7 @@ function fitWrappedText(ctx, text, { maxWidth, maxLines, startSize, minSize, wei
     fontSize -= 1;
   }
 
-  ctx.font = `${weight} ${minSize}px Georgia, serif`;
+  ctx.font = `${weight} ${minSize}px Arial, Helvetica, sans-serif`;
   lines = wrapWords(ctx, String(text || ''), maxWidth);
   while (lines.length > maxLines) {
     const tail = lines.pop();
@@ -356,7 +356,7 @@ function fitWrappedText(ctx, text, { maxWidth, maxLines, startSize, minSize, wei
   let fallbackSize = minSize;
   while (fallbackSize > 8 && lines.some(line => ctx.measureText(line).width > maxWidth)) {
     fallbackSize -= 1;
-    ctx.font = `${weight} ${fallbackSize}px Georgia, serif`;
+    ctx.font = `${weight} ${fallbackSize}px Arial, Helvetica, sans-serif`;
   }
   return { lines, fontSize: fallbackSize };
 }

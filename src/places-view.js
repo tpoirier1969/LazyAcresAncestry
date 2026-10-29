@@ -253,11 +253,17 @@ export class PlacesView {
   }
 
   async ensureMap() {
+    // Leaflet must measure the container AFTER Places becomes visible.
+    // A zero-size first measurement produces a nearly blank tile canvas.
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    if (!this.active) return;
     if (this.map) {
-      requestAnimationFrame(() => this.map.invalidateSize());
+      this.map.invalidateSize({ pan: false });
       return;
     }
     const L = await loadLeaflet();
+    if (!this.active) return;
+    await new Promise(resolve => requestAnimationFrame(resolve));
     if (!this.active) return;
     this.map = L.map('placesMap', {
       zoomControl: true,
@@ -271,7 +277,14 @@ export class PlacesView {
       attribution: '&copy; OpenStreetMap contributors',
     }).addTo(this.map);
     this.markerLayer = L.layerGroup().addTo(this.map);
-    requestAnimationFrame(() => this.map.invalidateSize());
+    const element = this.workspace.querySelector('#placesMap');
+    if (typeof ResizeObserver !== 'undefined') {
+      this.mapResizeObserver = new ResizeObserver(() => {
+        if (this.active && !this.workspace.hidden) this.map.invalidateSize({ pan: false });
+      });
+      this.mapResizeObserver.observe(element);
+    }
+    requestAnimationFrame(() => this.map.invalidateSize({ pan: false }));
   }
 
   updateMarkers(fit = false) {

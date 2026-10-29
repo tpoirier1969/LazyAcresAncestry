@@ -178,9 +178,16 @@ export class GlobeScene extends CoreGlobeScene {
         viewTargetId: this.viewTargetId,
         focusedId: this.focusedId,
         lineageHighlight: this.lineageHighlight,
+        camera: { yaw: this.yaw, pitch: this.pitch, gap: this.cameraGap },
       };
     }
+    this.cancelFocus();
+    this.stopMotion();
     this.relationshipPath = result;
+    this.lineageHighlight = null;
+    // The previously focused person may belong to an unrelated branch.
+    // Do not silently carry them into the temporary connection view.
+    this.focusedId = null;
     const ids = new Set(result.visibleIds);
     this.baseVisibleIds = ids;
     this.expandedFamilyIds.clear();
@@ -191,13 +198,13 @@ export class GlobeScene extends CoreGlobeScene {
     // Frame the middle of the path and pull back for longer connections.
     // The relationship-specific people remain visible independently of zoom.
     this.focus(middle, { targetPoint, fitGap: Math.min(155, Math.max(7.2, result.path.length * 2.8)) });
-    const gap = Math.min(155, Math.max(7.2, result.path.length * 2.8));
-
   }
 
   exitRelationshipPath() {
     const saved = this.relationshipView;
     if (!saved) return;
+    this.cancelFocus();
+    this.stopMotion();
     this.relationshipView = null;
     this.relationshipPath = null;
     this.baseVisibleIds = saved.baseVisibleIds;
@@ -206,9 +213,14 @@ export class GlobeScene extends CoreGlobeScene {
     this.pinnedFamilyIds = saved.pinnedFamilyIds;
     this.suppressedAncestorIds = saved.suppressedAncestorIds;
     this.viewTargetId = saved.viewTargetId;
-    this.applyWindowView();
+    this.focusedId = saved.focusedId;
     this.lineageHighlight = saved.lineageHighlight;
-    if (saved.focusedId && this.visibleIds.has(saved.focusedId)) this.focus(saved.focusedId);
+    this.applyWindowView();
+    // Return to exactly the previous camera, not just the previous people.
+    this.yaw = this.targetYaw = saved.camera.yaw;
+    this.pitch = this.targetPitch = saved.camera.pitch;
+    this.cameraGap = this.targetCameraGap = saved.camera.gap;
+    this.requestDraw();
   }
 
   setLineageHighlight(id) {
@@ -244,12 +256,11 @@ export class GlobeScene extends CoreGlobeScene {
 
   drawPeople(camera) {
     super.drawPeople(camera);
-    this.drawRelationshipHighlights();
     this.branchControlAreas = [];
     const moving = Boolean(this.drag || this.motionFrame || this.focusFrame);
     // Keep branch arrows visible and their hit areas synchronized with the
     // moving plaques while the globe is dragged, zoomed, or focused.
-    this.drawBranchControls();
+    if (!this.relationshipPath) this.drawBranchControls();
     if (moving) return;
     const count = this.hitAreas.length;
     if (count === this.lastDensityCount) return;
@@ -267,32 +278,6 @@ export class GlobeScene extends CoreGlobeScene {
 
   }
 
-  drawRelationshipHighlights() {
-    if (!this.relationshipPath) return;
-    const hits = new Map(this.hitAreas.map(hit => [hit.id, hit]));
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = '#f6cb68';
-    ctx.shadowColor = 'rgba(255,202,90,.55)';
-    ctx.shadowBlur = 8;
-    for (const link of this.relationshipPath.links) {
-      const a = hits.get(link.from), b = hits.get(link.to);
-      if (!a || !b) continue;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
-    for (const id of this.relationshipPath.visibleIds) {
-      const hit = hits.get(id);
-      if (!hit) continue;
-      ctx.beginPath();
-      ctx.arc(hit.x, hit.y, Math.max(8, hit.r * .7), 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
 
   drawBranchControls() {
     const ctx = this.ctx;

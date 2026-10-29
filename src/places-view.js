@@ -188,7 +188,8 @@ export class PlacesView {
       (shown.length ? shown.map(place =>
         '<button type="button" class="places-place-button" data-place-key="' + escape(place.id) + '">' +
         '<strong>' + escape(place.name) + '</strong><span>' + this.peopleCountFor(place) +
-        ' people · ' + this.eventsFor(place).length + ' events' +
+        (this.peopleCountFor(place) === 1 ? ' person · ' : ' people · ') +
+        this.eventsFor(place).length + (this.eventsFor(place).length === 1 ? ' event' : ' events') +
         (place.coordinates ? ' · ' + (place.coordinates.quality === 'mapped' ? 'Mapped' : 'Approximate map') : ' · Unmapped') +
         '</span></button>').join('') : '<p class="empty-copy">No matching recorded places.</p>') +
       '</div>' +
@@ -242,7 +243,9 @@ export class PlacesView {
     this.renderFrame(
       '<button type="button" class="places-small-action" id="placesBack">← All matching places</button>' +
       '<h2>' + escape(place.name) + '</h2>' +
-      '<p class="places-summary">' + this.peopleCountFor(place) + ' people · ' + events.length + ' recorded events</p>' +
+      '<p class="places-summary">' + this.peopleCountFor(place) +
+        (this.peopleCountFor(place) === 1 ? ' person · ' : ' people · ') + events.length +
+        (events.length === 1 ? ' recorded event</p>' : ' recorded events</p>') +
       (geocode ? '<div class="places-geo-quality"><strong>' +
         (geocode.quality === 'mapped' ? 'Mapped reference' : 'Approximate geographic reference') +
         '</strong><span>' + escape(geocode.label) + '</span>' +
@@ -301,12 +304,6 @@ export class PlacesView {
   updateMarkers(fit = false) {
     if (!this.map || !this.markerLayer || !this.active) return;
     const L = window.L;
-    const element = this.workspace.querySelector('#placesMap');
-    // Expose the measured viewport for diagnosing incomplete tile layouts.
-    const measured = this.map.getSize();
-    element.dataset.mapViewport = measured.x + 'x' + measured.y;
-    element.dataset.cssViewport = element.clientWidth + 'x' + element.clientHeight;
-    element.dataset.workspaceViewport = this.workspace.clientWidth + 'x' + this.workspace.clientHeight;
     this.markerLayer.clearLayers();
     const locations = this.selected ? [this.selected] : this.filtered();
     const groups = new Map();
@@ -342,7 +339,8 @@ export class PlacesView {
     }
     const status = this.workspace.querySelector('.places-map-status');
     if (status) status.textContent = 'Showing ' + markers.length +
-      ' mapped location groups. Search to narrow; select a location for its people.';
+      (markers.length === 1 ? ' mapped location. ' : ' mapped location groups. ') +
+      'Search to narrow; select a location for its people.';
     if (fit && positions.length) {
       if (positions.length === 1) this.map.setView(positions[0], this.personId ? 8 : 6);
       else this.map.fitBounds(L.latLngBounds(positions).pad(.20), { maxZoom: 8 });

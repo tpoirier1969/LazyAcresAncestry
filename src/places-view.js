@@ -270,7 +270,7 @@ export class PlacesView {
       minZoom: 2,
       maxZoom: 14,
       worldCopyJump: true,
-      preferCanvas: true,
+      preferCanvas: false, // 160 or fewer SVG markers remain inspectable and keyboard-accessible.
     }).setView([44, -36], 3);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,

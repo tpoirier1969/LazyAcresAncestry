@@ -15,6 +15,7 @@ const scaleReadout = document.getElementById('scaleReadout');
 const homePersonBtn = document.getElementById('homePersonBtn');
 const appVersion = document.getElementById('appVersion');
 const rail = document.querySelector('.rail');
+const placesWorkspace = document.getElementById('placesWorkspace');
 const scene = new GlobeScene(canvas, selectPerson);
 const NOTE_AUTHOR_KEY = 'lazy_acres_ancestry_note_author';
 
@@ -23,6 +24,8 @@ let byId = new Map();
 let homePerson = null;
 let selectedPerson = null;
 let distances = new Map();
+let placesView = null;
+let placesImportPromise = null;
 const PEOPLE_INDEX_BATCH = 50;
 let alphabeticalPeople = [];
 let peopleIndexPage = 0;
@@ -78,6 +81,7 @@ function wireNavigation() {
       case 'home': goHome(); break;
       case 'search': search.focus(); search.select(); break;
       case 'people': showPeopleIndex(); break;
+      case 'places': void showPlaces(); break;
       case 'media': selectedPerson ? showGallery(selectedPerson) : showSectionStatus('media'); break;
       default: showSectionStatus(button.dataset.action);
     }
@@ -94,6 +98,7 @@ function goHome() {
 function selectPerson(id, options = {}) {
   const person = byId.get(id);
   if (!person) return;
+  placesView?.hide();
   if (scene.relationshipView) scene.exitRelationshipPath();
   selectedPerson = person;
   showPerson(person);
@@ -128,6 +133,7 @@ function showPerson(person) {
     <div class="panel-actions">
       <button type="button" id="galleryBtn">Photos${photoCount ? ` (${photoCount})` : ''}</button>
       <button type="button" id="notesBtn">Notes${noteCount ? ` (${noteCount})` : ''}</button>
+      <button type="button" id="personPlacesBtn">Places</button>
     </div>
     <dl>
       <div><dt>Born</dt><dd>${escapeHtml(person.birth?.date || 'Unknown')}<br>${escapeHtml(person.birth?.place || '')}</dd></div>
@@ -142,6 +148,7 @@ function showPerson(person) {
   openPanel();
   document.getElementById('galleryBtn').addEventListener('click', () => showGallery(person));
   document.getElementById('notesBtn').addEventListener('click', () => showNotes(person));
+  document.getElementById('personPlacesBtn').addEventListener('click', () => void showPlaces({ personId: person.id }));
   document.getElementById('profilePhotoBtn')?.addEventListener('click', () => showGallery(person));
   wireRelationshipFinder(person);
 }
@@ -310,7 +317,35 @@ function writeNotes(personId, notes) {
   localStorage.setItem(notesKey(personId), JSON.stringify(notes));
 }
 
+async function showPlaces({ personId = null } = {}) {
+  // Keep the globe and GEDCOM loaded; Places is a second view, not an
+  // independent copy of the family dataset.
+  rail.querySelectorAll('button[data-action]').forEach(button =>
+    button.classList.toggle('active', button.dataset.action === 'places'));
+  if (!placesView) {
+    placesImportPromise ||= import('./places-view.js');
+    const { PlacesView } = await placesImportPromise;
+    if (!placesView) {
+      placesView = new PlacesView({
+        workspace: placesWorkspace,
+        details,
+        family,
+        peopleById: byId,
+        selectPerson: id => selectPerson(id, { zoomToPerson: true }),
+        onClose: () => {
+          if (selectedPerson) showPerson(selectedPerson);
+          else details.classList.remove('open');
+          rail.querySelectorAll('button[data-action]').forEach(button =>
+            button.classList.toggle('active', button.dataset.action === 'home'));
+        },
+      });
+    }
+  }
+  await placesView.open({ personId });
+}
+
 function showPeopleIndex() {
+  placesView?.hide();
   const centuries = [...new Set(family.people.map(person => centuryFrom(person.birth?.date)).filter(Boolean))].sort((a, b) => a - b);
   details.innerHTML = `
     <button class="panel-close" id="personCloseInner" aria-label="Close people list">×</button>
@@ -390,6 +425,7 @@ function renderPeopleList() {
 }
 
 function showSectionStatus(section) {
+  placesView?.hide();
   const labels = { places: 'Places', stories: 'Stories', media: 'Media' };
   details.innerHTML = `
     <button class="panel-close" id="personCloseInner" aria-label="Close panel">×</button>

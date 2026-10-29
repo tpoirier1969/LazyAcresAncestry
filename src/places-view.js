@@ -302,16 +302,9 @@ export class PlacesView {
       worldCopyJump: true,
       preferCanvas: false, // 160 or fewer SVG markers remain inspectable and keyboard-accessible.
     }).setView([44, -36], 3);
-    // Keep a geographically correct, self-hosted country basemap behind
-    // online OSM tiles. The map remains recognizable when tile traffic fails.
-    this.map.createPane('ancestryGeography');
-    this.map.getPane('ancestryGeography').style.zIndex = '180';
-    this.map.getPane('ancestryGeography').style.pointerEvents = 'none';
-    L.imageOverlay(
-      new URL('assets/geographic-world.svg', document.baseURI).href,
-      [[-85.05112878, -180], [85.05112878, 180]],
-      { pane: 'ancestryGeography', interactive: false, opacity: 1, alt: 'World geographical reference' },
-    ).addTo(this.map);
+    // The SVG atlas is a different map projection from Leaflet/Web Mercator.
+    // Layering it underneath OSM tiles produces displaced duplicate continents.
+    // Use one geographic basemap only; retain the SVG as an archival asset.
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors',

@@ -9,6 +9,10 @@
    remove it from compositing while the real geographic map is active. */
 .places-mode #globeCanvas,.places-mode #mapCanvas{visibility:hidden}
 .places-mode .atlas-shell:after{display:none}
+/* Place the two compact tree-status notices directly against the map's
+   upper edge rather than leaving them floating over the geography. */
+.places-mode .tree-view-controls{top:10px;left:98px}
+
 
 .person-panel.places-panel{width:min(460px,calc(100vw - 38px))}
 .places-panel h2{font-size:24px;line-height:1.18;overflow-wrap:anywhere}
@@ -44,3 +48,13 @@
 .places-workspace .leaflet-bar a{background:#f3e0b7;color:#71462a;border-color:#ad8756}
 @media(max-width:860px){.places-map-status{bottom:55px;left:91px;font-size:11px}.person-panel.places-panel{width:min(420px,calc(100vw - 24px))}}
 @media(max-width:440px){.places-map-status{bottom:12px;left:90px;max-width:calc(100vw - 104px);font-size:10px}.person-panel.places-panel{right:8px;top:91px;max-height:calc(100vh - 100px);width:calc(100vw - 16px)}}
+
+.places-title-row,.places-events-header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.places-title-row h2{margin:8px 0 12px}
+.places-events-header{margin:19px 0 10px}
+.places-events-header .places-events-heading{margin:0}
+.places-reset-action{flex-shrink:0;padding:7px 11px;border:1px solid #997243;border-radius:2px;background:#f5e3b8;color:#51341e;font:600 12px Georgia,"Times New Roman",serif;cursor:pointer}
+.places-reset-action:hover{background:#e3c58e}
+.places-reset-action:focus-visible{outline:2px solid #7b4a28;outline-offset:2px}
+@media(max-width:860px){.places-mode .tree-view-controls{top:8px;left:78px}}
+@media(max-width:440px){.places-title-row,.places-events-header{gap:7px}.places-reset-action{padding:7px 8px;font-size:11px}}

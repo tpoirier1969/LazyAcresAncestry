@@ -165,3 +165,148 @@ function ordinal(value) {
   const suffix = value % 10 === 1 ? 'st' : value % 10 === 2 ? 'nd' : value % 10 === 3 ? 'rd' : 'th';
   return `${value}${suffix}`;
 }
+
+
+/**
+ * Describe the SECOND person's relationship to the FIRST, using the
+ * complete GEDCOM graph rather than the subset currently visible.
+ * Unproven links and ambiguous family-network paths get cautious labels.
+ */
+export function describePairRelationship(firstId, secondId, people = [], relationships = [], path = null) {
+  if (!firstId || !secondId) return 'Relationship unavailable';
+  if (firstId === secondId) return 'Same person';
+
+  const peopleById = new Map(people.map(person => [person.id, person]));
+  const sex = peopleById.get(secondId)?.sex;
+  const parentLinks = new Map();
+  const partners = new Map();
+  const add = (map, a, b) => {
+    if (!map.has(a)) map.set(a, new Set());
+    map.get(a).add(b);
+  };
+  for (const link of relationships) {
+    if (link.type === 'parent') {
+      if (!parentLinks.has(link.to)) parentLinks.set(link.to, []);
+      parentLinks.get(link.to).push(link);
+    } else if (link.type === 'spouse') {
+      add(partners, link.from, link.to);
+      add(partners, link.to, link.from);
+    }
+  }
+  const parents = id => new Set((parentLinks.get(id) || []).map(link => link.from));
+  const sharesParent = (a, b) => [...parents(a)].some(p => parents(b).has(p));
+  const isParent = (a, b) => parents(b).has(a);
+  const isSpouse = (a, b) => partners.get(a)?.has(b) || false;
+  const hasSpouseStep = path?.some((id, i) => i > 0 && isSpouse(path[i - 1], id));
+
+  if (isSpouse(firstId, secondId)) return sexed(sex, 'Husband', 'Wife', 'Spouse');
+  if (sharesParent(firstId, secondId)) {
+    const shared = [...parents(firstId)].filter(p => parents(secondId).has(p));
+    const label = sexed(sex, 'Brother', 'Sister', 'Sibling');
+    return shared.length === 1 ? 'Half-' + label.toLowerCase() : label;
+  }
+
+  // Only call someone a step-relative when there is a documented marriage
+  // linking the parent households. A co-parent or vague network connection
+  // is insufficient evidence for that designation.
+  if (!isParent(secondId, firstId) && [...parents(firstId)].some(p => isSpouse(p, secondId))) {
+    return sexed(sex, 'Stepfather', 'Stepmother', 'Stepparent');
+  }
+  if (!isParent(firstId, secondId) && [...parents(secondId)].some(p => isSpouse(p, firstId))) {
+    return sexed(sex, 'Stepson', 'Stepdaughter', 'Stepchild');
+  }
+  if ([...parents(firstId)].some(p => [...parents(secondId)].some(q => isSpouse(p, q)))) {
+    return sexed(sex, 'Stepbrother', 'Stepsister', 'Stepsibling');
+  }
+
+  if (!hasSpouseStep) {
+    const ancestors = id => {
+      const depths = new Map([[id, 0]]);
+      const queue = [id];
+      for (let i = 0; i < queue.length; i++) {
+        const current = queue[i];
+        for (const parent of parents(current)) {
+          if (depths.has(parent)) continue;
+          depths.set(parent, depths.get(current) + 1);
+          queue.push(parent);
+        }
+      }
+      return depths;
+    };
+    const firstAncestors = ancestors(firstId);
+    const secondAncestors = ancestors(secondId);
+    let nearest = null;
+    for (const [id, fromFirst] of firstAncestors) {
+      const fromSecond = secondAncestors.get(id);
+      if (fromSecond === undefined) continue;
+      const distance = fromFirst + fromSecond;
+      const maximum = Math.max(fromFirst, fromSecond);
+      if (!nearest || distance < nearest.distance
+        || (distance === nearest.distance && maximum < nearest.maximum)) {
+        nearest = { fromFirst, fromSecond, distance, maximum };
+      }
+    }
+    if (nearest) {
+      const { fromFirst: a, fromSecond: b } = nearest;
+      // The label names the SECOND person, from the FIRST person's perspective.
+      if (b === 0) return generationalAncestor(a, sex);
+      if (a === 0) return generationalDescendant(b, sex);
+      if (a === 1 && b === 1) return sexed(sex, 'Brother', 'Sister', 'Sibling');
+      if (b === 1) return collateralAncestor(a - 1, sex);
+      if (a === 1) return collateralDescendant(b - 1, sex);
+      const degree = Math.min(a, b) - 1;
+      const removed = Math.abs(a - b);
+      return wordOrdinal(degree) + ' cousin' + (removed ? ' ' + removedPhrase(removed) : '');
+    }
+  }
+
+  // Relationships by marriage are classified only when graph evidence
+  // establishes a recognizable immediate in-law relationship.
+  if ([...partners.get(firstId) || []].some(p => isParent(secondId, p))) {
+    return sexed(sex, 'Father-in-law', 'Mother-in-law', 'Parent-in-law');
+  }
+  if ([...partners.get(secondId) || []].some(p => isParent(firstId, p))) {
+    return sexed(sex, 'Son-in-law', 'Daughter-in-law', 'Child-in-law');
+  }
+  if ([...partners.get(firstId) || []].some(p => sharesParent(p, secondId))
+      || [...partners.get(secondId) || []].some(p => sharesParent(firstId, p))) {
+    return sexed(sex, 'Brother-in-law', 'Sister-in-law', 'Sibling-in-law');
+  }
+  if (hasSpouseStep) return 'Connected through marriage (exact relationship not established)';
+  return 'Family connection recorded (exact relationship not established)';
+}
+
+function generationalAncestor(depth, sex) {
+  if (depth === 1) return sexed(sex, 'Father', 'Mother', 'Parent');
+  const grand = sexed(sex, 'Grandfather', 'Grandmother', 'Grandparent');
+  return depth === 2 ? grand : 'Great-'.repeat(depth - 2) + grand;
+}
+
+function generationalDescendant(depth, sex) {
+  if (depth === 1) return sexed(sex, 'Son', 'Daughter', 'Child');
+  const grand = sexed(sex, 'Grandson', 'Granddaughter', 'Grandchild');
+  return depth === 2 ? grand : 'Great-'.repeat(depth - 2) + grand;
+}
+
+function collateralAncestor(distance, sex) {
+  const base = sexed(sex, 'Uncle', 'Aunt', 'Aunt/Uncle');
+  if (distance === 1) return base;
+  return (distance === 2 ? 'Grand-' : 'Great-'.repeat(distance - 2) + 'grand-') + base.toLowerCase();
+}
+
+function collateralDescendant(distance, sex) {
+  const base = sexed(sex, 'Nephew', 'Niece', 'Niece/Nephew');
+  if (distance === 1) return base;
+  return (distance === 2 ? 'Grand-' : 'Great-'.repeat(distance - 2) + 'grand-') + base.toLowerCase();
+}
+
+function wordOrdinal(value) {
+  const names = ['', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth', 'Eleventh', 'Twelfth'];
+  return names[value] || ordinal(value);
+}
+
+function removedPhrase(value) {
+  if (value === 1) return 'once removed';
+  if (value === 2) return 'twice removed';
+  return value + ' times removed';
+}

@@ -72,7 +72,7 @@ export class GlobeScene extends CoreGlobeScene {
     this.visibleIds = new Set(people.map(person => person.id));
     if (!this.homeId) this.homeId = people.find(person => person.role === 'root')?.id || people[0]?.id || null;
     const basePositions = layoutSample(people, this.radius, relationships);
-    this.positions = spreadFamilyLayout(basePositions, people, relationships, this.radius);
+    this.positions = spreadFamilyLayout(basePositions, people, relationships, this.radius, this.fullRelationships);
 
     const token = ++this.relationshipPlanToken;
     const knownIds = new Set(this.positions.keys());

@@ -51,6 +51,7 @@ export function spreadFamilyLayout(positions, people, relationships, radius) {
       parentingFamilies,
       childrenByFamily,
     );
+    prioritizeHomeSiblingOrder(components, byId, relationships, planar);
     const blocks = buildOriginBlocks(components);
     if (!blocks.length) return;
 
@@ -177,6 +178,31 @@ function buildSpouseComponents(
     });
   });
   return components;
+}
+
+// Keep the home person's sibling household at the right edge of the
+// sibling set, so the home spouse's parents can approach from outside.
+function prioritizeHomeSiblingOrder(components, byId, relationships, planar) {
+  const root = [...byId.values()].find(person => person.role === 'root');
+  if (!root) return;
+  const home = components.find(component => component.members.includes(root.id));
+  if (!home || home.members.length !== 2) return;
+  const spouse = home.members.find(id => id !== root.id);
+  const parentIds = new Set(relationships.filter(link =>
+    link.type === 'parent' && link.to === root.id).map(link => link.from));
+  const siblingIds = new Set(relationships.filter(link =>
+    link.type === 'parent' && parentIds.has(link.from) && link.to !== root.id).map(link => link.to));
+  const siblings = components.filter(component => component !== home &&
+    component.members.some(id => siblingIds.has(id)));
+  if (!siblings.length) return;
+  // Preserve the order of people inside the home couple: root then spouse.
+  const gap = FAMILY_VIEW_SPACING.COUPLE_GAP / 2;
+  home.members = [root.id, spouse];
+  home.offsets = new Map([[root.id, -gap], [spouse, gap]]);
+  // Ordering uses desired centers, not input order, in buildOriginBlocks.
+  // Push the home household just beyond the other sibling households.
+  const rightmost = Math.max(...siblings.map(component => component.desiredCenter + component.width / 2));
+  home.desiredCenter = Math.max(home.desiredCenter, rightmost + FAMILY_VIEW_SPACING.SIBLING_UNIT_GAP + home.width / 2);
 }
 
 function parentingFamilyIdsForMembers(members, parentingFamilies) {

@@ -146,6 +146,27 @@ export function branchControlFamilies(visibleIds, expandedFamilyIds, people = []
   return controls.sort((a, b) => a.familyId.localeCompare(b.familyId));
 }
 
+// Hidden parent families are controlled from the child, not by drawing a line
+// to an ancestor that is not currently visible.
+export function parentBranchControls(visibleIds, people = [], relationships = []) {
+  const known = new Set(people.map(person => person.id));
+  const visible = visibleIds instanceof Set ? visibleIds : new Set(visibleIds || []);
+  const families = familyExpansionGroups(known, relationships);
+  const controls = [];
+  for (const family of families.values()) {
+    const visibleChildren = family.childIds.filter(id => visible.has(id));
+    const hiddenParents = family.parentIds.filter(id => !visible.has(id));
+    if (!visibleChildren.length || !hiddenParents.length) continue;
+    controls.push({
+      familyId: family.familyId,
+      childIds: visibleChildren,
+      parentIds: family.parentIds,
+      action: 'expand-parents',
+    });
+  }
+  return controls.sort((a, b) => a.familyId.localeCompare(b.familyId));
+}
+
 export function descendantFamilyIds(rootFamilyId, people = [], relationships = []) {
   const knownIds = new Set(people.map(person => person.id));
   const families = familyExpansionGroups(knownIds, relationships);

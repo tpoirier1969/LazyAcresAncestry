@@ -519,9 +519,19 @@ export class GlobeScene extends CoreGlobeScene {
     for (const id of this.suppressedAncestorIds) {
       if (id !== this.viewTargetId && !this.pinnedFamilyIds.size) visibleIds.delete(id);
     }
+    if (this.relationshipPath) {
+      // Connection view is an exact evidence subset. Never allow expansion,
+      // pinned branches or an earlier focused person to leak extra ancestors.
+      visibleIds.clear();
+      for (const id of this.relationshipPath.visibleIds) visibleIds.add(id);
+    }
     const previousFocus = this.focusedId;
-    if (previousFocus && !visibleIds.has(previousFocus)) this.focusedId = this.viewTargetId;
-    if (this.focusedId) visibleIds.add(this.focusedId);
+    if (previousFocus && !visibleIds.has(previousFocus)) {
+      this.focusedId = this.relationshipPath ? null : this.viewTargetId;
+    }
+    if (this.focusedId && (!this.relationshipPath || visibleIds.has(this.focusedId))) {
+      visibleIds.add(this.focusedId);
+    }
 
     const visiblePeople = this.fullPeople.filter(person => visibleIds.has(person.id));
     const actualIds = new Set(visiblePeople.map(person => person.id));
@@ -543,6 +553,10 @@ export class GlobeScene extends CoreGlobeScene {
       this.fullPeople,
       this.fullRelationships,
     );
+    if (this.relationshipPath) {
+      this.parentBranchFamilies = [];
+      this.branchFamilies = [];
+    }
     this.setVisibleFamily(visiblePeople, visibleRelationships);
     this.lastDensityCount = null;
     this.updateTreeViewControls();

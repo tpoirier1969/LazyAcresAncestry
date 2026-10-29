@@ -37,10 +37,17 @@ assert.ok(worldSVG.includes('Natural Earth 110m'));
 assert.ok(worldSVG.includes('viewBox="0 0 1280 1280"'));
 assert.ok(worldSVG.match(/<path d="/g)?.length > 200);
 assert.ok(read('assets/GEOGRAPHIC-WORLD-SOURCE.txt').includes('world-atlas license'));
-assert.ok(mapSource.includes('assets/geographic-world.svg'));
+assert.ok(!mapSource.includes('L.imageOverlay('),
+  'misprojected world artwork must never be overlaid beneath OpenStreetMap tiles');
+assert.ok(mapSource.includes("L.tileLayer('https://tile.openstreetmap.org/"),
+  'Leaflet should render exactly one projection-aligned geographic basemap');
 assert.ok(!read('places.css').includes("url('assets/geographic-world.svg')"),
   'map container must not show a stationary geography image behind the panning Leaflet map');
-assert.ok(mapSource.includes('L.imageOverlay('),
-  'offline geography fallback must live inside georeferenced Leaflet layers so it pans and zooms');
+assert.ok(!mapSource.includes("new URL('assets/geographic-world.svg'"),
+  'historic square world illustration may be retained as an asset but not rendered as a second map');
+assert.ok(read('places.css').includes('.places-mode .tree-view-controls{top:10px'),
+  'the status notices must align to the top of the Places map');
+assert.ok(mapSource.includes('id="placesReset"'),
+  'selected place and places listing should expose Reset map control');
 
 console.log('Bundled places geography and map library integrity passed');

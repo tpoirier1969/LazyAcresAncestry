@@ -48,7 +48,12 @@ export function findRelationshipPath(firstId, secondId, people = [], relationshi
     return path.reverse();
   };
 
-  const path = shortest(false) || shortest(true);
+  const bloodPath = shortest(false);
+  const familyPath = shortest(true);
+  // Prefer a direct genealogical path on a tie, but never walk back
+  // additional generations merely to avoid a much shorter marriage link.
+  const path = familyPath && (!bloodPath || familyPath.length < bloodPath.length)
+    ? familyPath : bloodPath;
   if (!path) return null;
 
   const visibleIds = new Set(path);

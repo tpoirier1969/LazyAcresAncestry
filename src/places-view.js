@@ -141,11 +141,28 @@ export class PlacesView {
     return filterPlaces(this.places || [], this.query, this.personId);
   }
 
+  eventsFor(place) {
+    return this.personId
+      ? place.events.filter(event => event.personIds.includes(this.personId))
+      : place.events;
+  }
+
+  peopleCountFor(place) {
+    return this.personId ? Number(place.personIds.has(this.personId)) : place.personIds.size;
+  }
+
   showList() {
     if (!this.active) return;
     this.selected = null;
     const matches = this.filtered();
-    const stats = placeStats(this.personId ? filterPlaces(this.places, '', this.personId) : this.places);
+    const base = this.personId ? filterPlaces(this.places, '', this.personId) : this.places;
+    const stats = this.personId
+      ? {
+          places: base.length,
+          events: base.reduce((sum, place) => sum + this.eventsFor(place).length, 0),
+          mapped: base.filter(place => place.coordinates).length,
+        }
+      : placeStats(base);
     const name = this.personId ? this.personName(this.personId) : '';
     const shown = matches.slice(0, this.resultsLimit);
     this.renderFrame(
@@ -159,8 +176,8 @@ export class PlacesView {
       '<div class="places-results">' +
       (shown.length ? shown.map(place =>
         '<button type="button" class="places-place-button" data-place-key="' + escape(place.id) + '">' +
-        '<strong>' + escape(place.name) + '</strong><span>' + place.personIds.size +
-        ' people · ' + place.events.length + ' events' +
+        '<strong>' + escape(place.name) + '</strong><span>' + this.peopleCountFor(place) +
+        ' people · ' + this.eventsFor(place).length + ' events' +
         (place.coordinates ? ' · ' + (place.coordinates.quality === 'mapped' ? 'Mapped' : 'Approximate map') : ' · Unmapped') +
         '</span></button>').join('') : '<p class="empty-copy">No matching recorded places.</p>') +
       '</div>' +
@@ -209,12 +226,12 @@ export class PlacesView {
     const place = this.selected;
     if (!place) return;
     const geocode = place.coordinates;
-    const events = [...place.events].sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
+    const events = [...this.eventsFor(place)].sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
     const shown = events.slice(0, this.eventLimit);
     this.renderFrame(
       '<button type="button" class="places-small-action" id="placesBack">← All matching places</button>' +
       '<h2>' + escape(place.name) + '</h2>' +
-      '<p class="places-summary">' + place.personIds.size + ' people · ' + place.events.length + ' recorded events</p>' +
+      '<p class="places-summary">' + this.peopleCountFor(place) + ' people · ' + events.length + ' recorded events</p>' +
       (geocode ? '<div class="places-geo-quality"><strong>' +
         (geocode.quality === 'mapped' ? 'Mapped reference' : 'Approximate geographic reference') +
         '</strong><span>' + escape(geocode.label) + '</span>' +
@@ -249,7 +266,7 @@ export class PlacesView {
       worldCopyJump: true,
       preferCanvas: true,
     }).setView([44, -36], 3);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors',
     }).addTo(this.map);
@@ -270,7 +287,7 @@ export class PlacesView {
       if (!groups.has(key)) groups.set(key, { coords: coordinates, places: [], people: 0 });
       const group = groups.get(key);
       group.places.push(place);
-      group.people += place.personIds.size;
+      group.people += this.peopleCountFor(place);
     }
     const markers = [...groups.values()].sort((a, b) => b.people - a.people).slice(0, MAX_MAP_LOCATIONS);
     const positions = [];

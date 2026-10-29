@@ -637,7 +637,8 @@ export class GlobeScene {
       familyRoutes,
       familyPairKeys,
     } = this.relationshipPlan;
-    ancestryStubs.forEach(id => this.drawAncestryStub(id, camera));
+    // Hidden ancestors are represented by an inline expansion control,
+    // never by an unconnected line extending away from a person.
     spousePairs
       .filter(([a, b]) => !familyPairKeys.has(pairKey(a, b)))
       .forEach(([a, b]) => this.drawCoupleBar(a, b, camera));

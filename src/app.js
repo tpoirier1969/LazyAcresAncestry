@@ -58,7 +58,7 @@ function renderSearchResults(value) {
   list.querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
     list.hidden = true;
     search.value = byId.get(button.dataset.id)?.name || '';
-    selectPerson(button.dataset.id);
+    selectPerson(button.dataset.id, { zoomToPerson: true });
   }));
 }
 

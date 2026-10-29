@@ -22,6 +22,10 @@
   <main class="atlas-shell">
     <canvas id="mapCanvas" aria-hidden="true" style="position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;filter:none"></canvas>
     <canvas id="globeCanvas" aria-label="Interactive spherical family tree"></canvas>
+    <section class="places-workspace" id="placesWorkspace" aria-label="Genealogy places map" hidden>
+      <div id="placesMap" class="places-map" aria-label="Geographic map of recorded ancestral places"></div>
+      <div class="places-map-status" role="status">Loading historical map locations…</div>
+    </section>
     <div class="person-hover" id="personHover" role="tooltip" hidden></div>
     <nav class="rail" aria-label="Family atlas sections">
       <button class="active" type="button" data-action="home"><span>⌂</span>Home</button>
